@@ -103,7 +103,7 @@ public sealed partial class World
     readonly List<Agent> newborn = new();
 
     public World(int seed, int initialPop = -1, bool abiogenesis = true)   // initialPop < 0: P.InitialPop
-        : this(new WorldSettings { Seed = seed, InitialPop = initialPop, Abiogenesis = abiogenesis }) { }
+        : this(new WorldSettings { Seed = seed, InitialPop = initialPop, Abiogenesis = abiogenesis, Strikes = true }) { }   // strikes on, as before (bench, self-test)
 
     // A new world from its settings: a preset of laws in the settings replaces the current laws
     // (defaults for those it does not name) before anything is generated.

@@ -10,8 +10,10 @@ public sealed class WorldSettings
 {
     public int Seed { get; set; } = 1;
     public int InitialPop { get; set; } = -1;        // random genomes scattered at the start; < 0: P.InitialPop
-    public bool Abiogenesis { get; set; } = true;    // now and then a random newcomer from local matter
-    public bool Strikes { get; set; } = true;        // mutagenic strikes from space now and then
+    // Off by default: the player starts life (N, designs) and strikes (X) when they want; both can be
+    // toggled at runtime (World.Abiogenesis, World.AutoStrikes; SimRunner.SetAbiogenesis/SetStrikes).
+    public bool Abiogenesis { get; set; } = false;   // now and then a random newcomer from local matter
+    public bool Strikes { get; set; } = false;       // mutagenic strikes from space now and then
     // Laws to start with: null keeps the current values of P; otherwise every law takes the value
     // named here or its default (a ParamPreset's Values).
     public Dictionary<string, double> Params { get; set; }

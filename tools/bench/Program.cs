@@ -7,6 +7,7 @@ using Primordium;
 //   [--log path.csv]: one row per --every interval with population, births, deaths, every stage's ms/tick,
 //   allocation and GC counts, for looking at performance over time.
 if (Array.IndexOf(args, "--self-test") >= 0) { World.RunRegression(); return; }
+if (Array.IndexOf(args, "--self-test-infra") >= 0) { World.RunInfraRegression(); return; }
 if (Array.IndexOf(args, "--list-params") >= 0)
 {
     foreach (var p in ParamRegistry.All)
