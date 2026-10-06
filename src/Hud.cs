@@ -243,7 +243,7 @@ public partial class Hud : Control
         string l1 = $"#{a.Id} · {Looks.ShapeNames[a.Shape]} · линия #{a.Lineage} · поколение {a.Gen}" + (a.Cells > 1 ? $" · на {a.Cells} клетках" : "");
         string l2 = $"{DietName(a)} · энергия {Math.Max(0, a.Energy):F0} (удобный запас {a.Store:F0}) · возраст {a.Age:N0}";
         int cell = a.Y * World.W + a.X;
-        string l3 = $"клетка {w.Temp[cell]:+0;-0} °C, тело {a.Tb:+0;-0} °C · соседей {w.Count[cell] - 1}, место занято на {(Main.Frame.Hover == a ? Main.Frame.HoverFloorFill : 0):P0}" + (w.Water[cell] > 0.05f ? $" · вода {w.Water[cell]:0.0}" : "") +
+        string l3 = $"клетка {w.Temp[cell]:+0;-0} °C{CaveBrief(w, a)}, тело {a.Tb:+0;-0} °C · соседей {w.Count[cell] - 1}, место занято на {(Main.Frame.Hover == a ? Main.Frame.HoverFloorFill : 0):P0}" + (w.Water[cell] > 0.05f ? $" · вода {w.Water[cell]:0.0}" : "") +
                     $" · белков {a.EnzN} ({EnzymeBrief(a)})";
         var sel = Main.View.Selected;
         string l4 = sel != null && sel != a ? (Looks.Kin(a, sel) > 0 ? $"родня выбранного · близость {Looks.Kin(a, sel) * 100:F0}%" : "не родня выбранному")
@@ -335,6 +335,25 @@ public partial class Hud : Control
         return $"в воде, {pos} · плотность {a.Density:0.00} ({drift})";
     }
 
+    // Under a roof the body feels the cave climate (World.Cave). Read-only arithmetic on the world's arrays.
+    static string CaveBrief(World w, Agent a)
+    {
+        int cell = a.Y * World.W + a.X;
+        if (!w.InCave(a)) return "";
+        return $", под крышей {w.Roof(cell, a.Z)} бл.: вокруг {w.LocalTemp(cell, a.Z):+0;-0} °C";
+    }
+
+    static (string, string) CaveLines(World w, Agent a)
+    {
+        int cell = a.Y * World.W + a.X;
+        float surf = w.Temp[cell];
+        if (!w.InCave(a)) return ($"крыши нет · вокруг {surf:+0;-0} °C (поверхность)", null);
+        int roof = w.Roof(cell, a.Z);
+        string law = World.CaveLaw ? "" : " (закон климата пещер выключен)";
+        return ($"крыша {roof} бл. · укрытие {w.Cover(cell, a.Z):P0} · глубина {Math.Max(0, w.Height[cell] - 1 - a.Z)} ур." + law,
+                $"вокруг {w.LocalTemp(cell, a.Z):+0.0;-0.0} °C: климат глубины {w.CaveTemp(cell, a.Z):+0.0;-0.0}, поверхность {surf:+0.0;-0.0}");
+    }
+
     static string OverlayName(World w, int o) => o switch
     {
         0 => "породы и почва",
@@ -346,6 +365,8 @@ public partial class Hud : Control
         6 => "тепло от тел",
         7 => "нагрузка / прочность (зелёный → красный)",
         8 => "порядок решётки (тёмный → светлый)",
+        View3D.DepthTempOverlay => P.CaveClimate == 0 ? "температура на глубине (закон выключен: везде как на поверхности)"
+                                  : "температура на глубине: сверху — средняя за год, в разрезе (C) — что чувствует тело на каждом уровне",
         _ when o - View3D.FirstSpecies == w.Chem.Gas => $"газ {w.Chem.Name[w.Chem.Gas]} в воздухе (E{w.Chem.E[w.Chem.Gas]})",
         _ => $"молекула {w.Chem.Name[o - View3D.FirstSpecies]} на земле (E{w.Chem.E[o - View3D.FirstSpecies]}" +
              $"{(w.Chem.Poison[o - View3D.FirstSpecies] ? ", яд" : w.Chem.Solid[o - View3D.FirstSpecies] ? ", твёрдая" : "")})",
@@ -663,6 +684,10 @@ public partial class Hud : Control
         string grow = a.Cells >= P.MaxCells ? "предел" : $"{nextCells}-я клетка при массе {P.GrowMass * MathF.Pow(nextCells - 1, P.GrowPow):0}";
         T(x, y + 10, $"{a.InvTotal} молекул (удобно до {a.Room}{(a.Packing > 1 ? $", набит ×{a.Packing:0.0} — держать дороже" : "")}) · масса {a.Mass:F0} · объём {a.Volume:F0} (пол занят на {(Main.Frame.Sel == a ? Main.Frame.SelFloorFill : 0):P0}) · клеток {a.Cells} ({grow})", Dim, 12);
         T(x, y + 25, $"уровень {a.Z} · {Where(w, a)} · тело {a.Tb:+0;-0} °C", Dim, 12);
+        var (cave1, cave2) = CaveLines(w, a);
+        T(x, y + 40, cave1, Dim, 12);
+        if (cave2 != null) { T(x, y + 55, cave2, Dim, 12); y += 15; }
+        y += 15;
         if (y + 30 > clipTop && y + 30 < clipBot) DrawCircle(new Vector2(x + 6, y + 37), 6, View3D.KinColor(a));
         T(x + 18, y + 41, $"облик: {Looks.ShapeNames[a.Shape]} · родни на планете {Main.KinCount:N0}" +
                           (Main.View.KinFocus ? " (подсвечена, K — выкл.)" : " (K — подсветить)"), Fg, 12);

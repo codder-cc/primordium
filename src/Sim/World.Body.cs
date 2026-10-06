@@ -123,11 +123,19 @@ public sealed partial class World
         return best;
     }
 
+    // The temperature around the body: the surface's, or under a roof the cave climate (World.Cave).
     float FootTemp(Agent a)
     {
-        if (a.Cells == 1) return Temp[a.Y * W + a.X];
+        if (!CaveLaw)
+        {
+            if (a.Cells == 1) return Temp[a.Y * W + a.X];
+            float s = 0;
+            for (int k = 0; k < a.Cells; k++) s += Temp[FootCell(a, k)];
+            return s / a.Cells;
+        }
+        if (a.Cells == 1) return LocalTemp(a.Y * W + a.X, a.Z);
         float t = 0;
-        for (int k = 0; k < a.Cells; k++) t += Temp[FootCell(a, k)];
+        for (int k = 0; k < a.Cells; k++) t += LocalTemp(FootCell(a, k), a.Z);
         return t / a.Cells;
     }
 }

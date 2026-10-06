@@ -196,6 +196,7 @@ public sealed partial class World
         UpdateClouds();
         UpdateLight();
         for (int i = 0; i < N; i++) Temp[i] = TempEq(i);
+        InitCaveClimate();
         if (life != 0) lifeRng = new SimRng(seed ^ life, -7349);
         for (int k = 0, tries = 0; k < initialPop && tries < initialPop * 20; tries++)
             if (SpawnRandom()) k++;

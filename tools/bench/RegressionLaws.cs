@@ -97,6 +97,7 @@ public sealed partial class World
         void F(float x) => Mix((uint)BitConverter.SingleToInt32Bits(x));
         for (int v = 0; v < N * Z; v++) if (Pressure[v] != 0) { Mix((ulong)v); F(Pressure[v]); }
         for (int i = 0; i < N; i++) { F(Temp[i]); F(Water[i]); F(Ice[i]); F(Photon[i]); F(Bite[i]); }
+        for (int i = 0; i < N; i++) { F(Tmean[i]); F(CaveWarm[i]); F(caveHeatIn[i]); }
         foreach (var kv in Buried.OrderBy(kv => kv.Key)) { Mix((ulong)kv.Key); foreach (var m in kv.Value.Matter) Mix((ulong)m.Raw); F(kv.Value.Order); }
         foreach (var a in Agents)
         {
@@ -173,10 +174,11 @@ public sealed partial class World
                 // the original is first rounded to what they can hold (the rounding the writer does);
                 // then the loaded world is the same world and goes on the same way. Version 2 keeps
                 // the ledger; version 1 has none: it starts from zero and closes from the load.
-                foreach (int version in new[] { 2, 1 })
+                foreach (int version in new[] { 4, 2, 1 })
                 {
                     double[] exact = a.ElementBudget();
                     a.RoundAmountsToFloat();
+                    a.InitCaveClimate();   // nor do they hold the cave climate (version 5): it starts again from Temp
                     double[] rounded = a.ElementBudget();
                     for (int e = 0; e < exact.Length; e++)
                         Require(Math.Abs(rounded[e] - exact[e]) < 0.05, $"rounding to float moved element {e} by {rounded[e] - exact[e]:R}");
@@ -188,13 +190,13 @@ public sealed partial class World
                     var c = Load(old);
                     Require(c.DeepHash() == a.DeepHash(), $"a version {version} file did not load as the same world");
                     BudgetEqual(a.ElementBudget(), c.ElementBudget(), $"version {version} atoms", 0);
-                    if (version == 2) Require(c.TrackHeat && c.EnergyFlows().SequenceEqual(a.EnergyFlows()), "a version 2 file lost the ledger");
+                    if (version >= 2) Require(c.TrackHeat && c.EnergyFlows().SequenceEqual(a.EnergyFlows()), $"a version {version} file lost the ledger");
                     else Require(c.EnergyFlows().All(x => x == 0) && !c.TrackHeat, "a version 1 file did not start an empty ledger");
                     c.TrackHeat = true;
                     var c0 = c.AuditEnergy();
                     for (int t = 0; t < 100; t++) { a.Step(); c.Step(); }
                     Require(a.StateHash() == c.StateHash(), $"a world loaded from a version {version} file diverged");
-                    Console.WriteLine($"PASS save/load version {version} file: same world and continuation, ledger {(version == 2 ? "kept" : "from the load")}: {EnergyWorldCheck(c, c0, $"version {version} load")}");
+                    Console.WriteLine($"PASS save/load version {version} file: same world and continuation, ledger {(version >= 2 ? "kept" : "from the load")}: {EnergyWorldCheck(c, c0, $"version {version} load")}");
                 }
             }
             ParamRegistry.ResetDefaults();

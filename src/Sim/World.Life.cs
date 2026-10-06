@@ -147,7 +147,13 @@ public sealed partial class World
         a.LifeHarm += harm;
         // Everything spent on living ends up as heat in its cells.
         float share = a.TickHeat / a.Cells;
-        for (int k = 0; k < a.Cells; k++) heatIn[FootCell(a, k)] += share;
+        bool caveLaw = CaveLaw;
+        for (int k = 0; k < a.Cells; k++)
+        {
+            int fc = FootCell(a, k);
+            heatIn[fc] += share;
+            if (caveLaw && a.Z < Height[fc]) caveHeatIn[fc] += share * Cover(fc, a.Z);   // under a roof: into the cave air
+        }
 
         // Proteins wear out and have to be made again.
         int n = 0;

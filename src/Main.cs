@@ -111,6 +111,7 @@ public partial class Main : Node
             foreach (var item in openAtStart)
             {
                 // "window" or "window:view" (newworld:more, creator:looks, creator:help) — for screenshots.
+                if (item == "none") continue;   // no window, and none restored from ui.json either
                 var part = item.Split(':');
                 var win = Ui.ById(part[0] == "params" ? "laws" : part[0]) ?? throw new ArgumentException("--open: laws|params, newworld[:more], saves, creator[:looks|:help], chronicle[:fossils], fossil[:bio|:ancestry]");
                 win.Open();
@@ -145,12 +146,16 @@ public partial class Main : Node
                 var a = w.Agents.Where(x => !x.Dead && x.Tracked).OrderByDescending(x => x.BioN).ThenBy(x => x.Id).FirstOrDefault();
                 if (a != null) Ui.Post(() => { View.Selected = a; View.LookAt(a); View.ZoomAt(30); });
             });
+        // A saved world instead of the new one (as F9 / the saves window would load it).
+        for (int i = 0; i < args.Length - 1; i++) if (args[i] == "--load") Sim.Load(args[i + 1]);
+        selCave = Array.IndexOf(args, "--selcave") >= 0;
         for (int i = 0; i < args.Length - 1; i++) if (args[i] == "--tab") hud.AgentTab = args[i + 1] == "bio" ? 1 : 0;
         if (startTool > 0) SetTool(startTool);
         if (shotPath != null) shotFrames = uiTest >= 0 ? 128 : 60;   // with --uitest: after the planting, with its toasts and a planted body selected
     }
 
     int startOverlay;
+    bool selCave;
 
     // A new world: the old simulation thread is stopped, the new world is warmed up here
     // (synchronously, as before) and then runs on its own thread.
@@ -227,6 +232,16 @@ public partial class Main : Node
         if (!Input.IsMouseButtonPressed(MouseButton.Right)) rDown = false;
         if (!Input.IsMouseButtonPressed(MouseButton.Middle)) mDown = false;
         if (uiTest >= 0) UiTest();
+        if (selCave && frame == 30)
+        {
+            // For screenshots of the cave climate: select the living body under the thickest roof and cut the view through it.
+            selCave = false;
+            Sim.Do(w =>
+            {
+                var a = w.Agents.Where(x => !x.Dead && w.InCave(x)).OrderByDescending(x => w.Roof(x.Y * World.W + x.X, x.Z)).ThenBy(x => x.Id).FirstOrDefault();
+                if (a != null) Ui.Post(() => { View.Selected = a; if (View.Slice < 0) View.Slice = a.Y; View.LookAt(a); View.ZoomAt(80); });
+            });
+        }
         View.BrushCell = Tool > 0 && !OverPanel(mouse) ? View.PickCell(mouse) : -1;
         View.BrushR = BrushR;
         View.BrushTool = Tool;

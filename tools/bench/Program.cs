@@ -13,6 +13,7 @@ using Primordium;
 //   [--chronicle]: print the world's chronicle as events happen (World.Chronicle).
 if (Array.IndexOf(args, "--self-test") >= 0) { World.RunRegression(); return; }
 if (Array.IndexOf(args, "--self-test-infra") >= 0) { World.RunInfraRegression(); return; }
+if (Array.IndexOf(args, "--self-test-cave") >= 0) { World.CaveClimateRegression(); return; }   // just the cave climate test (also in --self-test)
 if (Array.IndexOf(args, "--list-params") >= 0)
 {
     foreach (var p in ParamRegistry.All)
@@ -206,6 +207,10 @@ for (int t = 1; t <= ticks; t++)
                       $"| litter={w.MeanLitter():F1} gas={w.C[w.Chem.Gas].Average(q => q.D):F2} h={w.MeanHeight():F2} | {ev} | {t / sw.Elapsed.TotalSeconds:F0} t/s | hash {w.StateHash():x16}");
     Console.WriteLine("   mined by grade (with protein): " + string.Join(" ", Enumerable.Range(0, 5).Select(k => $"{k}:{w.Mined[k] - prevMined[k]}({w.MinedCat[k] - prevCat[k]})")) +
                       " | firsts: " + string.Join(", ", w.Firsts.Where(f => f != null).Select(f => $"{w.Chem.MatName[f.Mat]} day {f.Tick / P.DayLen} #{f.Lineage}")));
+    {
+        var cv = w.CaveCensus();
+        Console.WriteLine($"   caves: under a roof {cv[0]:P1} (≥3 blocks {cv[1]:P1}), depth mean {cv[2]:F2} max {cv[3]:F0}, voids {cv[4]:F0} | polar {cv[5]:P0} of bodies, {cv[6]:P0} of them under a roof | mountains {cv[7]:P0}, {cv[8]:P0} under a roof");
+    }
     Console.WriteLine($"   divide tries {w.DivFail[0]}: no energy {w.DivFail[1]}, small body {w.DivFail[2]}, no room {w.DivFail[3]}, uneven {w.DivFail[4]}");
     {
         int wetCells = 0; for (int i = 0; i < World.N; i++) if (w.Submerged(i)) wetCells++;
