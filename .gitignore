@@ -16,3 +16,5 @@ Screenshot*
 *.png.import
 /runs/
 *.log
+# agent tooling
+.claude/
