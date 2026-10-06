@@ -84,6 +84,7 @@ public sealed partial class World
         AsmRegression();
         DesignRegression();
         ChronicleRegression();
+        EvolutionRegression();
         for (int seed = -3; seed <= 100; seed++)
         {
             var ch = new Chemistry(seed);

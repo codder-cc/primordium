@@ -14,6 +14,7 @@ using Primordium;
 if (Array.IndexOf(args, "--self-test") >= 0) { World.RunRegression(); return; }
 if (Array.IndexOf(args, "--self-test-infra") >= 0) { World.RunInfraRegression(); return; }
 if (Array.IndexOf(args, "--self-test-cave") >= 0) { World.CaveClimateRegression(); return; }   // just the cave climate test (also in --self-test)
+if (Array.IndexOf(args, "--self-test-evolution") >= 0) { World.RunEvolutionRegression(); return; }
 if (Array.IndexOf(args, "--list-params") >= 0)
 {
     foreach (var p in ParamRegistry.All)
@@ -107,7 +108,8 @@ if (logPath != null)
     log.WriteLine("tick,pop,births,deaths,ms_tick,env,agents,bookkeeping," + string.Join(",", World.DetailNames.Select(n => n.Replace(' ', '_').Replace('/', '_')))
         + ",agent_busy,agent_longest," + string.Join(",", Enumerable.Range(0, w.Colours).Select(q => $"busy{q},longest{q}"))
         + ",alloc_mb,agent_alloc_mb,gen0,gen1,gen2,gc_pause_pct,heap_mb,dirty_columns,hanging_voxels,mean_temp,"
-        + string.Join(",", EvoMetrics.Names.Skip(1)) + ",energy_drift,energy_tolerance,chronicle_events,chronicle_important,fossils");
+        + string.Join(",", EvoMetrics.Names.Skip(1)) + ",energy_drift,energy_tolerance,chronicle_events,chronicle_important,fossils,"
+        + string.Join(",", EvolutionHistory.Names.Skip(1)) + ",evo_mb");
 }
 long prevAlloc = GC.GetTotalAllocatedBytes(false);
 int prevGen0 = GC.CollectionCount(0), prevGen1 = GC.CollectionCount(1), prevGen2 = GC.CollectionCount(2), prevBirths = 0, prevDeaths = 0;
@@ -134,6 +136,8 @@ for (int t = 1; t <= ticks; t++)
     if (audit) Console.WriteLine("   " + energyNow.Describe(originalEnergy));
     var evoNow = evo.Sample(w);
     Console.WriteLine("   evo: " + EvoMetrics.Format(evoNow));
+    Console.WriteLine("   progress: " + Batch.FormatProgress(w));
+    Array.Clear(w.EvoMs);
     w.CheckCellLists();   // throws if any cell list is broken
     var c = w.TakeCensus();
     var cl = w.TakeClimate();
@@ -185,7 +189,9 @@ for (int t = 1; t <= ticks; t++)
                 w.LastStructureColumns.ToString(), w.LastStructureVoxels.ToString(), f(cl.MeanT) })
             .Concat(evoNow.Skip(1).Select(f))
             .Concat(new[] { audit ? f(EnergyAudit.Drift(originalEnergy, energyNow)) : "", audit ? f(EnergyAudit.Tolerance(originalEnergy, energyNow)) : "" })
-            .Concat(new[] { (w.Chronicle.NextSeq - 1).ToString(), w.Chronicle.Important.Count.ToString(), w.Chronicle.Fossils.Count.ToString() })));
+            .Concat(new[] { (w.Chronicle.NextSeq - 1).ToString(), w.Chronicle.Important.Count.ToString(), w.Chronicle.Fossils.Count.ToString() })
+            .Concat(Batch.ProgressRow(w).Select(f))
+            .Concat(new[] { f(w.EvolutionBytes() / 1048576.0) })));
         log.Flush();
     }
     prevAlloc = alloc; prevGen0 += gen0; prevGen1 += gen1; prevGen2 += gen2; prevBirths = w.Births; prevDeaths = w.Deaths; prevWall = wall;

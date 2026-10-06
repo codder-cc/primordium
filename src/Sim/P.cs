@@ -172,6 +172,8 @@ public static class P
     public static int FossilCap = 1000;         // fossils kept; the least important go first
     public static int ChronicleTrackKids = 1;   // 1: the first-generation children of planted designs keep a biography too
     public static float ChronicleCaveDays = 1;  // days under a roof that make a body the first cave dweller
+    public static int ProgressEvery = 200;      // ticks between samples of the course of evolution (World.Evolution)
+    public static int ProgressWindow = 10000;   // ticks over which the summary hint compares the trends of the tracks
 
     // The values the fields above start with (captured before anything can change them; declared
     // last, so every initializer above has run). ParamRegistry resets to these.

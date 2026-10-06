@@ -26,6 +26,7 @@ public sealed partial class World
         AsmRegression();
         DesignRegression();
         ChronicleRegression();
+        EvolutionRegression();
         ParamRegistry.ResetDefaults();
     }
 

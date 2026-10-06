@@ -113,7 +113,7 @@ public partial class Main : Node
                 // "window" or "window:view" (newworld:more, creator:looks, creator:help) — for screenshots.
                 if (item == "none") continue;   // no window, and none restored from ui.json either
                 var part = item.Split(':');
-                var win = Ui.ById(part[0] == "params" ? "laws" : part[0]) ?? throw new ArgumentException("--open: laws|params, newworld[:more], saves, creator[:looks|:help], chronicle[:fossils], fossil[:bio|:ancestry]");
+                var win = Ui.ById(part[0] == "params" ? "laws" : part[0]) ?? throw new ArgumentException("--open: laws|params, newworld[:more], saves, creator[:looks|:help], chronicle[:fossils], fossil[:bio|:ancestry], evolution");
                 win.Open();
                 if (part.Length > 1) win.ShowView(part[1]);
             }
@@ -513,6 +513,7 @@ public partial class Main : Node
             case Key.F7: Ui.Creator.Toggle(); break;
             case Key.F8: Ui.Chronicle.Toggle(); break;
             case Key.F9: Ui.Saves.QuickLoad(); break;
+            case Key.F10: Ui.Evolution.Toggle(); break;
             case Key.K: v.KinFocus = !v.KinFocus; break;
             case Key.B: ShowRecords = !ShowRecords; break;
             case Key.O:

@@ -193,6 +193,7 @@ public sealed partial class World
         SetLift(a, cell, a.Z, a.Z);
         Place(a, cell);
         Agents.Add(a);
+        EvoRegister(a);   // a founder: a root of the family tree
         DesignSpawns++;
         return a;
     }
