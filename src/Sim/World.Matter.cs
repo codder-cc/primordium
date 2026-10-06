@@ -472,19 +472,36 @@ public sealed partial class World
         Sediments++; Note(EvKind.Sediment);
     }
 
+    // Columns that may hold a block metamorphism would still anneal (under pressure, order below
+    // 245). Set wherever pressure or order can change (RefreshColumn, the solver, TerrainChanged);
+    // cleared once a pass finds nothing left to anneal there. Rock nobody touches and that has
+    // reached its order is never scanned again.
+    readonly bool[] annealable = InitAnnealable();
+    static bool[] InitAnnealable() { var a = new bool[N]; Array.Fill(a, true); return a; }
+
     void Metamorphose()
     {
         // Slow lattice annealing has a fixed cadence, independent of whether a body woke a column.
-        for (int c = 0; c < N; c++)
-            for (int z = 2; z < Height[c]; z++)
+        // Columns are independent: done in parallel.
+        System.Threading.Tasks.Parallel.For(0, H, y =>
+        {
+            for (int c = y * W, end = c + W; c < end; c++)
             {
-                int v = c * Z + z;
-                // Annealing only strengthens a block: refresh its cached strength, nothing can fail from it.
-                if (Mat[v] >= 2 && Pressure[v] > P.CompactionPressure && Order[v] < 245)
+                if (!annealable[c]) continue;
+                bool more = false;
+                for (int z = 2, h = Height[c]; z < h; z++)
                 {
-                    Order[v]++; compressionCache[v] = 0;
+                    int v = c * Z + z;
+                    // Annealing only strengthens a block: refresh its cached strength, nothing can fail from it.
+                    if (Mat[v] >= 2 && Pressure[v] > P.CompactionPressure && Order[v] < 245)
+                    {
+                        Order[v]++; compressionCache[v] = 0;
+                        if (Order[v] < 245) more = true;
+                    }
                 }
+                annealable[c] = more;
             }
+        });
         // Burial remains at depth. Pressure changes lattice order and promotes only legal reactions.
         foreach (var entry in Buried)
         {

@@ -116,7 +116,7 @@ public sealed partial class World
             }
         }
 
-        Array.Fill(topologyVersion, -1);
+        Array.Fill(topologySeen, -1);
         GenerateTerrain();
         for (int k = 0; k < P.VentCount; k++) SpawnVent();
         RecomputeVentFields();

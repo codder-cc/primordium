@@ -12,17 +12,24 @@ public sealed partial class World
     readonly bool[] overhang = new bool[N * Z];
     readonly int[] overhangCount = new int[N];
     int overhangTotal;
-    readonly int[] grounded = new int[N], parent = new int[N * Z];
-    readonly float[] support = new float[N * Z], carried = new float[N * Z], edgeCapacity = new float[N * Z];
+    readonly int[] grounded = new int[N];
+    // Solver state of the hanging voxels in the current pass, indexed by their position in
+    // activeHanging (a few thousand at most), not by voxel: dense N·Z arrays cost 126 MB for this.
+    int[] hParent = new int[1024], hParentAt = new int[1024];   // supporting voxel, and its index if it is hanging too (else -1)
+    float[] hSupport = new float[1024], hCarried = new float[1024], hEdge = new float[1024];
     public readonly float[] Pressure = new float[N * Z];
-    Dictionary<int, float> bodyLoad = new(), nextBodyLoad = new();
+    LoadMap bodyLoad = new(), nextBodyLoad = new();
     readonly Dictionary<int, float> rootLoad = new();
     readonly float[] compressionCache = new float[N * Z];
-    readonly int[] topologyVersion = new int[N];
+    // Geometry version of each column as the solver last saw it. TopologyVersion moves only when
+    // solid and air change places (TerrainChanged); ColumnVersion also moves on partial bites and
+    // fills, for the view.
+    readonly int[] topologySeen = new int[N], topologyVersion = new int[N];
     public readonly bool[] HasCavity = new bool[N];
-    readonly PriorityQueue<int, (float, int)> supportQueue = new();
+    readonly PriorityQueue<int, (float, int)> supportQueue = new();   // elements: index in activeHanging
     readonly List<int> supportOrder = new(), dirtyWork = new(), failures = new();
-    readonly HashSet<int> activeHanging = new(), activeColumns = new();
+    readonly VoxelSet activeHanging = new();
+    readonly HashSet<int> activeColumns = new();
     readonly Queue<int> hangingQueue = new();
     public long CollapsedBlocks, CrushedBlocks;
     public int DeathsBuried;
@@ -77,7 +84,7 @@ public sealed partial class World
             || Pressure[v] + Math.Max(0, delta) > 0.7f * CompressionCapacity(v);
     }
 
-    float OwnLoad(int v) => VoxelMass(v) * P.Gravity + (bodyLoad.TryGetValue(v, out float load) ? load : 0);
+    float OwnLoad(int v) => VoxelMass(v) * P.Gravity + bodyLoad.Get(v);
     public float CompressionCapacity(int v)
     {
         if (Mat[v] == Chemistry.Bedrock) return 1e9f;
@@ -98,7 +105,7 @@ public sealed partial class World
 
     void RefreshColumn(int c)
     {
-        bool topologyChanged = topologyVersion[c] != ColumnVersion[c];
+        bool topologyChanged = topologySeen[c] != topologyVersion[c];
         int g = grounded[c];
         if (topologyChanged)
         {
@@ -108,7 +115,7 @@ public sealed partial class World
             while (g < Height[c] && IsSolid(c, g)) g++;
             grounded[c] = g;
             HasCavity[c] = g < Height[c];
-            topologyVersion[c] = ColumnVersion[c];
+            topologySeen[c] = topologyVersion[c];
         }
         float load = 0;
         for (int z = Height[c] - 1; z >= 0; z--)
@@ -119,18 +126,28 @@ public sealed partial class World
             Pressure[v] = load;
             if (topologyChanged && z >= g && !overhang[v]) { overhang[v] = true; overhangCount[c]++; overhangTotal++; }
         }
+        annealable[c] = true;   // its pressures were rewritten: metamorphism looks at it again
     }
 
-    void OfferSupport(int v, int from)
+    // `iv`: v's index among the hanging voxels; `at`: from's index, or -1 for grounded rock.
+    void OfferSupport(int iv, int v, int from, int at)
     {
         if (Mat[from] == Chemistry.Air) return;
         bool root = from % Z < grounded[from / Z];
-        float available = root ? Math.Max(0, CompressionCapacity(from) - Pressure[from]) : support[from];
+        float available = root ? Math.Max(0, CompressionCapacity(from) - Pressure[from]) : hSupport[at];
         float capacity = BondCapacity(v, from);
         float score = Math.Min(available, capacity) - OwnLoad(v);
-        if (score <= support[v]) return;
-        support[v] = score; parent[v] = from; edgeCapacity[v] = capacity;
-        supportQueue.Enqueue(v, (-score, v));
+        if (score <= hSupport[iv]) return;
+        hSupport[iv] = score; hParent[iv] = from; hParentAt[iv] = root ? -1 : at; hEdge[iv] = capacity;
+        supportQueue.Enqueue(iv, (-score, v));
+    }
+
+    void EnsureHanging(int n)
+    {
+        if (hSupport.Length >= n) return;
+        int size = Math.Max(n, hSupport.Length * 2);
+        hParent = new int[size]; hParentAt = new int[size];
+        hSupport = new float[size]; hCarried = new float[size]; hEdge = new float[size];
     }
 
     void ActivateHanging(int v)
@@ -194,21 +211,19 @@ public sealed partial class World
             for (int k = 0; k < a.Cells; k++)
             {
                 int c = FootCell(a, k), level = k == 0 ? a.Z : WalkLevel(c, a.Z);
-                int v = c * Z + Math.Max(0, level - 1);
-                nextBodyLoad.TryGetValue(v, out float load);
-                nextBodyLoad[v] = load + weight;
+                nextBodyLoad.Add(c * Z + Math.Max(0, level - 1), weight);
             }
         }
         // A body's weight matters where it can tip the balance: on a roof or ledge, or when the change
         // is a noticeable share of what the floor block can bear. Small shifts on solid ground wait for
         // the next real change of that column (the stored loads are always current).
-        foreach (var old in bodyLoad)
+        foreach (int v in bodyLoad.Keys)
         {
-            nextBodyLoad.TryGetValue(old.Key, out float load);
-            if (load != old.Value && LoadMatters(old.Key, load - old.Value)) { structuralDirty.Add(old.Key / Z); DirtBy[2]++; }
+            float load = nextBodyLoad.Get(v), was = bodyLoad.Get(v);
+            if (load != was && LoadMatters(v, load - was)) { structuralDirty.Add(v / Z); DirtBy[2]++; }
         }
-        foreach (var current in nextBodyLoad)
-            if (!bodyLoad.ContainsKey(current.Key) && LoadMatters(current.Key, current.Value)) { structuralDirty.Add(current.Key / Z); DirtBy[2]++; }
+        foreach (int v in nextBodyLoad.Keys)
+            if (!bodyLoad.Contains(v) && LoadMatters(v, nextBodyLoad.Get(v))) { structuralDirty.Add(v / Z); DirtBy[2]++; }
         (bodyLoad, nextBodyLoad) = (nextBodyLoad, bodyLoad);
         Lap(3);
         if (structuralDirty.Count == 0) return;
@@ -219,46 +234,51 @@ public sealed partial class World
         failures.Clear(); supportOrder.Clear(); supportQueue.Clear(); rootLoad.Clear();
         // Every reachable block gets its best path, even one that cannot bear it (negative residual):
         // its weight must land somewhere, so an overload shows as a failing edge on that path.
-        foreach (int v in activeHanging) { support[v] = float.NegativeInfinity; carried[v] = OwnLoad(v); parent[v] = -1; }
+        var hanging = activeHanging.Items;
+        int count = hanging.Count;
+        EnsureHanging(count);
+        for (int i = 0; i < count; i++) { hSupport[i] = float.NegativeInfinity; hCarried[i] = OwnLoad(hanging[i]); hParent[i] = hParentAt[i] = -1; }
         // Seed only from the ground; then grow support outwards through face contacts.
-        foreach (int v in activeHanging)
+        for (int i = 0; i < count; i++)
         {
-            int c = v / Z, z = v % Z;
+            int v = hanging[i], c = v / Z, z = v % Z;
             for (int d = 0; d < 4; d++)
             {
                 int n = nb[c * 4 + d];
-                if (n != c && z < grounded[n]) OfferSupport(v, n * Z + z);
+                if (n != c && z < grounded[n]) OfferSupport(i, v, n * Z + z, -1);
             }
-            if (z > 0 && z - 1 < grounded[c]) OfferSupport(v, v - 1);
+            if (z > 0 && z - 1 < grounded[c]) OfferSupport(i, v, v - 1, -1);
         }
-        while (supportQueue.TryDequeue(out int v, out var priority))
+        while (supportQueue.TryDequeue(out int iv, out var priority))
         {
-            if (-priority.Item1 != support[v]) continue;
-            supportOrder.Add(v);
-            int c = v / Z, z = v % Z;
+            if (-priority.Item1 != hSupport[iv]) continue;
+            supportOrder.Add(iv);
+            int v = hanging[iv], c = v / Z, z = v % Z, j;
             for (int d = 0; d < 4; d++)
             {
                 int n = nb[c * 4 + d] * Z + z;
-                if (n != v && activeHanging.Contains(n)) OfferSupport(n, v);
+                if (n != v && (j = activeHanging.IndexOf(n)) >= 0) OfferSupport(j, n, v, iv);
             }
-            if (z > 0 && activeHanging.Contains(v - 1)) OfferSupport(v - 1, v);
-            if (z + 1 < Z && activeHanging.Contains(v + 1)) OfferSupport(v + 1, v);
+            if (z > 0 && (j = activeHanging.IndexOf(v - 1)) >= 0) OfferSupport(j, v - 1, v, iv);
+            if (z + 1 < Z && (j = activeHanging.IndexOf(v + 1)) >= 0) OfferSupport(j, v + 1, v, iv);
         }
         overloaded.Clear();
         for (int k = supportOrder.Count - 1; k >= 0; k--)
         {
-            int v = supportOrder[k], p = parent[v];
-            if (carried[v] > edgeCapacity[v]) overloaded.Add(v);
-            if (activeHanging.Contains(p)) carried[p] += carried[v];
-            else { rootLoad.TryGetValue(p, out float load); rootLoad[p] = load + carried[v]; }
-            Pressure[v] = carried[v];
+            int iv = supportOrder[k], v = hanging[iv], p = hParent[iv], ip = hParentAt[iv];
+            if (hCarried[iv] > hEdge[iv]) overloaded.Add(v);
+            if (ip >= 0) hCarried[ip] += hCarried[iv];
+            else { rootLoad.TryGetValue(p, out float load); rootLoad[p] = load + hCarried[iv]; }
+            Pressure[v] = hCarried[iv];
+            annealable[v / Z] = true;
         }
         RouteOverloads();
-        foreach (int v in activeHanging) if (parent[v] < 0) failures.Add(v);
+        for (int i = 0; i < count; i++) if (hParent[i] < 0) failures.Add(hanging[i]);
         foreach (var root in rootLoad)
         {
             // Carry horizontal loads down the grounded pier as well, so anchors cannot bear infinity.
             for (int z = root.Key % Z; z >= 2; z--) Pressure[root.Key / Z * Z + z] += root.Value;
+            annealable[root.Key / Z] = true;
         }
         foreach (int c in dirtyWork)
             for (int z = 2; z < grounded[c]; z++)
@@ -320,32 +340,32 @@ public sealed partial class World
         foreach (int v in overloaded) if (failed.Add(v)) rerouted.Enqueue(v);
         while (rerouted.TryDequeue(out int v))
         {
-            int below = v - 1, z = v % Z;
+            int below = v - 1, z = v % Z, iv = activeHanging.IndexOf(v), ib = activeHanging.IndexOf(below);
             // Falls, is crushed, or the block under it is not hanging (grounded rock bears it).
-            if (z <= 2 || !IsSolid(v / Z, z - 1) || Crushes(v) || !activeHanging.Contains(below)
-                || parent[below] < 0)
+            if (z <= 2 || !IsSolid(v / Z, z - 1) || Crushes(v) || ib < 0 || hParent[ib] < 0)
             {
                 failures.Add(v);
                 continue;
             }
-            if (parent[v] == below)
+            if (hParent[iv] == below)
             {
                 // Its weight already rests on the block below, which cannot bear it in compression.
                 if (failed.Add(below)) rerouted.Enqueue(below);
                 continue;
             }
-            float load = carried[v];
-            for (int n = below; ; n = parent[n])
+            float load = hCarried[iv];
+            for (int n = below, i = ib; ; )
             {
                 if (n == v) { if (failed.Add(below)) rerouted.Enqueue(below); break; }   // it hung from the broken block
-                carried[n] += load; Pressure[n] = carried[n];
-                if (carried[n] > edgeCapacity[n] && failed.Add(n)) rerouted.Enqueue(n);
-                int p = parent[n];
-                if (!activeHanging.Contains(p))
+                hCarried[i] += load; Pressure[n] = hCarried[i];
+                if (hCarried[i] > hEdge[i] && failed.Add(n)) rerouted.Enqueue(n);
+                int p = hParent[i], ip = hParentAt[i];
+                if (ip < 0)
                 {
                     rootLoad.TryGetValue(p, out float r); rootLoad[p] = r + load;
                     break;
                 }
+                n = p; i = ip;
             }
         }
     }
@@ -397,5 +417,95 @@ public sealed partial class World
         Height[c] = Math.Max(Height[c], targetZ + 1);
         TrimColumn(from / Z);
         TerrainChanged(c); TerrainChanged(from / Z);
+    }
+
+    // Body weight per floor voxel. Nearly every occupied cell has bodies on one floor only: that one
+    // lives in per-cell arrays, any other floor of the same cell in a small dictionary. Keys keep the
+    // order of first use.
+    sealed class LoadMap
+    {
+        readonly float[] value = new float[N];
+        readonly int[] level = InitLevels();
+        readonly Dictionary<int, float> extra = new();
+        public readonly List<int> Keys = new();
+        static int[] InitLevels() { var l = new int[N]; Array.Fill(l, -1); return l; }
+
+        public void Add(int v, float w)
+        {
+            int c = v / Z, z = v % Z;
+            if (level[c] == z) { value[c] += w; return; }
+            if (level[c] < 0) { level[c] = z; value[c] = 0f + w; Keys.Add(v); return; }
+            if (!extra.TryGetValue(v, out float load)) Keys.Add(v);
+            extra[v] = load + w;
+        }
+
+        public bool Contains(int v) => level[v / Z] == v % Z || extra.ContainsKey(v);
+        public float Get(int v)
+        {
+            int c = v / Z;
+            if (level[c] == v % Z) return value[c];
+            return extra.Count > 0 && extra.TryGetValue(v, out float load) ? load : 0;
+        }
+
+        public void Clear()
+        {
+            foreach (int v in Keys) level[v / Z] = -1;
+            extra.Clear();
+            Keys.Clear();
+        }
+    }
+
+    // A set of voxels that remembers the order they were added in and gives each its index (open
+    // addressing; clearing costs only what was added).
+    sealed class VoxelSet
+    {
+        int[] keys = Empty(1024), index = new int[1024];
+        int mask = 1023;
+        readonly List<int> slots = new();
+        public readonly List<int> Items = new();
+        static int[] Empty(int n) { var k = new int[n]; Array.Fill(k, -1); return k; }
+        public int Count => Items.Count;
+
+        int Slot(int v)
+        {
+            int s = (int)((uint)v * 0x9E3779B1u >> 7) & mask;
+            while (keys[s] != -1 && keys[s] != v) s = (s + 1) & mask;
+            return s;
+        }
+
+        public bool Add(int v)
+        {
+            if ((Items.Count + 1) * 2 > keys.Length) Grow();
+            int s = Slot(v);
+            if (keys[s] == v) return false;
+            keys[s] = v; index[s] = Items.Count;
+            Items.Add(v); slots.Add(s);
+            return true;
+        }
+
+        public int IndexOf(int v)
+        {
+            int s = Slot(v);
+            return keys[s] == v ? index[s] : -1;
+        }
+
+        public bool Contains(int v) => IndexOf(v) >= 0;
+
+        void Grow()
+        {
+            keys = Empty(keys.Length * 2); index = new int[keys.Length]; mask = keys.Length - 1;
+            slots.Clear();
+            for (int i = 0; i < Items.Count; i++)
+            {
+                int s = Slot(Items[i]);
+                keys[s] = Items[i]; index[s] = i; slots.Add(s);
+            }
+        }
+
+        public void Clear()
+        {
+            foreach (int s in slots) keys[s] = -1;
+            slots.Clear(); Items.Clear();
+        }
     }
 }

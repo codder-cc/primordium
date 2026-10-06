@@ -36,6 +36,8 @@ public sealed partial class World
     {
         Interlocked.Increment(ref TerrainVersion);
         ColumnVersion[cell]++;
+        topologyVersion[cell]++;
+        annealable[cell] = true;
         int floor = 0;
         while (floor < Height[cell] && IsSolid(cell, floor)) floor++;
         HasCavity[cell] = floor < Height[cell];
