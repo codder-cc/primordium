@@ -46,6 +46,7 @@ public sealed partial class World
         public long IdCount;
         public readonly long[] Ev = new long[(int)EvKind.Count];
         public readonly long[] Mined = new long[6], MinedCat = new long[6];   // molecules torn out of rock by grade (with a protein's help)
+        public readonly long[] GeoMined = new long[8];                        // ... by depth (World.Geochem, observation)
         public readonly List<int> Dirty = new();
         public readonly List<Agent> Newborn = new();
         public readonly List<Discovery> Firsts = new();
@@ -176,11 +177,12 @@ public sealed partial class World
         }
 
         Firsts = new Discovery[Chem.MatCount];
+        InitGeochem();   // depth biases from the seed (a loaded world then takes its own, World.Geochem)
         for (int s = 0; s < Chemistry.S; s++) C[s] = new Qty[N];
         if (!generate) return;
 
         Array.Fill(topologySeen, -1);
-        GenerateTerrain();
+        GenerateTerrain();   // (after InitGeochem above: the strata follow the depth profile)
         for (int k = 0; k < P.VentCount; k++) SpawnVent();
         RecomputeVentFields();
 
@@ -348,6 +350,7 @@ public sealed partial class World
         {
             for (int k = 0; k < ctx.Ev.Length; k++) { Ev[k] += ctx.Ev[k]; ctx.Ev[k] = 0; }
             for (int k = 0; k < 6; k++) { Mined[k] += ctx.Mined[k]; MinedCat[k] += ctx.MinedCat[k]; ctx.Mined[k] = ctx.MinedCat[k] = 0; }
+            for (int k = 0; k < GeoMined.Length; k++) { GeoMined[k] += ctx.GeoMined[k]; ctx.GeoMined[k] = 0; }
         }
         Lap(DAlarms);
         Prof[2] += prof.Elapsed.TotalMilliseconds;

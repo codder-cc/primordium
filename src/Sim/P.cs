@@ -130,6 +130,17 @@ public static class P
     public static float InitLitter = 0.5f;       // primordial remains: this many times the top block's makeup (never renewed)
     public static int VentCount = 4;
 
+    // Geochemistry (World.Geochem): each element has a depth bias from the seed, DepthBias ∈ [−1, 1].
+    // A stratum `d` levels under the top of its column favours a molecule by
+    // exp(Σ_e DepthBias[e]·share_e·(d − DepthMid)/DepthScale) (share_e: the element's share of its
+    // atoms) on top of the old choice by bond strength; at least one element of every world is deep
+    // (bias ≥ DeepElementMin). Veins: where a correlated 3-D field exceeds VeinThreshold (higher near
+    // the surface: rare outcrops), the deep element's molecules are favoured another e^VeinGain-fold.
+    // Vents bring up what the deep interior is made of. GeoProfile 0: strata and vents as before.
+    // All read when a world is made (a world keeps what it was made with, see World.Geochem).
+    public static int GeoProfile = 1;
+    public static float DepthScale = 4f, DepthMid = 12f, DeepElementMin = 0.7f, VeinThreshold = 0.72f, VeinGain = 4f;
+
     // Climate (°C): latitude/season climate + daily swing − altitude
     public static float TEquator = 29f, TPole = -16f, TDay = 12f, TLapse = 0.6f;
     public static float TRelax = 0.008f, TRelaxWater = 0.002f;   // per env step

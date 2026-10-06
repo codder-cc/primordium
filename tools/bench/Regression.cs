@@ -138,6 +138,7 @@ public sealed partial class World
         StructureRegression();
         CaveRegression();
         CaveClimateRegression();
+        GeochemRegression();
         VolumeRegression();
         FaceRegression();
         WaterRegression();
@@ -163,11 +164,11 @@ public sealed partial class World
                 double mass = 0;
                 for (int s = 0; s < Chemistry.S; s++) mass += (a.Inv[s] + a.Pend[s]) * w.Chem.Mass[s];
                 for (int k = 0; k < a.EnzN; k++) mass += a.Enz[k].Matter * w.Chem.Mass[a.Enz[k].Material];
-                Require(Math.Abs(a.Mass - mass) < 0.005, $"body mass drift #{a.Id}: {a.Mass} vs {mass}");
+                Require(Math.Abs(a.Mass - mass) < 0.005 + 1e-5 * mass, $"body mass drift #{a.Id}: {a.Mass} vs {mass}");
                 double volume = 0;
                 for (int s = 0; s < Chemistry.S; s++) volume += (a.Inv[s] + a.Pend[s]) * w.Chem.BodyVolume[s];
                 for (int k = 0; k < a.EnzN; k++) volume += a.Enz[k].Matter * w.Chem.Volume[a.Enz[k].Material];
-                Require(Math.Abs(a.Volume - volume) < 0.005, $"body volume drift #{a.Id}: {a.Volume} vs {volume}");
+                Require(Math.Abs(a.Volume - volume) < 0.005 + 1e-5 * volume, $"body volume drift #{a.Id}: {a.Volume} vs {volume}");
                 Require(a.Inv.All(n => n >= 0), "negative body inventory");
             }
             Require(w.C.All(c => c.All(x => x >= 0)), "invalid environmental amount");

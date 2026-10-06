@@ -51,7 +51,7 @@ public static class Batch
     }
 
     public static readonly string[] RunColumns = new[] { "seed", "rep", "tick", "pop", "births", "deaths", "ms_tick", "mean_temp" }
-        .Concat(EvoMetrics.Names.Skip(1)).Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames).Concat(new[] { "energy_drift", "energy_tolerance", "atom_drift", "hash", "params" }).ToArray();
+        .Concat(EvoMetrics.Names.Skip(1)).Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames).Concat(World.GeoNames).Concat(new[] { "energy_drift", "energy_tolerance", "atom_drift", "hash", "params" }).ToArray();
 
     // One run: a world, checkpoints written as rows of the runs CSV.
     public static void RunOne(string[] args, ParamHook.Laws laws)
@@ -100,6 +100,7 @@ public static class Batch
             row.AddRange(new[] { w.CollapsedBlocks, w.CrushedBlocks, w.DeathsBuried, w.Metamorphoses, w.Sediments }.Select(x => x.ToString()));
             var cave = w.CaveCensus();
             row.AddRange(cave.Select(x => F(x)));
+            row.AddRange(w.GeoCensus().Select(x => F(x)));
             row.AddRange(new[] { drift, tol, atomDrift, w.StateHash().ToString("x16"), paramText });
             o.WriteLine(string.Join(",", row));
             o.Flush();
@@ -319,7 +320,7 @@ public static class Batch
     // ---- summary ----
 
     static readonly string[] SummaryColumns = new[] { "pop", "births", "deaths", "ms_tick", "mean_temp" }.Concat(EvoMetrics.Names.Skip(1))
-        .Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames).Concat(new[] { "energy_drift", "atom_drift" }).ToArray();
+        .Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames).Concat(World.GeoNames).Concat(new[] { "energy_drift", "atom_drift" }).ToArray();
 
     static void WriteSummary(RunTable t, string path, double extinct, double boom)
     {
@@ -457,7 +458,7 @@ public static class Batch
         }
         foreach (int c in Checkpoints(common)) Line($"pop @{c}", c, "pop", "F0");
         foreach (var col in new[] { "mean_temp", "ms_tick", "births", "deaths" }) Line($"{col} @{end}", end, col, "F2");
-        foreach (var col in EvoMetrics.Names.Skip(1).Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames)) Line($"{col} @{end}", end, col, "F3");
+        foreach (var col in EvoMetrics.Names.Skip(1).Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames).Concat(World.GeoNames)) Line($"{col} @{end}", end, col, "F3");
         PrintAligned(lines);
         int Count(RunTable t, Func<double, bool> f, bool max) => (max ? t.RunMax("pop") : t.RunLast("pop")).Count(f);
         int na = a.Runs.Count, nb = b.Runs.Count;

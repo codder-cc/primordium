@@ -14,6 +14,7 @@ using Primordium;
 if (Array.IndexOf(args, "--self-test") >= 0) { World.RunRegression(); return; }
 if (Array.IndexOf(args, "--self-test-infra") >= 0) { World.RunInfraRegression(); return; }
 if (Array.IndexOf(args, "--self-test-cave") >= 0) { World.CaveClimateRegression(); return; }   // just the cave climate test (also in --self-test)
+if (Array.IndexOf(args, "--self-test-geochem") >= 0) { World.GeochemRegression(); return; }   // just the geochemistry test (also in --self-test)
 if (Array.IndexOf(args, "--list-params") >= 0)
 {
     foreach (var p in ParamRegistry.All)
@@ -38,6 +39,8 @@ if (Array.IndexOf(args, "--long-test") >= 0) { World.RunLongTest(args); return; 
 if (Array.IndexOf(args, "--batch") >= 0) { Batch.Run(args, laws); return; }
 if (Array.IndexOf(args, "--compare") >= 0) { Batch.Compare(args); return; }
 if (Array.IndexOf(args, "--run-one") >= 0) { Batch.RunOne(args, laws); return; }
+if (Array.IndexOf(args, "--geochem") >= 0) { World.GeochemReport(args); return; }   // strata by depth, what bodies need (World.Geochem)
+if (Array.IndexOf(args, "--invade") >= 0) { World.InvasionProbe(args); return; }   // plant a design, follow its lineage (World.Geochem probe)
 if (Array.IndexOf(args, "--bites") >= 0) { foreach (int s in new[] { 1, 2, 3, 5, 7 }) World.BiteReport(s); return; }
 if (Array.IndexOf(args, "--strength") >= 0) { foreach (int s in new[] { 1, 2, 3, 7 }) { Console.WriteLine($"seed {s}"); World.StrengthReport(s); } return; }
 
@@ -209,6 +212,8 @@ for (int t = 1; t <= ticks; t++)
                       " | firsts: " + string.Join(", ", w.Firsts.Where(f => f != null).Select(f => $"{w.Chem.MatName[f.Mat]} day {f.Tick / P.DayLen} #{f.Lineage}")));
     {
         var cv = w.CaveCensus();
+        var gc = w.GeoCensus();
+        Console.WriteLine($"   geochem: deep element {w.Chem.ElementName[w.DeepElement]} ({(w.GeoOn ? "profile on" : "profile off")}) {gc[0]:P1} of body atoms | mined {gc[1]:F0}, depth mean {gc[2]:F2}, from 3+ levels {gc[3]:P1}, deep element {gc[4]:P1} of mined atoms; by depth 0/1-2/3-9/10-29/30+ {string.Join("/", w.GeoMined.Take(5))}");
         Console.WriteLine($"   caves: under a roof {cv[0]:P1} (≥3 blocks {cv[1]:P1}), depth mean {cv[2]:F2} max {cv[3]:F0}, voids {cv[4]:F0} | polar {cv[5]:P0} of bodies, {cv[6]:P0} of them under a roof | mountains {cv[7]:P0}, {cv[8]:P0} under a roof");
     }
     Console.WriteLine($"   divide tries {w.DivFail[0]}: no energy {w.DivFail[1]}, small body {w.DivFail[2]}, no room {w.DivFail[3]}, uneven {w.DivFail[4]}");

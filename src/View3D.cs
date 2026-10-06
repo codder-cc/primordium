@@ -21,7 +21,7 @@ public partial class View3D : Node3D
     public SimFrame Frame;           // set by Main every frame
     public float[] Stress;           // per column, for the load overlay (filled by the simulation thread)
     public Camera3D Cam { get; private set; }
-    public int Overlay;              // 0 surface, 1 temperature, 2 light, 3 remains, 4 density, 5 deaths, 6 body heat, 7 load, 8 lattice, 9 temperature at depth, FirstSpecies+s one species
+    public int Overlay;              // 0 surface, 1 temperature, 2 light, 3 remains, 4 density, 5 deaths, 6 body heat, 7 load, 8 lattice, 9 temperature at depth, 10 deep element, FirstSpecies+s one species
     public int ColorMode;            // see ColorModeNames
     public bool Lighting = true;
     public int Slice = -1;           // cut-away: rows south of this are hidden
@@ -30,8 +30,8 @@ public partial class View3D : Node3D
     public float PanelWidth = 440;   // logical px covered by the HUD panel on the right
 
     public int OverlayCount => FirstSpecies + Chemistry.S;
-    public const int FirstSpecies = 10;  // overlays before the per-molecule ones
-    public const int DepthTempOverlay = 9;
+    public const int FirstSpecies = 11;  // overlays before the per-molecule ones
+    public const int DepthTempOverlay = 9, DeepOverlay = 10;
 
     // Timings of the steps of Refresh, ms summed since Main last cleared them (perf overlay).
     public const int ProfSlots = 10;
@@ -120,7 +120,7 @@ void fragment() {
         float f = fract(wpos.y / bh);
         col *= 0.84 + 0.16 * smoothstep(0.0, 0.1, f);
         col *= abs(nrm.x) > 0.5 ? 0.78 : 0.6;
-        // The cut with the temperature-at-depth overlay: every level in its own colour, unshaded.
+        // The cut with the temperature-at-depth or deep-element overlay: every level in its own colour, unshaded.
         if (y == cut_row) col = texelFetch(cut_temp, ivec2(x, z), 0).rgb * (0.92 + 0.08 * smoothstep(0.0, 0.1, f));
     }
     // cust.a is sunlight: day shows true colours, night fades into a dim blue.
@@ -407,6 +407,11 @@ void fragment() {
                 c = TempColour(w.Tmean[i]);
                 lit = 1;
                 break;
+            case DeepOverlay:
+                // The deep element's share of the atoms in the top block (World.Geochem); the cut shows every level.
+                c = h > 0 ? DeepColour(w.VoxelDeepShare(i * Z + h - 1), false) : DeepColour(0, false);
+                lit = 1;
+                break;
             case 2:
                 c = new Rgb(0.08f, 0.08f, 0.14f).Lerp(new Rgb(1f, 0.92f, 0.55f), MathF.Min(1, w.Light[i]));
                 lit = 1;
@@ -452,6 +457,14 @@ void fragment() {
         tc < 0 ? new Rgb(0.95f, 0.95f, 0.97f).Lerp(new Rgb(0.12f, 0.25f, 0.8f), Math.Min(1, -tc / 25f))
                : new Rgb(0.95f, 0.95f, 0.97f).Lerp(new Rgb(0.95f, 0.2f, 0.08f), Math.Min(1, tc / 40f));
 
+    // The deep element's share of a block's atoms: slate (none) · ochre · bright gold (all); a vein paler.
+    public static Rgb DeepColour(float share, bool vein)
+    {
+        var c = new Rgb(0.16f, 0.18f, 0.24f).Lerp(new Rgb(0.85f, 0.55f, 0.12f), Math.Min(1, share * 1.6f));
+        if (share > 0.62f) c = c.Lerp(new Rgb(1f, 0.93f, 0.45f), Math.Min(1, (share - 0.62f) / 0.38f));
+        return vein ? c.Lerp(new Rgb(0.95f, 0.98f, 1f), 0.35f) : c;
+    }
+
     // "Temperature at depth" in the cut: the face of the cut row shows, level by level, what a body there
     // would feel (World.LocalTemp: the surface's, or under a roof the cave climate by its cover). Read
     // only; refreshed a few times a second.
@@ -462,14 +475,49 @@ void fragment() {
     double cutAt;
     void FillCutTemperature()
     {
-        bool on = Overlay == DepthTempOverlay && Slice >= 0;
+        bool on = (Overlay == DepthTempOverlay || Overlay == DeepOverlay) && Slice >= 0;
         int row = on ? Slice : -1;
         double now = Time.GetTicksMsec() / 1000.0;
-        if (row == cutShownRow && (!on || now - cutAt < 0.25)) return;
+        if (row == cutShownRow && Overlay == cutShownOverlay && (!on || now - cutAt < 0.25)) return;
         if (row != cutShownRow) terrainMat.SetShaderParameter("cut_row", row);
-        cutShownRow = row;
+        cutShownRow = row; cutShownOverlay = Overlay;
         if (!on) return;
         cutAt = now;
+        var w = World;
+        if (Overlay == DeepOverlay) FillCutDeep(row);
+        else FillCutTemp(row);
+        if (cutImg == null)
+        {
+            cutImg = Image.CreateFromData(W, Z, false, Image.Format.Rgb8, cutBytes);
+            cutTex = ImageTexture.CreateFromImage(cutImg);
+            terrainMat.SetShaderParameter("cut_temp", cutTex);
+        }
+        else
+        {
+            cutImg.SetData(W, Z, false, Image.Format.Rgb8, cutBytes);
+            cutTex.Update(cutImg);
+        }
+    }
+    int cutShownOverlay = -1;
+
+    // The deep element by level along the cut: its share of each block's atoms, veins paler (World.Geochem).
+    void FillCutDeep(int row)
+    {
+        var w = World;
+        for (int x = 0; x < W; x++)
+        {
+            int c = row * W + x, h = Math.Clamp(w.Height[c], 0, Z), h0 = w.Height0[c];
+            for (int z = 0; z < Z; z++)
+            {
+                var col = z < h ? DeepColour(w.VoxelDeepShare(c * Z + z), w.GeoOn && z >= 2 && z < h0 && w.InVein(x, row, z, h0 - 1 - z)) : new Rgb(0.1f, 0.1f, 0.12f);
+                int o = (z * W + x) * 3;
+                cutBytes[o] = (byte)(col.R * 255); cutBytes[o + 1] = (byte)(col.G * 255); cutBytes[o + 2] = (byte)(col.B * 255);
+            }
+        }
+    }
+
+    void FillCutTemp(int row)
+    {
         var w = World;
         bool law = World.CaveLaw;
         for (int x = 0; x < W; x++)
@@ -489,17 +537,6 @@ void fragment() {
                 int o = (z * W + x) * 3;
                 cutBytes[o] = (byte)(col.R * 255); cutBytes[o + 1] = (byte)(col.G * 255); cutBytes[o + 2] = (byte)(col.B * 255);
             }
-        }
-        if (cutImg == null)
-        {
-            cutImg = Image.CreateFromData(W, Z, false, Image.Format.Rgb8, cutBytes);
-            cutTex = ImageTexture.CreateFromImage(cutImg);
-            terrainMat.SetShaderParameter("cut_temp", cutTex);
-        }
-        else
-        {
-            cutImg.SetData(W, Z, false, Image.Format.Rgb8, cutBytes);
-            cutTex.Update(cutImg);
         }
     }
 

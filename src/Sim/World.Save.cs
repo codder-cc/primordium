@@ -36,7 +36,8 @@ public sealed partial class World
     // empty; before version 4 a float is converted exactly from 2⁻⁹ molecule up, smaller ones to the
     // nearest 2⁻³². Writing an older version rounds the amounts back to float.
     // 5: the cave climate block (SyncCaveClimate) after the chronicle.
-    public const int SaveVersion = 5, OldestSaveVersion = 1;
+    // 6: the geochemistry block (SyncGeochem, World.Geochem) after the cave climate.
+    public const int SaveVersion = 6, OldestSaveVersion = 1;
     static readonly byte[] SaveMagic = Encoding.ASCII.GetBytes("PRIMSAVE");
     const int EndMarker = 0x21444E45;   // "END!"
 
@@ -245,6 +246,7 @@ public sealed partial class World
         if (s.Version >= 2) SyncEnergy(s);
         if (s.Version >= 3) SyncChronicle(s);   // a separate block (see the comment there)
         SyncCaveClimate(s);                       // version 5: its own block after the chronicle
+        SyncGeochem(s);                           // version 6: its own block after the cave climate
     }
 
     // ---- cave climate (save version 5, World.Cave) ----
