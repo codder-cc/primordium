@@ -103,15 +103,33 @@ public sealed partial class World
     readonly List<Agent> newborn = new();
 
     public World(int seed, int initialPop = -1, bool abiogenesis = true)   // initialPop < 0: P.InitialPop
+        : this(new WorldSettings { Seed = seed, InitialPop = initialPop, Abiogenesis = abiogenesis }) { }
+
+    // A new world from its settings: a preset of laws in the settings replaces the current laws
+    // (defaults for those it does not name) before anything is generated.
+    public World(WorldSettings settings) : this(settings, TileSize, true) { }
+
+    public readonly WorldSettings Settings;                 // what it was created with (a copy)
+    public readonly Dictionary<string, double> InitialLaws;  // every law's value when it was created
+    public readonly int TileSide;                            // the nominal tile side it was built with (World.TileSize then)
+
+    // generate = false: only the skeleton (tile layout, chemistry, neighbours) for a world that is
+    // about to be filled from a save file.
+    World(WorldSettings settings, int tileSize, bool generate)
     {
-        if (initialPop < 0) initialPop = P.InitialPop;
+        Settings = settings = settings?.Clone() ?? new WorldSettings();
+        if (generate && settings.Params != null) ParamRegistry.Restore(settings.Params);
+        InitialLaws = ParamRegistry.Snapshot();
+        int seed = settings.Seed, initialPop = settings.InitialPop < 0 ? P.InitialPop : settings.InitialPop;
         Seed = seed;
-        Abiogenesis = abiogenesis;
+        Abiogenesis = settings.Abiogenesis;
+        AutoStrikes = settings.Strikes;
         mainRng = new SimRng(seed);
         // Same-colour tiles must be SafeGap cells apart: Period − 1 tiles of at least the nominal size
         // between them. x wraps, so the number of tile columns is a multiple of the period; the widths
         // are spread evenly (some a cell wider).
-        int size = Math.Clamp(TileSize, 8, 64);
+        TileSide = tileSize;
+        int size = Math.Clamp(tileSize, 8, 64);
         PeriodX = PeriodY = 1 + (SafeGap + size - 1) / size;
         TilesX = Math.Max(PeriodX, W / size / PeriodX * PeriodX);
         TilesY = Math.Max(1, H / size);
@@ -142,14 +160,16 @@ public sealed partial class World
             }
         }
 
+        Firsts = new Discovery[Chem.MatCount];
+        for (int s = 0; s < Chemistry.S; s++) C[s] = new float[N];
+        if (!generate) return;
+
         Array.Fill(topologySeen, -1);
         GenerateTerrain();
         for (int k = 0; k < P.VentCount; k++) SpawnVent();
         RecomputeVentFields();
 
-        Firsts = new Discovery[Chem.MatCount];
         // The primordial remains: a one-time endowment of loose matter like the ground it lies on.
-        for (int s = 0; s < Chemistry.S; s++) C[s] = new float[N];
         for (int i = 0; i < N; i++)
         {
             int top = TopMat(i);   // a handful of loose grains of the ground it lies on
