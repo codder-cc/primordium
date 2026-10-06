@@ -55,7 +55,24 @@ var changedLaws = ParamRegistry.Changes();
 if (changedLaws.Count > 0) Console.WriteLine("laws: " + string.Join(", ", changedLaws.Select(kv => $"{kv.Key}={kv.Value.ToString(inv0)}")));
 
 World.ProfileOps = Array.IndexOf(args, "--ops") >= 0;
-var w = new World(seed, pop, abio);
+// --load path: continue a saved world (its laws come with it) instead of making a new one;
+// --save path: save the world at the end of the run.
+string loadPath = null, savePath = null;
+for (int i = 0; i < args.Length - 1; i++)
+{
+    if (args[i] == "--load") loadPath = args[i + 1];
+    if (args[i] == "--save") savePath = args[i + 1];
+}
+World w;
+if (loadPath != null)
+{
+    var loadWatch = Stopwatch.StartNew();
+    w = World.Load(loadPath);
+    Console.WriteLine($"loaded {loadPath} in {loadWatch.ElapsedMilliseconds} ms: seed {w.Seed}, tick {w.Tick}, {w.Agents.Count} bodies, hash {w.StateHash():x16}");
+    // The save brings its own laws; --param given on the command line still overrides them (recorded as a change).
+    foreach (var (name, value) in changedLaws) w.SetParam(name, value);
+}
+else w = new World(seed, pop, abio);
 bool audit = Array.IndexOf(args, "--audit") >= 0;
 var originalAtoms = audit ? w.ElementBudget() : null;
 if (Array.IndexOf(args, "--probe") >= 0)
@@ -178,6 +195,12 @@ for (int t = 1; t <= ticks; t++)
     prevWall = sw.Elapsed.TotalMilliseconds;   // the reports above are not the simulation's time
 }
 log?.Dispose();
+if (savePath != null)
+{
+    var saveWatch = Stopwatch.StartNew();
+    w.Save(savePath, $"bench seed {w.Seed}");
+    Console.WriteLine($"saved {savePath} at tick {w.Tick}: {new System.IO.FileInfo(savePath).Length / 1048576.0:F1} MB, {w.Agents.Count} bodies, {saveWatch.ElapsedMilliseconds} ms, hash {w.StateHash():x16}");
+}
 {
     // What the tall columns are made of, and whether anybody lives on them.
     int towers = 0, looseTowers = 0, inhabited = 0, spikes = 0, depositTops = 0;

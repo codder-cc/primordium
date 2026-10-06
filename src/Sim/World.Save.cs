@@ -1,0 +1,488 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.IO.Compression;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text;
+
+namespace Primordium;
+
+// What a save file says about itself without being decompressed (for a list of saves).
+public sealed class SaveInfo
+{
+    public int Version;
+    public long Tick;
+    public int Seed, Population;
+    public DateTime SavedAt;   // UTC
+    public string Note;
+    public override string ToString() => $"seed {Seed}, tick {Tick}, {Population} bodies, {SavedAt:yyyy-MM-dd HH:mm} UTC{(string.IsNullOrEmpty(Note) ? "" : " — " + Note)}";
+}
+
+// Saving and loading the whole world. A loaded world continues exactly where the saved one was:
+// stepping it gives the same states (StateHash) as stepping the original would. The file is a
+// small uncompressed header (SaveInfo) and a Brotli body: settings and laws, every counter, the random
+// streams (main and per tile), dense cell fields, the voxel arrays up to the highest non-empty level
+// of each column, mixtures and burials (sorted by voxel), the support solver's pending state, vents,
+// strikes, discoveries and every body with all its fields (links, targets and cell lists by index).
+// The chemistry is regenerated from the seed. Numbers are written little-endian as in memory.
+// Call between ticks only (on the thread that steps the world).
+public sealed partial class World
+{
+    public const int SaveVersion = 1;
+    static readonly byte[] SaveMagic = Encoding.ASCII.GetBytes("PRIMSAVE");
+    const int EndMarker = 0x21444E45;   // "END!"
+
+    // Symmetric field visitor: the same list of fields is walked for writing and for reading, so the
+    // two cannot disagree on order.
+    abstract class Sync
+    {
+        public abstract bool Reading { get; }
+        public abstract void V(ref int x);
+        public abstract void V(ref long x);
+        public abstract void V(ref float x);
+        public abstract void V(ref double x);
+        public abstract void V(ref bool x);
+        public abstract void V(ref byte x);
+        public abstract void V(ref string x);
+        public abstract void A<T>(Span<T> data) where T : unmanaged;
+        public abstract void Rng(SimRng r);
+    }
+
+    sealed class Writer : Sync
+    {
+        readonly BinaryWriter w;
+        public Writer(BinaryWriter w) => this.w = w;
+        public BinaryWriter Out => w;
+        public override bool Reading => false;
+        public override void V(ref int x) => w.Write(x);
+        public override void V(ref long x) => w.Write(x);
+        public override void V(ref float x) => w.Write(x);
+        public override void V(ref double x) => w.Write(x);
+        public override void V(ref bool x) => w.Write(x);
+        public override void V(ref byte x) => w.Write(x);
+        public override void V(ref string x) { w.Write(x != null); if (x != null) w.Write(x); }
+        public override void A<T>(Span<T> data) => w.Write(MemoryMarshal.AsBytes(data));
+        public override void Rng(SimRng r) => r.Write(w);
+    }
+
+    sealed class Reader : Sync
+    {
+        readonly BinaryReader r;
+        public Reader(BinaryReader r) => this.r = r;
+        public override bool Reading => true;
+        public override void V(ref int x) => x = r.ReadInt32();
+        public override void V(ref long x) => x = r.ReadInt64();
+        public override void V(ref float x) => x = r.ReadSingle();
+        public override void V(ref double x) => x = r.ReadDouble();
+        public override void V(ref bool x) => x = r.ReadBoolean();
+        public override void V(ref byte x) => x = r.ReadByte();
+        public override void V(ref string x) => x = r.ReadBoolean() ? r.ReadString() : null;
+        public override void A<T>(Span<T> data)
+        {
+            var bytes = MemoryMarshal.AsBytes(data);
+            while (bytes.Length > 0)
+            {
+                int n = r.Read(bytes);
+                if (n <= 0) throw new EndOfStreamException("save file ends early");
+                bytes = bytes[n..];
+            }
+        }
+        public override void Rng(SimRng rng) => rng.Read(r);
+    }
+
+    // ---- public API ----
+
+    // Saves to a file (written next to it first, then moved into place: a crash never leaves half a save).
+    public void Save(string path, string note = null)
+    {
+        var full = Path.GetFullPath(path);
+        var dir = Path.GetDirectoryName(full);
+        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+        var tmpPath = full + ".tmp";
+        using (var f = new FileStream(tmpPath, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16))
+            Save(f, note);
+        File.Move(tmpPath, full, true);
+    }
+
+    public void Save(Stream stream, string note = null, CompressionLevel level = CompressionLevel.Fastest)
+    {
+        if (!BitConverter.IsLittleEndian) throw new PlatformNotSupportedException("save files are little-endian");
+        using (var head = new BinaryWriter(stream, Encoding.UTF8, true))
+        {
+            head.Write(SaveMagic);
+            head.Write(SaveVersion);
+            head.Write(Tick);
+            head.Write(Seed);
+            head.Write(Agents.Count(a => !a.Dead));
+            head.Write(DateTime.UtcNow.Ticks);
+            head.Write(note ?? "");
+        }
+        using var z = new BrotliStream(stream, level, true);   // Fastest: quality 1, ~3× faster than GZip and smaller
+        using var buf = new BufferedStream(z, 1 << 20);
+        using var bw = new BinaryWriter(buf, Encoding.UTF8, true);
+        SyncAll(new Writer(bw));
+        bw.Write(EndMarker);
+    }
+
+    public static SaveInfo ReadInfo(string path)
+    {
+        using var f = File.OpenRead(path);
+        return ReadInfo(f);
+    }
+
+    public static SaveInfo ReadInfo(Stream stream)
+    {
+        using var r = new BinaryReader(stream, Encoding.UTF8, true);
+        var magic = r.ReadBytes(SaveMagic.Length);
+        if (!magic.AsSpan().SequenceEqual(SaveMagic)) throw new InvalidDataException("not a Primordium save file");
+        var info = new SaveInfo { Version = r.ReadInt32() };
+        if (info.Version != SaveVersion) throw new InvalidDataException($"save format {info.Version}, this build reads {SaveVersion}");
+        info.Tick = r.ReadInt64();
+        info.Seed = r.ReadInt32();
+        info.Population = r.ReadInt32();
+        info.SavedAt = new DateTime(r.ReadInt64(), DateTimeKind.Utc);
+        info.Note = r.ReadString();
+        return info;
+    }
+
+    // Loads a world. The laws (P) become those saved with it — they are shared by the process.
+    public static World Load(string path)
+    {
+        using var f = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16);
+        return Load(f);
+    }
+
+    public static World Load(Stream stream)
+    {
+        ReadInfo(stream);
+        using var z = new BrotliStream(stream, CompressionMode.Decompress, true);
+        using var buf = new BufferedStream(z, 1 << 20);
+        using var br = new BinaryReader(buf, Encoding.UTF8, true);
+        var reader = new Reader(br);
+        // Settings, laws and tile layout come first: the skeleton is built with them.
+        string settingsJson = null;
+        reader.V(ref settingsJson);
+        var settings = WorldSettings.FromJson(settingsJson);
+        var initialLaws = ReadLaws(br);
+        var laws = ReadLaws(br);
+        int tileSide = br.ReadInt32();
+        ParamRegistry.Restore(laws);
+        var w = new World(settings, tileSide, false) { InitialLaws = initialLaws };
+        w.SyncBody(reader);
+        if (br.ReadInt32() != EndMarker) throw new InvalidDataException("save file is damaged (no end marker)");
+        return w;
+    }
+
+    static void WriteLaws(BinaryWriter w, Dictionary<string, double> laws)
+    {
+        w.Write(laws.Count);
+        foreach (var (name, value) in laws.OrderBy(kv => kv.Key, StringComparer.Ordinal)) { w.Write(name); w.Write(value); }
+    }
+
+    static Dictionary<string, double> ReadLaws(BinaryReader r)
+    {
+        int n = r.ReadInt32();
+        var d = new Dictionary<string, double>(n);
+        for (int k = 0; k < n; k++) { string name = r.ReadString(); d[name] = r.ReadDouble(); }
+        return d;
+    }
+
+    // ---- the whole state ----
+
+    void SyncAll(Writer s)
+    {
+        string settingsJson = Settings.ToJson();
+        s.V(ref settingsJson);
+        var bw = s.Out;
+        WriteLaws(bw, InitialLaws);
+        WriteLaws(bw, ParamRegistry.Snapshot());
+        bw.Write(TileSide);
+        SyncBody(s);
+    }
+
+    void SyncBody(Sync s)
+    {
+        SyncLawLog(s);
+        SyncScalars(s);
+        SyncRandom(s);
+        SyncCells(s);
+        SyncVoxels(s);
+        SyncSparse(s);
+        SyncStructure(s);
+        SyncLists(s);
+        SyncAgents(s);
+    }
+
+    void SyncLawLog(Sync s)
+    {
+        int n = ParamLog.Count;
+        s.V(ref n);
+        if (s.Reading) { ParamLog.Clear(); for (int k = 0; k < n; k++) ParamLog.Add(default); }
+        for (int k = 0; k < n; k++)
+        {
+            var c = ParamLog[k];
+            s.V(ref c.Tick); s.V(ref c.Name); s.V(ref c.Value);
+            ParamLog[k] = c;
+        }
+    }
+
+    void SyncScalars(Sync s)
+    {
+        s.V(ref Tick); s.V(ref SunX); s.V(ref SunDecl);
+        s.V(ref Births); s.V(ref Spawns); s.V(ref MaxGen);
+        s.V(ref DeathsStarve); s.V(ref DeathsKilled); s.V(ref DeathsBroken); s.V(ref DeathsClimate); s.V(ref DeathsBuried); s.V(ref DeathsHand);
+        s.V(ref Abiogenesis); s.V(ref AutoStrikes);
+        s.A<long>(Ev); s.A<long>(Mined); s.A<long>(MinedCat);
+        s.V(ref nextId); s.V(ref nextStructure);
+        s.V(ref Moisture); s.V(ref RainSum); s.V(ref StrikeCount); s.V(ref nextStrike);
+        s.V(ref nextVentAt); s.V(ref flowDirty); s.V(ref ventsDirty); s.V(ref TerrainVersion);
+        s.V(ref overhangTotal); s.V(ref CollapsedBlocks); s.V(ref CrushedBlocks); s.V(ref StructureVisits);
+        s.V(ref LastStructureColumns); s.V(ref LastStructureVoxels);
+        s.A<long>(DirtBy); s.A<long>(BuriedBy);
+        s.V(ref Sediments); s.V(ref Metamorphoses); s.V(ref Pushed);
+        s.A<long>(DivFail);
+        s.A<double>(InteriorInput); s.A<double>(HandInput); s.V(ref HandEnergy); s.V(ref DesignSpawns);
+    }
+
+    void SyncRandom(Sync s)
+    {
+        s.Rng(mainRng);
+        int tiles = Tiles;
+        s.V(ref tiles);
+        if (tiles != Tiles) throw new InvalidDataException($"tile layout differs: {tiles} tiles saved, {Tiles} built");
+        foreach (var c in ctxs) { s.Rng(c.Rng); s.V(ref c.IdCount); }
+    }
+
+    void SyncCells(Sync s)
+    {
+        s.A<int>(Height);
+        for (int k = 0; k < Chemistry.S; k++) s.A<float>(C[k]);
+        s.A<float>(Light); s.A<float>(Temp); s.A<float>(Ash); s.A<float>(Photon); s.A<float>(ventHeat);
+        s.A<float>(Water); s.A<float>(Ice); s.A<float>(Snow); s.A<float>(Cloud); s.A<float>(Rain);
+        s.A<float>(heatIn); s.A<float>(BodyHeat); s.A<float>(DeathMap); s.A<float>(LooseVolume);
+        s.A<float>(climRow); s.A<float>(diffW);
+        s.A<float>(Bite); s.A<long>(biteAt); s.A<int>(biteFace); s.A<byte>(biteMat);
+        s.A<int>(overhangCount); s.A<int>(grounded); s.A<int>(topologySeen); s.A<int>(topologyVersion);
+        s.A<bool>(HasCavity); s.A<bool>(annealable); s.A<int>(ColumnVersion);
+        s.A<long>(lastAttack);
+    }
+
+    // Voxel arrays up to each column's highest level holding anything (most of the planet is air).
+    void SyncVoxels(Sync s)
+    {
+        var extent = new byte[N];
+        if (!s.Reading)
+            for (int c = 0; c < N; c++)
+            {
+                int top = Z;
+                while (top > 0)
+                {
+                    int v = c * Z + top - 1;
+                    if (Mat[v] != 0 || Units[v] != 0 || Order[v] != 0 || Pressure[v] != 0 || overhang[v]) break;
+                    top--;
+                }
+                extent[c] = (byte)top;
+            }
+        s.A<byte>(extent);
+        void Column<T>(T[] data) where T : unmanaged
+        {
+            for (int c = 0; c < N; c++) if (extent[c] > 0) s.A(data.AsSpan(c * Z, extent[c]));
+        }
+        Column(Mat); Column(Units); Column(Order); Column(overhang); Column(Pressure);
+    }
+
+    // Mixtures and burials, by voxel; the per-voxel flags follow from them.
+    void SyncSparse(Sync s)
+    {
+        var mixKeys = s.Reading ? null : mixtures.Keys.OrderBy(k => k).ToArray();
+        int n = mixKeys?.Length ?? 0;
+        s.V(ref n);
+        for (int k = 0; k < n; k++)
+        {
+            int v = s.Reading ? 0 : mixKeys[k];
+            s.V(ref v);
+            var counts = s.Reading ? new ushort[Chemistry.S] : mixtures[v];
+            s.A<ushort>(counts);
+            if (s.Reading) SetMixture(v, counts);
+        }
+        var burialKeys = s.Reading ? null : Buried.Keys.OrderBy(k => k).ToArray();
+        n = burialKeys?.Length ?? 0;
+        s.V(ref n);
+        for (int k = 0; k < n; k++)
+        {
+            int v = s.Reading ? 0 : burialKeys[k];
+            s.V(ref v);
+            var b = s.Reading ? new Burial() : Buried[v];
+            s.A<float>(b.Matter); s.V(ref b.Order); s.V(ref b.Pressure);
+            if (s.Reading) { Buried[v] = b; sparse[v] |= HasBurial; }
+        }
+    }
+
+    // What the support solver carries from one pass to the next: columns waiting for it and the
+    // body loads it last saw (in the order they were first added).
+    void SyncStructure(Sync s)
+    {
+        var dirty = s.Reading ? null : structuralDirty.OrderBy(c => c).ToArray();
+        int n = dirty?.Length ?? 0;
+        s.V(ref n);
+        for (int k = 0; k < n; k++)
+        {
+            int c = s.Reading ? 0 : dirty[k];
+            s.V(ref c);
+            if (s.Reading) structuralDirty.Add(c);
+        }
+        n = bodyLoad.Keys.Count;
+        s.V(ref n);
+        if (s.Reading) bodyLoad.Clear();
+        var keys = s.Reading ? null : bodyLoad.Keys.ToArray();
+        for (int k = 0; k < n; k++)
+        {
+            int v = s.Reading ? 0 : keys[k];
+            float load = s.Reading ? 0 : bodyLoad.Get(v);
+            s.V(ref v); s.V(ref load);
+            if (s.Reading) bodyLoad.Add(v, load);
+        }
+    }
+
+    void SyncLists(Sync s)
+    {
+        int n = Vents.Count;
+        s.V(ref n);
+        if (s.Reading) { Vents.Clear(); for (int k = 0; k < n; k++) Vents.Add(new Vent()); }
+        foreach (var v in Vents)
+        {
+            s.V(ref v.X); s.V(ref v.Y); s.V(ref v.High); s.V(ref v.Mid); s.V(ref v.Toxic);
+            s.V(ref v.Strength); s.V(ref v.Life); s.V(ref v.Age);
+        }
+        n = Strikes.Count;
+        s.V(ref n);
+        if (s.Reading) { Strikes.Clear(); for (int k = 0; k < n; k++) Strikes.Add(new Strike()); }
+        foreach (var t in Strikes) { s.V(ref t.X); s.V(ref t.Y); s.V(ref t.R); s.V(ref t.T); }
+        for (int m = 0; m < Firsts.Length; m++)
+        {
+            bool has = Firsts[m] != null;
+            s.V(ref has);
+            if (!has) continue;
+            var f = s.Reading ? new Discovery() : Firsts[m];
+            s.V(ref f.Tick); s.V(ref f.Lineage); s.V(ref f.AgentId); s.V(ref f.Mat);
+            Firsts[m] = f;
+        }
+        n = DesignedLineages.Count;
+        s.V(ref n);
+        var lineages = s.Reading ? null : DesignedLineages.OrderBy(kv => kv.Key).ToArray();
+        if (s.Reading) DesignedLineages.Clear();
+        for (int k = 0; k < n; k++)
+        {
+            long lin = s.Reading ? 0 : lineages[k].Key;
+            string name = s.Reading ? null : lineages[k].Value;
+            s.V(ref lin); s.V(ref name);
+            if (s.Reading) DesignedLineages[lin] = name;
+        }
+    }
+
+    // Bodies in the order of Agents (the order matters: it is the order of every sequential pass).
+    // References between bodies are indices into that list; a reference to a body that is no longer
+    // in it (dead and removed) is equivalent to none and saved as -1.
+    void SyncAgents(Sync s)
+    {
+        int n = Agents.Count;
+        s.V(ref n);
+        Dictionary<Agent, int> index = null;
+        if (!s.Reading)
+        {
+            index = new Dictionary<Agent, int>(n, ReferenceEqualityComparer.Instance);
+            for (int k = 0; k < n; k++) index[Agents[k]] = k;
+        }
+        int Ref(Agent a) => a != null && index.TryGetValue(a, out int k) ? k : -1;
+        var refs = new int[n * 3];   // reading: Target, LinkWant, NextInCell per body, resolved at the end
+        var links = new int[n][];
+        if (s.Reading) Agents.Clear();
+        for (int k = 0; k < n; k++)
+        {
+            Agent a;
+            long id = 0, lineage = 0; int gen = 0;
+            byte[] g = null, prot = null;
+            if (!s.Reading) { a = Agents[k]; id = a.Id; lineage = a.Lineage; gen = a.Gen; g = a.G; prot = a.Prot; }
+            else a = null;
+            s.V(ref id); s.V(ref lineage); s.V(ref gen);
+            int len = g?.Length ?? 0;
+            s.V(ref len);
+            if (s.Reading) { g = new byte[len]; prot = new byte[len]; }
+            s.A<byte>(g); s.A<byte>(prot);
+            if (s.Reading) { a = new Agent(id, lineage, gen, g, prot); Agents.Add(a); }
+            SyncAgent(s, a);
+            int target = s.Reading ? 0 : Ref(a.Target), want = s.Reading ? 0 : Ref(a.LinkWant), next = s.Reading ? 0 : Ref(a.NextInCell);
+            s.V(ref target); s.V(ref want); s.V(ref next);
+            refs[k * 3] = target; refs[k * 3 + 1] = want; refs[k * 3 + 2] = next;
+            int nl = a.Links.Count;
+            s.V(ref nl);
+            links[k] = new int[nl];
+            for (int j = 0; j < nl; j++)
+            {
+                int l = s.Reading ? 0 : Ref(a.Links[j]);
+                s.V(ref l);
+                links[k][j] = l;
+            }
+        }
+        // Cell lists, big bodies' cells and alarms, by index.
+        var head = new int[N]; var big = new int[N]; var attacker = new int[N];
+        if (!s.Reading)
+            for (int c = 0; c < N; c++) { head[c] = Ref(Head[c]); big[c] = Ref(Big[c]); attacker[c] = Ref(lastAttacker[c]); }
+        s.A<int>(head); s.A<int>(big); s.A<int>(attacker);
+        if (!s.Reading) return;
+        Agent At(int k) => k >= 0 && k < n ? Agents[k] : (k < 0 ? null : throw new InvalidDataException($"body reference {k} out of range"));
+        for (int k = 0; k < n; k++)
+        {
+            var a = Agents[k];
+            a.Target = At(refs[k * 3]); a.LinkWant = At(refs[k * 3 + 1]); a.NextInCell = At(refs[k * 3 + 2]);
+            if (a.NextInCell != null) a.NextInCell.PrevInCell = a;
+            foreach (int l in links[k]) if (l >= 0) a.Links.Add(Agents[l]);
+        }
+        for (int c = 0; c < N; c++)
+        {
+            Head[c] = At(head[c]); Big[c] = At(big[c]); lastAttacker[c] = At(attacker[c]);
+            int count = 0;
+            for (var a = Head[c]; a != null; a = a.NextInCell) count++;
+            Count[c] = count;
+        }
+    }
+
+    static void SyncAgent(Sync s, Agent a)
+    {
+        s.V(ref a.Designed);
+        s.V(ref a.X); s.V(ref a.Y); s.V(ref a.Z); s.V(ref a.Vx); s.V(ref a.Vy); s.V(ref a.Lift); s.V(ref a.Vz);
+        s.V(ref a.Energy); s.V(ref a.Tb); s.V(ref a.Age); s.V(ref a.Dead); s.V(ref a.Cause);
+        s.A<int>(a.Inv); s.A<float>(a.Pend);
+        s.V(ref a.InvTotal); s.V(ref a.Unstable); s.V(ref a.Solids); s.V(ref a.Mass); s.V(ref a.Volume);
+        int cap = a.Enz.Length;
+        s.V(ref cap);
+        if (s.Reading) a.Enz = new Enzyme[Math.Max(1, cap)];
+        s.V(ref a.EnzN);
+        for (int k = 0; k < a.EnzN; k++)
+        {
+            ref var e = ref a.Enz[k];
+            s.V(ref e.Kind); s.V(ref e.A); s.V(ref e.B); s.V(ref e.Topt); s.V(ref e.Eff); s.V(ref e.Amount);
+            s.V(ref e.Material); s.V(ref e.Matter); s.V(ref e.Src);
+        }
+        s.V(ref a.Ip); s.V(ref a.Sp); s.V(ref a.Cp); s.V(ref a.Signal); s.V(ref a.LastCycles);
+        s.A<int>(a.Stack); s.A<int>(a.Mem); s.A<int>(a.Calls);
+        s.V(ref a.MateTick); s.V(ref a.LinkTick);
+        s.V(ref a.Hue); s.V(ref a.Sat); s.V(ref a.Val); s.V(ref a.Sx); s.V(ref a.Sy); s.V(ref a.Sz); s.V(ref a.Shape);
+        s.V(ref a.Act); s.V(ref a.ActDir); s.V(ref a.ActTick);
+        s.V(ref a.GainPhoto); s.V(ref a.GainChem); s.V(ref a.GainMine);
+        s.V(ref a.TickPhoto); s.V(ref a.TickChem); s.V(ref a.TickMine); s.V(ref a.TickAttack); s.V(ref a.TickHeat);
+        s.V(ref a.HeatHeld);
+        s.V(ref a.EmaPhoto); s.V(ref a.EmaChem); s.V(ref a.EmaMine); s.V(ref a.EmaAttack);
+        s.V(ref a.NChildren); s.V(ref a.NMates); s.V(ref a.NMoves); s.V(ref a.NAttacks); s.V(ref a.NKills); s.V(ref a.NInjects);
+        s.V(ref a.NInfected); s.V(ref a.NCuts); s.V(ref a.NDigs); s.V(ref a.NPiles); s.V(ref a.NMines); s.V(ref a.NTakes);
+        s.V(ref a.NGives); s.V(ref a.NGrows); s.V(ref a.NStruck); s.V(ref a.NExpress);
+        s.V(ref a.NPhoto); s.V(ref a.NSplit); s.V(ref a.NBind); s.V(ref a.NIntake); s.V(ref a.NExpel);
+        s.V(ref a.TickGot); s.V(ref a.EmaGot); s.V(ref a.EmaUpkeep); s.V(ref a.EmaHarm); s.V(ref a.EmaNet);
+        s.A<int>(a.OpCount);
+        s.V(ref a.LifeStart); s.V(ref a.LifeGot); s.V(ref a.LifeKids); s.V(ref a.LifeUpkeep); s.V(ref a.LifeHarm);
+        s.V(ref a.LifeSpill); s.V(ref a.LifeUphill); s.V(ref a.LifeMineCost);
+        s.A<int>(a.NMinedTier); s.V(ref a.NCatMined); s.V(ref a.LastMeal);
+        s.V(ref a.Cells); s.A<int>(a.Foot);
+    }
+}

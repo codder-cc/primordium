@@ -78,6 +78,7 @@ public sealed partial class World
     {
         ParamRegistry.ResetDefaults();   // P is shared by every world in the process
         LawsRegression();
+        SaveLoadRegression();
         for (int seed = -3; seed <= 100; seed++)
         {
             var ch = new Chemistry(seed);

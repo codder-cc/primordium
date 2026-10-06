@@ -28,6 +28,7 @@ public sealed class Agent
     bool tagReady;
     public ulong Hash { get; private set; }
 
+    public bool Designed;   // made by the player from a CreatureDesign (World.SpawnDesign), not born or self-assembled
     public int X, Y, Z; // Z is the free voxel occupied above a floor, also inside caves
     public float Vx, Vy;
     public float Lift, Vz;   // in water: how high above its floor it swims (blocks), and how fast it rises

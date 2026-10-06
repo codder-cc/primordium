@@ -110,7 +110,7 @@ public sealed partial class World
     public World(WorldSettings settings) : this(settings, TileSize, true) { }
 
     public readonly WorldSettings Settings;                 // what it was created with (a copy)
-    public readonly Dictionary<string, double> InitialLaws;  // every law's value when it was created
+    public Dictionary<string, double> InitialLaws { get; private set; }   // every law's value when it was created
     public readonly int TileSide;                            // the nominal tile side it was built with (World.TileSize then)
 
     // generate = false: only the skeleton (tile layout, chemistry, neighbours) for a world that is

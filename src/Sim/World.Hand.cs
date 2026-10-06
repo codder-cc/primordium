@@ -10,6 +10,7 @@ namespace Primordium;
 public sealed partial class World
 {
     public readonly double[] HandInput = new double[Chemistry.ElementCount];   // atoms brought (+) or taken (−) by the hand
+    public double HandEnergy;   // energy the player injected from outside (designed creatures brought in with energy)
     public int DeathsHand;
 
     // The cells of a round brush around (cx, cy) with radius r, each with a weight falling from 1 at
