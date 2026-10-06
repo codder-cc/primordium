@@ -216,11 +216,11 @@ public sealed partial class World
     {
         "climate", "cellchem", "settle/weather", "body loads", "region", "solve", "failures", "settle agents",
         "sky", "diffusion", "erosion", "vents", "strikes", "metamorph", "tile sort", "agents", "merge", "relieve", "alarms", "abiogenesis", "burials",
-        "chronicle",
+        "chronicle", "evolution",
     };
     public const int DClimate = 0, DCellChem = 1, DSettle = 2, DBodyLoads = 3, DRegion = 4, DSolve = 5, DFailures = 6, DSettleAgents = 7,
         DSky = 8, DDiffusion = 9, DErosion = 10, DVents = 11, DStrikes = 12, DMetamorph = 13, DTileSort = 14, DAgents = 15, DMerge = 16,
-        DRelieve = 17, DAlarms = 18, DAbio = 19, DBurials = 20, DChronicle = 21;
+        DRelieve = 17, DAlarms = 18, DAbio = 19, DBurials = 20, DChronicle = 21, DEvolution = 22;
     // Per colour of the agent phase: summed tile work and the slowest tile, ms (AgentBusy/AgentLongest are their totals).
     public readonly double[] PhaseBusy, PhaseLongest;
     public long AgentAllocated;   // bytes allocated during the agent phase (approximate: all threads)
@@ -326,6 +326,7 @@ public sealed partial class World
             foreach (int c in ctx.Dirty) structuralDirty.Add(c);
             ctx.Dirty.Clear();
             Agents.AddRange(ctx.Newborn);
+            evoBorn.AddRange(ctx.Newborn);   // World.Evolution: births in merge order
             ctx.Newborn.Clear();
             foreach (var f in ctx.Firsts) Firsts[f.Mat] ??= f;
             ctx.Firsts.Clear();
@@ -333,12 +334,15 @@ public sealed partial class World
             ctx.Unlinks.Clear();
         }
         Agents.AddRange(newborn);
+        evoBorn.AddRange(newborn);
         newborn.Clear();
         ChronDiscoveries(firstsBefore);   // (its finder may have died this tick: still listed)
         RemoveDead();
         Lap(DMerge);
         if (Tick % SurveyEvery == 0) ChronSurvey();
         Lap(DChronicle);
+        EvoTick();   // the neutral shadow, the family tree, the progress tracks (observation only)
+        Lap(DEvolution);
         Relieve();   // overfull floors let their smallest bodies go (see World.Volume)
         Lap(DRelieve);
         int alarmStart = (int)(Tick % 16) * (N / 16);
@@ -369,7 +373,9 @@ public sealed partial class World
             for (int i = chunk * 4096, end = Math.Min(total, i + 4096); i < end; i++) agentTile[i] = everyone[i].Dead ? 1 : 0;
         });
         int alive = 0;
-        for (int i = 0; i < total; i++) if (agentTile[i] == 0) everyone[alive++] = everyone[i];
+        for (int i = 0; i < total; i++)
+            if (agentTile[i] == 0) everyone[alive++] = everyone[i];
+            else evoDied.Add(everyone[i]);   // World.Evolution: deaths in the order of Agents
         if (alive < total)
         {
             Agents.Clear();

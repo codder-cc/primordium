@@ -35,8 +35,10 @@ public sealed partial class World
     // load (balances are differences, so they close from there); before version 3 the chronicle starts
     // empty; before version 4 a float is converted exactly from 2⁻⁹ molecule up, smaller ones to the
     // nearest 2⁻³². Writing an older version rounds the amounts back to float.
-    // 5: the cave climate block (SyncCaveClimate) after the chronicle.
-    public const int SaveVersion = 5, OldestSaveVersion = 1;
+    // 5: the cave climate block (SyncCaveClimate) after the chronicle. 6: the course of evolution
+    // (SyncEvolution, World.Evolution.cs) after the cave climate; before it the progress history starts
+    // empty and every living body joins the shadows and the family tree as a founder.
+    public const int SaveVersion = 6, OldestSaveVersion = 1;
     static readonly byte[] SaveMagic = Encoding.ASCII.GetBytes("PRIMSAVE");
     const int EndMarker = 0x21444E45;   // "END!"
 
@@ -245,6 +247,8 @@ public sealed partial class World
         if (s.Version >= 2) SyncEnergy(s);
         if (s.Version >= 3) SyncChronicle(s);   // a separate block (see the comment there)
         SyncCaveClimate(s);                       // version 5: its own block after the chronicle
+        if (s.Version >= 6) SyncEvolution(s);   // version 6: its own block, last (World.Evolution.cs)
+        else if (s.Reading) EvoRegisterAll();
     }
 
     // ---- cave climate (save version 5, World.Cave) ----

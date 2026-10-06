@@ -421,6 +421,7 @@ public sealed partial class World
         (cur?.Newborn ?? newborn).Add(child);
         parent.NChildren++;
         ChronBorn(parent, child, mate);
+        EvoBirth(parent, child);
         Interlocked.Increment(ref Births);
         Note(EvKind.Divide);
         for (int m = MaxGen; child.Gen > m; m = MaxGen)
@@ -544,6 +545,7 @@ public sealed partial class World
         a.Energy = a.LifeStart = energy;
         a.Z = Height[i];
         Place(a, i); Agents.Add(a); Spawns++;
+        EvoRegister(a);   // a founder: a root of the family tree
         TrackNew(a, Chronicle.WhyFounder);   // a founder of a lineage keeps a biography
         return true;
     }

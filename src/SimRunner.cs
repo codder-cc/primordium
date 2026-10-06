@@ -79,6 +79,22 @@ public sealed class ChronicleView
     }
 }
 
+// The course of evolution (World.Progress) as the game may read it on any thread: a copy of the
+// history made by the simulation thread when a new sample arrived. Sample arrays are never changed
+// after they were made, so sharing them is safe.
+public sealed class EvolutionView
+{
+    public static readonly EvolutionView Empty = new();
+    public double[][] Samples = Array.Empty<double[]>();   // oldest first (EvolutionHistory.Names)
+    public double[] Latest;                                 // the newest measurement (may not be kept in Samples)
+    public long Version = -1, Tick;
+    public int WorldGeneration, Seed, Stride = 1, Every = 200, Window = 10000;
+    public double Index;
+    public double[] Trends = Array.Empty<double>();
+    public string Verdict = "";
+    public double Mb;                                       // memory of the shadows, tree and history
+}
+
 // Runs World.Step on its own thread. The thread owns the world: everything that changes it (the hand,
 // spawning, strikes, a new pace) arrives as a command and is applied between ticks, so the trajectory
 // is the same as when the main thread stepped it. After ticks it publishes a SimFrame when the view
@@ -113,6 +129,8 @@ public sealed class SimRunner
     public volatile SimStats Stats = new();
     public volatile string Error;
     public volatile ChronicleView Chronicle = ChronicleView.Empty;   // replaced, never changed (see ChronicleView)
+    public volatile EvolutionView Evolution = EvolutionView.Empty;   // replaced, never changed (see EvolutionView)
+    long evolutionSeen = -1;
     long chronicleSeen = -1;
     double chronicleAt;
     Agent trackedSel, kidsOf;
@@ -177,6 +195,7 @@ public sealed class SimRunner
         // Before the thread starts the caller may step and read the world directly (warm-up).
         RefreshStats();
         PublishChronicle(World, true);
+        PublishEvolution(World, true);
         Publish();
         thread = new Thread(Run) { Name = "simulation", IsBackground = true };
         thread.Start();
@@ -429,6 +448,7 @@ public sealed class SimRunner
         else f.SelHistN = 0;
         FillBiography(f, w, sel);
         PublishChronicle(w, false);
+        PublishEvolution(w, false);
         Array.Copy(hist, f.Hist, histN * 5);
         f.HistN = histN;
         Array.Copy(evRate, f.EvRate, evRate.Length);
@@ -498,6 +518,22 @@ public sealed class SimRunner
         foreach (var (id, n) in c.Ancestry)
             v.Ancestry[id] = new AncestryNode { Id = n.Id, ParentId = n.ParentId, TrackedParent = n.TrackedParent, Lineage = n.Lineage, Gen = n.Gen, Born = n.Born, Died = n.Died, Cause = n.Cause, Why = n.Why };
         Chronicle = v;
+    }
+
+    // A fresh EvolutionView when a new sample of the course of evolution was taken.
+    void PublishEvolution(World w, bool force)
+    {
+        var p = w.Progress;
+        if (!force && p.Version == evolutionSeen) return;
+        evolutionSeen = p.Version;
+        var samples = p.Samples.ToArray();
+        var (index, trends) = EvolutionHistory.Index(samples, P.ProgressWindow, p.Latest);
+        Evolution = new EvolutionView
+        {
+            Samples = samples, Latest = p.Latest, Version = p.Version, Tick = w.Tick, WorldGeneration = WorldGeneration, Seed = w.Seed,
+            Stride = p.Stride, Every = P.ProgressEvery, Window = P.ProgressWindow, Index = index, Trends = trends,
+            Verdict = EvolutionHistory.Verdict(index), Mb = w.EvolutionBytes() / 1048576.0,
+        };
     }
 
     // Start a biography for a body (the player asked to watch it).
@@ -671,6 +707,7 @@ public sealed class SimRunner
         PublishDesigned(w);
         WorldGeneration++;
         PublishChronicle(w, true);
+        PublishEvolution(w, true);
         RefreshStats();
         Publish();
     }

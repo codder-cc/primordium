@@ -51,7 +51,26 @@ public static class Batch
     }
 
     public static readonly string[] RunColumns = new[] { "seed", "rep", "tick", "pop", "births", "deaths", "ms_tick", "mean_temp" }
-        .Concat(EvoMetrics.Names.Skip(1)).Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames).Concat(new[] { "energy_drift", "energy_tolerance", "atom_drift", "hash", "params" }).ToArray();
+        .Concat(EvoMetrics.Names.Skip(1)).Concat(EvolutionHistory.Names.Skip(1)).Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames).Concat(new[] { "energy_drift", "energy_tolerance", "atom_drift", "hash", "params" }).ToArray();
+
+    // The latest sample of the course of evolution (World.Evolution), without its tick; zeros before the first.
+    public static double[] ProgressRow(World w) =>
+        (w.Progress.Latest ?? new double[EvolutionHistory.Names.Length]).Skip(1).ToArray();
+
+    public static string FormatProgress(World w)
+    {
+        var v = w.Progress.Latest;
+        if (v == null) return "no sample yet";
+        double V(string n) => v[EvolutionHistory.Col(n)];
+        var (index, trends) = EvolutionHistory.Index(w.Progress.Samples, P.ProgressWindow, v);
+        return string.Create(Inv, $"@{V("tick"):F0} adaptive {V("adaptive"):F0} shadow {V("adaptive_shadow"):F0} novelty {V("novelty"):F0} (now above θ={V("theta"):F0}: {V("adaptive_now"):F0} of {V("comps"):F0}, shadow comps {V("comps_shadow"):F0}; per body {V("carry"):F1} vs {V("carry_shadow"):F1})")
+            + string.Create(Inv, $" | code {V("code_used"):F1} proteins {V("body_proteins"):F2} reactions {V("body_reactions"):F2} mass {V("body_mass"):F0} cells {V("body_cells"):F2}")
+            + string.Create(Inv, $" | niches {V("niches"):F0} diets {V("diet_div"):F2} under {V("under_share"):P0} water {V("water_share"):P0} lineages≥10 {V("lineages_big"):F0}")
+            + string.Create(Inv, $" | dom changes {V("dom_changes"):F0} spec {V("speciations"):F0} ext {V("extinctions"):F0} drift {V("dom_drift"):F0}")
+            + string.Create(Inv, $" | mrca age {V("mrca_age"):F0} pair dist {V("pair_dist"):F1} PD {V("phylo_div"):F0} taxa {V("phylo_taxa"):F0} branches {V("phylo_branches"):F0} roots {V("phylo_roots"):F0} dom depth {V("dom_depth"):F0} muts {V("dom_muts"):F0} nodes {V("phylo_nodes"):F0}")
+            + string.Create(Inv, $" | index {index:F2} ({EvolutionHistory.Verdict(index)}: {string.Join(" ", trends.Select(t => t.ToString("F2", Inv)))}) mem {w.EvolutionBytes() / 1048576.0:F1} MB")
+            + " | ms births/deaths, compact, measure, tree, bodies, pairs: " + string.Join(" ", w.EvoMs.Select(x => x.ToString("F1", Inv)));
+    }
 
     // One run: a world, checkpoints written as rows of the runs CSV.
     public static void RunOne(string[] args, ParamHook.Laws laws)
@@ -97,6 +116,7 @@ public static class Batch
             var cl = w.TakeClimate();
             var row = new List<string> { seed.ToString(), rep.ToString(), t.ToString(), w.Agents.Count.ToString(), (w.Births - births).ToString(), (w.Deaths - deaths).ToString(), F(ms), F(cl.MeanT) };
             row.AddRange(v.Skip(1).Select(x => F(x)));
+            row.AddRange(ProgressRow(w).Select(x => F(x)));
             row.AddRange(new[] { w.CollapsedBlocks, w.CrushedBlocks, w.DeathsBuried, w.Metamorphoses, w.Sediments }.Select(x => x.ToString()));
             var cave = w.CaveCensus();
             row.AddRange(cave.Select(x => F(x)));
@@ -318,7 +338,7 @@ public static class Batch
 
     // ---- summary ----
 
-    static readonly string[] SummaryColumns = new[] { "pop", "births", "deaths", "ms_tick", "mean_temp" }.Concat(EvoMetrics.Names.Skip(1))
+    static readonly string[] SummaryColumns = new[] { "pop", "births", "deaths", "ms_tick", "mean_temp" }.Concat(EvoMetrics.Names.Skip(1)).Concat(EvolutionHistory.Names.Skip(1))
         .Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames).Concat(new[] { "energy_drift", "atom_drift" }).ToArray();
 
     static void WriteSummary(RunTable t, string path, double extinct, double boom)
@@ -360,7 +380,7 @@ public static class Batch
         string Cell(double[] x, string f = "F0") => x.Length == 0 ? "-" : x.Length == 1 ? Median(x).ToString(f, Inv) : $"{Median(x).ToString(f, Inv)} [{x.Min().ToString(f, Inv)}–{x.Max().ToString(f, Inv)}]";
         var head = new List<string> { "seed" };
         head.AddRange(cps.Select(c => $"pop@{c}"));
-        head.AddRange(new[] { "extinct", "boom", "T °C", "lineages", "kin cl.", "H", "used", "gen", "useful sp.", "ms/tick" });
+        head.AddRange(new[] { "extinct", "boom", "T °C", "lineages", "kin cl.", "H", "used", "gen", "useful sp.", "novelty", "ms/tick" });
         var lines = new List<List<string>> { head };
         foreach (int s in t.Seeds)
         {
@@ -376,6 +396,7 @@ public static class Batch
             row.Add(Cell(t.At(end, "used_code", s), "F3"));
             row.Add(Cell(t.At(end, "gen_mean", s), "F1"));
             row.Add(Cell(t.At(end, "useful_specs", s)));
+            row.Add(Cell(t.At(end, "novelty", s)));
             row.Add(Median(t.Ticks.SelectMany(c => t.At(c, "ms_tick", s)).ToArray()).ToString("F2", Inv));
             lines.Add(row);
         }
@@ -393,6 +414,7 @@ public static class Batch
             row.Add(Overall(t.At(end, "used_code"), "F3"));
             row.Add(Overall(t.At(end, "gen_mean"), "F1"));
             row.Add(Overall(t.At(end, "useful_specs")));
+            row.Add(Overall(t.At(end, "novelty")));
             row.Add(Median(t.Ticks.SelectMany(c => t.At(c, "ms_tick")).ToArray()).ToString("F2", Inv));
             lines.Add(row);
             var mm = new List<string> { "all: min–max" };
@@ -457,7 +479,7 @@ public static class Batch
         }
         foreach (int c in Checkpoints(common)) Line($"pop @{c}", c, "pop", "F0");
         foreach (var col in new[] { "mean_temp", "ms_tick", "births", "deaths" }) Line($"{col} @{end}", end, col, "F2");
-        foreach (var col in EvoMetrics.Names.Skip(1).Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames)) Line($"{col} @{end}", end, col, "F3");
+        foreach (var col in EvoMetrics.Names.Skip(1).Concat(EvolutionHistory.Names.Skip(1)).Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames)) Line($"{col} @{end}", end, col, "F3");
         PrintAligned(lines);
         int Count(RunTable t, Func<double, bool> f, bool max) => (max ? t.RunMax("pop") : t.RunLast("pop")).Count(f);
         int na = a.Runs.Count, nb = b.Runs.Count;

@@ -106,6 +106,14 @@ public sealed class Agent
     public BioEntry[] Bio;           // ring of the last Chronicle.BioCap entries (only while tracked)
     public int BioN;                 // entries written in total (the newest is Bio[(BioN − 1) % cap])
 
+    // Course of evolution (World.Evolution.cs): observation only, never read by the simulation itself.
+    public ulong[] EvoComp;          // its components at birth (NeutralShadow.Components); null: not registered
+    public ulong[] EvoParentComp;    // set at birth in the agent phase, used when the birth is merged
+    public int[] EvoIds, EvoParentIds;   // its components' ids in World.Shadow (and its parent's, until merged)
+    public int Taxon = -1;           // its node in World.Phylo
+    public Agent EvoParent;          // its parent, from birth until the birth is merged (for the tree)
+    public int EvoMut;               // genome bytes changed against its parent (approximate edit size)
+
     public Agent(long id, long lineage, int gen, byte[] g, byte[] prot = null)
     {
         Id = id; Lineage = lineage; Gen = gen;

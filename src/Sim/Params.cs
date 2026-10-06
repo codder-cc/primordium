@@ -205,6 +205,8 @@ public static class ParamRegistry
         I("FossilCap", "Хроника", "Сколько окаменелостей хранить (лишние — наименее важные)", 10, 20000, 10);
         I("ChronicleTrackKids", "Хроника", "Вести биографию детей посаженных существ (1 — да)", 0, 1, 1);
         F("ChronicleCaveDays", "Хроника", "Суток под крышей для события «житель пещер»", 0.1, 50, 0.1);
+        I("ProgressEvery", "Хроника", "Тиков между замерами хода эволюции (нейтральная тень, родословная, дорожки)", 10, 100000, 10);
+        I("ProgressWindow", "Хроника", "Окно сводной подсказки хода эволюции, тиков (тренды дорожек за это время)", 1000, 1000000, 1000);
 
         var missing = typeof(P).GetFields(BindingFlags.Public | BindingFlags.Static)
             .Where(f => !f.IsLiteral && !f.IsInitOnly && !byName.ContainsKey(f.Name)).Select(f => f.Name).ToList();
