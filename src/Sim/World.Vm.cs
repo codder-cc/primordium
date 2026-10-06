@@ -21,7 +21,7 @@ public sealed partial class World
 
     static void JumpTo(Agent a, int ip, int label)
     {
-        int t = a.Labels[ip * 4 + label];
+        int t = Genome.NextLabel(a.Labels, ip, label);
         if (t >= 0) a.Ip = t + 1;
     }
 
@@ -72,7 +72,7 @@ public sealed partial class World
                 case Genome.Jnz: if (Pop(a) != 0) JumpTo(a, ip, imm); break;
                 case Genome.Call:
                     {
-                        int t = a.Labels[ip * 4 + imm];
+                        int t = Genome.NextLabel(a.Labels, ip, imm);
                         if (t < 0) break;
                         if (a.Cp == P.CallDepth) { Array.Copy(a.Calls, 1, a.Calls, 0, P.CallDepth - 1); a.Cp--; }
                         a.Calls[a.Cp++] = a.Ip;

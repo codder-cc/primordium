@@ -103,6 +103,29 @@ public sealed partial class World
             Require(Genome.SimHash(g) == ReferenceSimHash(g), "kin fingerprint changed");
         }
         Console.WriteLine("PASS kin fingerprint: identical to the reference vote on 2000 genomes");
+        // The packed label positions must answer exactly like the old per-byte table.
+        for (int k = 0; k < 3000; k++)
+        {
+            var g = new byte[rng.Next(Genome.MinLen, k < 2000 ? 300 : Genome.MaxLen + 1)];
+            rng.NextBytes(g);
+            if (k % 3 == 0) for (int i = 0; i < g.Length; i += 1 + rng.Next(12)) g[i] = (byte)(Genome.Label | rng.Next(4) << 6);
+            var table = Genome.LabelTable(g);
+            var packed = Genome.Labels(g);
+            for (int i = 0; i < g.Length; i++)
+                for (int l = 0; l < 4; l++) Require(Genome.NextLabel(packed, i, l) == table[i * 4 + l], "label lookup changed");
+        }
+        Console.WriteLine("PASS labels: packed positions answer like the per-byte table on 3000 genomes");
+        for (int k = 0; k < 20000; k++)
+        {
+            var g = new byte[rng.Next(Genome.MinLen, k < 19000 ? 400 : Genome.MaxLen + 1)];
+            var p = new byte[g.Length];
+            rng.NextBytes(g); rng.NextBytes(p);
+            int seed = rng.Next();
+            var (g1, p1) = Genome.Mutate(g, p, new Random(seed));
+            var (g2, p2) = Genome.MutateReference(g, p, new Random(seed));
+            Require(g1.AsSpan().SequenceEqual(g2) && p1.AsSpan().SequenceEqual(p2), "mutation changed");
+        }
+        Console.WriteLine("PASS mutation: buffer version equals the list version on 20000 genomes");
         MatterRegression();
         StructureRegression();
         CaveRegression();

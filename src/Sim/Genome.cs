@@ -81,7 +81,50 @@ public static class Genome
     // Copy errors: point changes, insertions, deletions (more often in long genomes), duplications. Bytes that have proven useful
     // (high protection) are copied more faithfully and resist deletion; duplicated pieces keep half
     // their protection — a working block can be copied and then tinkered with.
+    // Works in two per-thread scratch buffers (the same random draws, in the same order, as the list
+    // edits it replaced): only the child's two arrays are allocated.
+    [ThreadStatic] static byte[] scratchG, scratchP;
     public static (byte[] g, byte[] p) Mutate(byte[] src, byte[] prot, Random r)
+    {
+        int n = src.Length;
+        var g = scratchG ??= new byte[MaxLen + 32];
+        var p = scratchP ??= new byte[MaxLen + 32];
+        if (n + 14 > g.Length) { g = scratchG = new byte[n + 32]; p = scratchP = new byte[n + 32]; }
+        Array.Copy(src, g, n);
+        for (int i = 0; i < n; i++) p[i] = (byte)(prot[i] * 0.9f);
+        for (int i = 0; i < n; i++)
+            if (r.NextDouble() < 0.008 * (1 - p[i] / 320.0)) { g[i] = (byte)r.Next(256); p[i] = 0; }
+        if (r.NextDouble() < 0.3 && n < MaxLen)
+        {
+            int at = r.Next(n + 1);
+            Array.Copy(g, at, g, at + 1, n - at); Array.Copy(p, at, p, at + 1, n - at);
+            g[at] = (byte)r.Next(256);
+            p[at] = 0;
+            n++;
+        }
+        if (r.NextDouble() < 0.3 + Math.Min(0.3, n / 400.0) && n > MinLen)
+        {
+            int at = r.Next(n);
+            if (r.NextDouble() >= p[at] / 300.0)
+            {
+                Array.Copy(g, at + 1, g, at, n - at - 1); Array.Copy(p, at + 1, p, at, n - at - 1);
+                n--;
+            }
+        }
+        if (r.NextDouble() < 0.05 && n < MaxLen - 12)
+        {
+            int len = Math.Min(r.Next(2, 13), n), from = r.Next(n - len + 1), to = r.Next(n + 1);
+            Span<byte> seg = stackalloc byte[len], sp = stackalloc byte[len];
+            for (int k = 0; k < len; k++) { seg[k] = g[from + k]; sp[k] = (byte)(p[from + k] / 2); }
+            Array.Copy(g, to, g, to + len, n - to); Array.Copy(p, to, p, to + len, n - to);
+            seg.CopyTo(g.AsSpan(to)); sp.CopyTo(p.AsSpan(to));
+            n += len;
+        }
+        return (g.AsSpan(0, n).ToArray(), p.AsSpan(0, n).ToArray());
+    }
+
+    // The list-based original, kept as the reference for the regression test.
+    public static (byte[] g, byte[] p) MutateReference(byte[] src, byte[] prot, Random r)
     {
         int n = src.Length;
         var g = new List<byte>(src);
@@ -127,8 +170,43 @@ public static class Genome
         return (g, p);
     }
 
-    // For every position i and label id k: where the next "label k" after i is (wrapping), or -1.
+    // Where the labels are: for each label id k (0..3) the sorted positions of "label k", packed in one
+    // array: entries [t[k], t[k+1]) after the five offsets. A few dozen bytes per genome instead of a
+    // table of 4 ints per byte; NextLabel answers the same question by binary search.
+    static readonly int[] NoLabels = { 5, 5, 5, 5, 5 };
     public static int[] Labels(byte[] g)
+    {
+        int n = g.Length;
+        Span<int> count = stackalloc int[4];
+        count.Clear();
+        for (int i = 0; i < n; i++) if ((g[i] & 63) == Label) count[g[i] >> 6]++;
+        int total = count[0] + count[1] + count[2] + count[3];
+        if (total == 0) return NoLabels;
+        var t = new int[5 + total];
+        t[0] = 5;
+        for (int k = 0; k < 4; k++) t[k + 1] = t[k] + count[k];
+        Span<int> fill = stackalloc int[4];
+        for (int k = 0; k < 4; k++) fill[k] = t[k];
+        for (int i = 0; i < n; i++) if ((g[i] & 63) == Label) t[fill[g[i] >> 6]++] = i;
+        return t;
+    }
+
+    // The next "label k" after position i (wrapping around the genome), or -1 if there is none.
+    public static int NextLabel(int[] labels, int i, int k)
+    {
+        int lo = labels[k], hi = labels[k + 1];
+        if (lo == hi) return -1;
+        int first = lo;
+        while (lo < hi)
+        {
+            int mid = (lo + hi) >> 1;
+            if (labels[mid] > i) hi = mid; else lo = mid + 1;
+        }
+        return lo < labels[k + 1] ? labels[lo] : labels[first];
+    }
+
+    // The old table (4 ints per byte), kept as the reference for the regression test.
+    public static int[] LabelTable(byte[] g)
     {
         int n = g.Length;
         var t = new int[n * 4];
