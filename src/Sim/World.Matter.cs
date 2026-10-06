@@ -33,23 +33,32 @@ public sealed partial class World
     public long Sediments, Metamorphoses;
 
     // The rock face of each cell is worked loose by everybody gnawing there — each try adds its
-    // effort/P.FaceWork, and the work stays in the face — and slowly by time (P.BiteRate a tick, up to
-    // P.BiteCap molecules' worth: weathering). A molecule comes out when the face holds
-    // e^(barrier − P.FaceBarrier), `barrier` being what holds it in its lattice after the gnawer's
-    // protein took its share (bond strength, lattice order, how badly a mix fits — VoxelBarrier):
-    // loose deposits and organic mixes give way to little work, ordered crystals of strong bonds to a
-    // great deal of it. Lazily refilled: only cells being eaten cost anything.
+    // effort/P.FaceWork, and the work stays in the face — and slowly by time (P.BiteRate a tick:
+    // weathering). A molecule comes out when the face holds e^(barrier − P.FaceBarrier) of work,
+    // `barrier` being what holds it in its lattice after the gnawer's protein took its share (bond
+    // strength, lattice order, how badly a mix fits — VoxelBarrier): loose deposits and organic mixes
+    // give way to little work, ordered crystals of strong bonds to a great deal of it.
+    // The progress is kept in molecules of the face being worked (Bite[c], usually below 1): work at
+    // one barrier can't be spent at another. Weathering keeps at most P.BiteCap molecules in reserve.
+    // The face is one voxel: when the work moves to another level or the block there is another one,
+    // the progress starts over, so loosening the surface does not pay for a gnawer deep below.
+    // Lazily refilled: only cells being eaten cost anything.
     public readonly float[] Bite = new float[N];
     readonly long[] biteAt = new long[N];
+    readonly int[] biteFace = InitFaces();
+    readonly byte[] biteMat = new byte[N];
+    static int[] InitFaces() { var f = new int[N]; Array.Fill(f, -1); return f; }
 
-    bool TakeBite(int c, float barrier, float effort = 0)
+    bool TakeBite(int v, float barrier, float effort = 0)
     {
-        float need = MathF.Exp(barrier - P.FaceBarrier), cap = P.BiteCap * need, b = Bite[c];
-        if (b < cap) b = Math.Min(cap, b + P.BiteRate * (Tick - biteAt[c]));   // weathering loosens a face only so far
-        b += effort / P.FaceWork;                                             // work always counts
+        int c = v / Z;
+        if (biteFace[c] != v || biteMat[c] != Mat[v]) { biteFace[c] = v; biteMat[c] = Mat[v]; Bite[c] = 0; biteAt[c] = Tick; }
+        float need = MathF.Exp(barrier - P.FaceBarrier), b = Bite[c];
+        if (b < P.BiteCap) b = Math.Min(P.BiteCap, b + P.BiteRate * (Tick - biteAt[c]) / need);   // weathering loosens a face only so far
+        b += effort / P.FaceWork / need;                                                       // work always counts
         biteAt[c] = Tick;
-        if (b < need) { Bite[c] = b; return false; }
-        Bite[c] = b - need;
+        if (b < 1) { Bite[c] = b; return false; }
+        Bite[c] = b - 1;
         return true;
     }   // Metamorphoses: reactions in buried matter driven by pressure
     readonly float[] cohesionCache = new float[N * Z];
@@ -199,6 +208,7 @@ public sealed partial class World
     {
         int total = 0;
         foreach (int n in counts) total += n;
+        if (total > ushort.MaxValue) throw new InvalidOperationException($"block of {total} molecules does not fit a voxel");
         compressionCache[v] = cohesionCache[v] = 0;
         Mat[v] = Chem.BuiltMat[Dominant(counts)]; Units[v] = (ushort)total; Order[v] = order;
         SetMixture(v, counts);
@@ -247,17 +257,41 @@ public sealed partial class World
         if (total <= 0) return;
         if (floorLevel >= Z - 2 || IsSolid(c, floorLevel) || IsSolid(c, floorLevel + 1))
         {
-            // Nowhere to lay it: it stays loose where it is (nothing is lost).
-            bool cave = floorLevel < Height[c];
-            var spill = cave ? BurialAt(LooseVoxel(c, floorLevel)).Matter : null;
-            for (int s = 0; s < Chemistry.S; s++)
-                if (add[s] > 0) { if (cave) spill[s] += add[s]; else C[s][c] += add[s]; }
-            if (cave) MassChanged(LooseVoxel(c, floorLevel));
+            SpillLoose(c, floorLevel, add);   // nowhere to lay it: it stays loose where it is (nothing is lost)
             return;
         }
+        // A new block takes what fills one voxel by volume; whatever is left lies loose on top of it.
+        var block = new ushort[Chemistry.S];
+        float space = P.VoxelSpace;
+        int laid = 0;
+        for (int s = 0; s < Chemistry.S; s++)
+        {
+            if (add[s] == 0) continue;
+            int fit = Math.Min(add[s], (int)(space / Chem.Volume[s]));
+            if (fit <= 0) continue;
+            block[s] = (ushort)fit; add[s] -= (ushort)fit; laid += fit;
+            space -= fit * Chem.Volume[s];
+        }
+        if (laid == 0) { SpillLoose(c, floorLevel, add); return; }
+        bool surface = floorLevel >= Height[c];
         DisplaceOccupants(c, floorLevel, rider);
-        PutMixture(c * Z + floorLevel, add, order);
-        Repose(c);
+        PutMixture(c * Z + floorLevel, block, order);
+        SpillLoose(c, floorLevel + 1, add);
+        if (surface) Repose(c);   // only a new top of the column can slide off; a cave floor is held by its walls
+    }
+
+    void SpillLoose(int c, int floorLevel, ushort[] add)
+    {
+        bool cave = floorLevel < Height[c];
+        float[] spill = null;
+        for (int s = 0; s < Chemistry.S; s++)
+        {
+            if (add[s] == 0) continue;
+            if (!cave) { C[s][c] += add[s]; continue; }
+            spill ??= BurialAt(LooseVoxel(c, floorLevel)).Matter;
+            spill[s] += add[s];
+        }
+        if (spill != null) MassChanged(LooseVoxel(c, floorLevel));
     }
 
     int TakeVoxelMolecule(int v)
@@ -317,16 +351,19 @@ public sealed partial class World
         return lying > 0 && InWater(cell, a.Z) ? lying * Exposure(a, cell, s) : lying;   // in water: only what it reaches (World.Water)
     }
 
-    void ChangeLoose(Agent a, int cell, int s, float amount)
+    void ChangeLoose(Agent a, int cell, int s, float amount) => ChangeLooseAt(cell, a.Z, s, amount);
+
+    // Loose matter on the floor at `level` of `cell` (the surface or a cave floor).
+    void ChangeLooseAt(int cell, int level, int s, float amount)
     {
-        if (a.Z >= Height[cell])
+        if (level >= Height[cell])
         {
             if (amount >= 0) { C[s][cell] += amount; return; }
             float take = Math.Min(-amount, C[s][cell]);
             C[s][cell] -= take; amount += take;
             if (amount == 0) return;
         }
-        int v = LooseVoxel(cell, a.Z);
+        int v = LooseVoxel(cell, level);
         BurialAt(v).Matter[s] += amount;
         MassChanged(v);
     }

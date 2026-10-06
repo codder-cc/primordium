@@ -52,7 +52,8 @@ public sealed partial class World
 
     // Where a body squeezed off a floor can go: a neighbouring floor at the same level or lower (the
     // lowest first), with room for it.
-    int Outlet(int cell, int level, float share, out int toLevel)
+    // `arriving`: room already promised to bodies that will move there (Relieve).
+    int Outlet(int cell, int level, float share, out int toLevel, Dictionary<int, float> arriving = null)
     {
         int best = -1;
         toLevel = -1;
@@ -61,7 +62,9 @@ public sealed partial class World
             int n = nb[cell * 4 + d];
             if (n == cell) continue;
             int lvl = WalkLevel(n, level);
-            if (lvl < 0 || lvl > level || FloorVolume(n, lvl) + share > Space(n, lvl)) continue;
+            if (lvl < 0 || lvl > level) continue;
+            float promised = arriving != null && arriving.TryGetValue(n * Z + lvl, out float p) ? p : 0;
+            if (FloorVolume(n, lvl) + promised + share > Space(n, lvl)) continue;
             if (best < 0 || lvl < toLevel) { best = n; toLevel = lvl; }
         }
         return best;
@@ -74,6 +77,9 @@ public sealed partial class World
         Place(a, to);
         a.Z = level;
         SetLift(a, to, level, was);
+        // Pushed over an edge it falls like any body (World.Move): more than a block down hurts.
+        float drop = was - Level(a);
+        if (drop > 1 && !InWater(to, level)) Dissipate(a, P.CostFall * (drop - 1) * (1 + a.Mass * P.Gravity));
         Interlocked.Increment(ref Pushed);
     }
 
@@ -95,14 +101,34 @@ public sealed partial class World
             }
             a = next;
         }
+        // A big body with a foot on that floor draws the foot back (it spreads anew when it lives).
+        var big = Big[cell];
+        if (big != null && !big.Dead && big != rider && big.Z == level) DropFoot(big, cell);
+    }
+
+    void DropFoot(Agent a, int cell)
+    {
+        for (int k = 1; k < a.Cells; k++)
+        {
+            if (a.Foot[k] != cell) continue;
+            for (int j = k; j < a.Cells - 1; j++) a.Foot[j] = a.Foot[j + 1];
+            a.Cells--;
+            if (Big[cell] == a) Big[cell] = null;
+            return;
+        }
     }
 
     // After the bodies have acted: every overfull floor lets its smallest bodies go, sideways or
     // down, until it fits (or nobody has anywhere to go — then the crowd stays squeezed and hot).
     readonly List<Agent> crowd = new();
+    readonly List<(Agent a, int from, int to, int level)> shifts = new();
+    readonly Dictionary<int, float> arriving = new();
 
+    // The moves are decided first and made afterwards, so a body pushed into a cell further on in
+    // the sweep is not pushed again in the same tick (which would drift crowds one way).
     void Relieve()
     {
+        shifts.Clear(); arriving.Clear();
         for (int c = 0; c < N; c++)
         {
             var head = Head[c];
@@ -121,13 +147,16 @@ public sealed partial class World
                 {
                     var a = crowd[k];
                     if (a.Cells > 1) continue;   // a spread-out body holds its ground
-                    int to = Outlet(c, level, Share(a), out int lvl);
+                    int to = Outlet(c, level, Share(a), out int lvl, arriving);
                     if (to < 0) continue;
-                    Shift(a, c, to, lvl);
+                    shifts.Add((a, c, to, lvl));
+                    arriving.TryGetValue(to * Z + lvl, out float p);
+                    arriving[to * Z + lvl] = p + Share(a);
                     taken -= Share(a);
                 }
                 i = j;
             }
         }
+        foreach (var (a, from, to, level) in shifts) Shift(a, from, to, level);
     }
 }

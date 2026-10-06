@@ -16,7 +16,7 @@ public partial class Main : Node
     public Census Census = new();
     public readonly List<int[]> Hist = new();                 // every 100 ticks: all, plants, eaters, miners, hunters
     public readonly long[] EvRate = new long[(int)EvKind.Count];
-    public List<(int lin, int n, int gen, Agent rep)> Lineages = new();
+    public List<(long lin, int n, int gen, Agent rep)> Lineages = new();
     public int KinCount;
     public bool ShowRecords;
     public long FastTo = -1, FastFrom;   // fast-forward: simulate without drawing until this tick

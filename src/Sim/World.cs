@@ -41,12 +41,14 @@ public sealed partial class World
     sealed class Ctx
     {
         public Random Rng;
-        public int Slot, IdCount;
+        public int Slot;
+        public long IdCount;
         public readonly long[] Ev = new long[(int)EvKind.Count];
         public readonly long[] Mined = new long[6], MinedCat = new long[6];   // molecules torn out of rock by grade (with a protein's help)
         public readonly List<int> Dirty = new();
         public readonly List<Agent> Newborn = new();
         public readonly List<Discovery> Firsts = new();
+        public readonly List<(Agent from, Agent partner)> Unlinks = new();   // links broken with a partner out of reach
         public double Busy;   // ms spent stepping this tile's agents (diagnostics)
         public readonly long[] OpTicks = new long[Genome.OpSlots + 2];   // with ProfileOps: time per instruction kind, + VM-less rest, + births
     }
@@ -85,7 +87,7 @@ public sealed partial class World
     public int FlashHead;
 
     readonly int[] nb = new int[N * 4];
-    int nextId = 1;
+    long nextId = 1;
     long nextStructure;
     public const int Tile = 32, TilesX = W / Tile, TilesY = (H + Tile - 1) / Tile, Tiles = TilesX * TilesY;
     readonly List<Agent>[] tiles = new List<Agent>[Tiles];
@@ -206,6 +208,8 @@ public sealed partial class World
             ctx.Newborn.Clear();
             foreach (var f in ctx.Firsts) Firsts[f.Mat] ??= f;
             ctx.Firsts.Clear();
+            foreach (var (from, partner) in ctx.Unlinks) from.Links.Remove(partner);
+            ctx.Unlinks.Clear();
         }
         Agents.AddRange(newborn);
         newborn.Clear();
@@ -380,8 +384,9 @@ public sealed partial class World
         else structuralDirty.Add(cell);
     }
 
-    // Ids are unique and reproducible: each stripe numbers its own newborns.
-    int NewId()
+    // Ids are unique and reproducible: each square numbers its own newborns. 64-bit: a busy square
+    // would run past int after ~52 million births.
+    long NewId()
     {
         var c = cur;
         if (c == null) return (nextId++) * (Tiles + 1) + Tiles;
@@ -420,5 +425,6 @@ public sealed partial class World
 public sealed class Discovery
 {
     public long Tick;
-    public int Lineage, AgentId, Mat;
+    public long Lineage, AgentId;
+    public int Mat;
 }

@@ -270,8 +270,9 @@ public sealed partial class World
     {
         if (de <= 0) { a.Energy += de; a.LifeUphill -= de; return; }
         a.Energy += de * (1 - P.HeatShare);
+        // The heat share warms the body; it reaches the cells only as the body cools (LiveBody).
         a.Tb += de * P.HeatShare * 6f / (5f + a.Mass);
-        a.TickHeat += de * P.HeatShare;
+        a.HeatHeld += de * P.HeatShare;
         a.GainChem += de * (1 - P.HeatShare);
         a.TickChem += de;
         a.LastMeal = a.Age;
@@ -460,7 +461,7 @@ public sealed partial class World
         int h = a.Z, v = cell * Z + h - 1;
         if (h <= 2 || Units[v] == 0) return;
         float barrier = VoxelBarrier(v);
-        if (barrier > 0.5f || !TakeBite(cell, barrier, P.CostIntake)) return;   // a gentle soak: little work into the face
+        if (barrier > 0.5f || !TakeBite(v, barrier, P.CostIntake)) return;   // a gentle soak: little work into the face
         int s = TakeVoxelMolecule(v);
         AddMol(a, s);
         a.TickMine += Chem.E[s];
@@ -478,7 +479,11 @@ public sealed partial class World
         Dissipate(a, P.CostExpel);
         if (a.Inv[s] == 0) return;
         RemoveMol(a, s);
-        ChangeLoose(a, nb[cell * 4 + d], s, 1f);
+        // It lands on the floor next door it can reach (level, a step up, or down into a hollow),
+        // never inside a wall or in the air of a cave; against a wall it drops at the body's feet.
+        int n = nb[cell * 4 + d], level = n == cell ? -1 : WalkLevel(n, a.Z);
+        if (level >= 0) ChangeLooseAt(n, level, s, 1f);
+        else ChangeLoose(a, cell, s, 1f);
         float k = Chem.Mass[s] * P.Recoil / (1f + 0.05f * a.Mass);
         a.Vx -= DX[d] * k;
         a.Vy -= DY[d] * k;
@@ -680,7 +685,8 @@ public sealed partial class World
 
     // Feeding on the ground: work a molecule out of a block — the top one underfoot (d = 4), or in a
     // neighbouring column the one level with the body (into a wall: the roof may hold or fail) or its
-    // top if it is lower. Every try costs effort, more the harder and higher-grade the rock, and the
+    // top if it is lower — at most one step down, as far as the body could walk; a pit's bottom is
+    // out of reach. Every try costs effort, more the harder and higher-grade the rock, and the
     // effort accumulates in the face (TakeBite): a firm lattice needs a great deal of it — many tries,
     // or many gnawers — and unaided hard rock costs more energy than it gives, while a matching protein
     // makes it routine. A block eaten through is gone.
@@ -693,7 +699,8 @@ public sealed partial class World
         int v = c * Z + z;
         byte m = z >= 0 ? Mat[v] : Chemistry.Air;
         int tier = Chem.MatTier[m];
-        if (z < 0 || (!OnFloor(a) && z < at - 1) || Units[v] == 0 || tier > 4) { Dissipate(a, P.CostMine); return; }
+        // Out of reach: a neighbouring floor more than one step down (as far as a body could walk).
+        if (z < 0 || z < at - 2 || (!OnFloor(a) && z < at - 1) || Units[v] == 0 || tier > 4) { Dissipate(a, P.CostMine); return; }
         float cat = Catalysis(a, m, out int slot);
         // The effort of a try grows with how hard and high-grade the rock is; solid molecules in the
         // body (teeth, a shell) do part of it, so the same effort costs the body less energy.
@@ -704,7 +711,7 @@ public sealed partial class World
         a.LifeMineCost += work;
         // The work goes into the face and stays there; a molecule comes out once enough has gathered
         // (from this body, others gnawing here, and time).
-        if (!TakeBite(c, VoxelBarrier(v) * (1 - cat), effort)) return;
+        if (!TakeBite(v, VoxelBarrier(v) * (1 - cat), effort)) return;
         int s = TakeVoxelMolecule(v);
         AddMol(a, s);
         a.TickMine += Chem.E[s];
@@ -735,7 +742,7 @@ public sealed partial class World
         int h = Height[c];
         if (h <= 2) return;
         int at = ActLevel(a), z = d == 4 ? at - 1 : IsSolid(c, at) ? at : WalkLevel(c, at) - 1;
-        if (z < 2 || (!OnFloor(a) && z < at - 1)) return;
+        if (z < 2 || z < at - 2 || (!OnFloor(a) && z < at - 1)) return;   // a floor beyond one step down is out of reach
         int v = c * Z + z;
         byte m = Mat[v];
         if (m < 2 || Chem.MatTier[m] > 4 || a.Solids == 0) return;

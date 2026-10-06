@@ -267,8 +267,8 @@ public partial class View3D
                 // Several bodies in one cell: each stands at its own spot in it, smaller when crowded.
                 int crowd = w.Count[cell];
                 float spread = crowd > 1 ? 0.3f : 0f;
-                ox += spread * (Hash32.F(a.Id, 1) * 2 - 1);
-                oz += spread * (Hash32.F(a.Id, 2) * 2 - 1);
+                ox += spread * (Hash32.F((int)a.Id, 1) * 2 - 1);
+                oz += spread * (Hash32.F((int)a.Id, 2) * 2 - 1);
                 if (crowd > 1) { float q = Math.Max(0.25f, 1.4f / MathF.Sqrt(crowd)); sx *= q; sy *= q; sz *= q; }
             }
             if (age < 0.05f || MathF.Abs(ground - a.VH) > 4) a.VH = ground;

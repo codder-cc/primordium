@@ -17,7 +17,8 @@ public struct Enzyme
 
 public sealed class Agent
 {
-    public readonly int Id, Lineage, Gen;
+    public readonly long Id, Lineage;
+    public readonly int Gen;
     public byte[] G { get; private set; }
     public byte[] Prot { get; private set; }   // per genome byte: how much it has proven useful lately
     public int[] Labels { get; private set; }
@@ -78,6 +79,7 @@ public sealed class Agent
     // What the agent actually ended up doing (inspector, colouring, census)
     public float GainPhoto, GainChem, GainMine;
     public float TickPhoto, TickChem, TickMine, TickAttack, TickHeat;
+    public float HeatHeld;   // reaction heat still in the body (it warmed Tb), shed into the cells as it cools
     public float EmaPhoto, EmaChem, EmaMine, EmaAttack;
     public int NChildren, NMates, NMoves, NAttacks, NKills, NInjects, NInfected, NCuts, NDigs, NPiles, NMines, NTakes, NGives, NGrows, NStruck, NExpress;
     public int NPhoto, NSplit, NBind, NIntake, NExpel;
@@ -91,7 +93,7 @@ public sealed class Agent
     public int NCatMined;                                        // hard-rock molecules torn out with a protein's help
     public int LastMeal = -1;                                    // its age at its last energy-releasing reaction
 
-    public Agent(int id, int lineage, int gen, byte[] g, byte[] prot = null)
+    public Agent(long id, long lineage, int gen, byte[] g, byte[] prot = null)
     {
         Id = id; Lineage = lineage; Gen = gen;
         SetGenome(g, prot ?? new byte[g.Length]);

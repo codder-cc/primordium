@@ -59,6 +59,7 @@ public static class P
     // Temperature: comfortable band; outside it harm grows exponentially.
     public const float ComfortLo = 2f, ComfortHi = 26f, TempTau = 7f;
     public const float FreezeK = 0.004f;       // energy per tick at 1·(e−1) below the band
+    public const float HarmExpMax = 20f;       // harm exponent cap: e^20·0.004 ≈ 2·10⁶ a tick is death anyway, but finite
     public const float HeatK = 0.004f;
     public const float Antifreeze = 8f;        // °C a body packed full of molecules can go below the band
 

@@ -95,7 +95,12 @@ public sealed partial class World
         SpreadBody(a, cell);
 
         // Body temperature follows the surroundings, slower for big bodies (reactions warm it up).
-        a.Tb += (FootTemp(a) - a.Tb) / (6f + 0.15f * a.Mass);
+        // The reaction heat it holds goes into its cells at the same pace: counted once, in Tb and then
+        // in the cells, not in both at once.
+        float relax = 1f / (6f + 0.15f * a.Mass);
+        a.Tb += (FootTemp(a) - a.Tb) * relax;
+        float shed = a.HeatHeld * relax;
+        a.HeatHeld -= shed; a.TickHeat += shed;
 
         // Poisons lying around seep in (from any of its cells); inside they wreck proteins.
         int pc = FootCell(a, Rng.Next(a.Cells));
@@ -122,7 +127,7 @@ public sealed partial class World
         float lo = P.ComfortLo - P.Antifreeze * Math.Min(1f, packing);
         if (a.Tb < lo)
         {
-            harm = P.FreezeK * (MathF.Exp((lo - a.Tb) / P.TempTau) - 1);
+            harm = P.FreezeK * (MathF.Exp(Math.Min(P.HarmExpMax, (lo - a.Tb) / P.TempTau)) - 1);   // finite however cold
             if (a.InvTotal > 0 && Rng.NextDouble() < harm * 4)
             {
                 int s = RandomMol(a);
@@ -132,7 +137,7 @@ public sealed partial class World
         }
         else if (a.Tb > P.ComfortHi)
         {
-            harm = P.HeatK * (MathF.Exp((a.Tb - P.ComfortHi) / P.TempTau) - 1);
+            harm = P.HeatK * (MathF.Exp(Math.Min(P.HarmExpMax, (a.Tb - P.ComfortHi) / P.TempTau)) - 1);   // finite however hot
             for (int k = 0; k < a.EnzN; k++)
                 if (a.Tb > a.Enz[k].Topt + 10) WearProtein(a, k, 1 - Math.Min(0.5f, harm * 3));
         }
@@ -262,7 +267,7 @@ public sealed partial class World
             if (b.Dead || !Near(a, b))
             {
                 a.Links.RemoveAt(k);
-                b.Links.Remove(a);
+                Unlink(b, a);
                 continue;
             }
             if (a.Id > b.Id) continue;
@@ -274,6 +279,15 @@ public sealed partial class World
             float vx = (a.Vx + b.Vx) * 0.5f, vy = (a.Vy + b.Vy) * 0.5f;
             a.Vx = b.Vx = vx; a.Vy = b.Vy = vy;
         }
+    }
+
+    // `b` forgets its link to `a`. A partner that has drifted away may be stepped by another square
+    // at this moment: it is told after the phase (Ctx.Unlinks), in square order.
+    void Unlink(Agent b, Agent a)
+    {
+        var ctx = cur;
+        if (ctx != null && (b.Dead || !Near(a, b))) ctx.Unlinks.Add((b, a));
+        else b.Links.Remove(a);
     }
 
     // Within touching distance: same or neighbouring cell, further for big bodies.
@@ -303,8 +317,9 @@ public sealed partial class World
             var e = a.Enz[k];
             if (buried == null) C[e.Material][cell] += e.Matter; else buried[e.Material] += e.Matter;
         }
-        heatIn[cell] += Math.Max(0, a.Energy);
-        foreach (var b in a.Links) b.Links.Remove(a);
+        heatIn[cell] += Math.Max(0, a.Energy) + a.HeatHeld;
+        a.HeatHeld = 0;
+        foreach (var b in a.Links) Unlink(b, a);
         a.Links.Clear();
         a.Target = a.LinkWant = null;
         int cells = a.Cells;
@@ -466,7 +481,7 @@ public sealed partial class World
         int available = soft ? Units[top] : 0;
         for (int s = 0; s < Chemistry.S; s++) if (s != Chem.Gas) available += (int)C[s][i];
         if (available < P.SpawnBody) return false;
-        int id = NewId();
+        long id = NewId();
         var a = new Agent(id, id, 0, Genome.Random(Rng)) { Tb = Temp[i], Z = Height[i] };
         Looks.Apply(a);
         for (int k = 0; k < P.SpawnBody; k++)

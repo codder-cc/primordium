@@ -189,12 +189,14 @@ public sealed partial class World
             if (a.Dead) continue;
             SettleAgent(a);
             if (a.Dead) continue;
+            // In water the bed bears only what the body weighs there (its mass less the water it displaces).
+            float weight = (InWater(a) ? Weight(a) : a.Mass) * P.Gravity / a.Cells;
             for (int k = 0; k < a.Cells; k++)
             {
                 int c = FootCell(a, k), level = k == 0 ? a.Z : WalkLevel(c, a.Z);
                 int v = c * Z + Math.Max(0, level - 1);
                 nextBodyLoad.TryGetValue(v, out float load);
-                nextBodyLoad[v] = load + a.Mass * P.Gravity / a.Cells;
+                nextBodyLoad[v] = load + weight;
             }
         }
         // A body's weight matters where it can tip the balance: on a roof or ledge, or when the change
@@ -215,7 +217,9 @@ public sealed partial class World
         LastStructureColumns = dirtyWork.Count; LastStructureVoxels = activeHanging.Count;
         StructureVisits += activeHanging.Count;
         failures.Clear(); supportOrder.Clear(); supportQueue.Clear(); rootLoad.Clear();
-        foreach (int v in activeHanging) { support[v] = 0; carried[v] = OwnLoad(v); parent[v] = -1; }
+        // Every reachable block gets its best path, even one that cannot bear it (negative residual):
+        // its weight must land somewhere, so an overload shows as a failing edge on that path.
+        foreach (int v in activeHanging) { support[v] = float.NegativeInfinity; carried[v] = OwnLoad(v); parent[v] = -1; }
         // Seed only from the ground; then grow support outwards through face contacts.
         foreach (int v in activeHanging)
         {
@@ -240,14 +244,16 @@ public sealed partial class World
             if (z > 0 && activeHanging.Contains(v - 1)) OfferSupport(v - 1, v);
             if (z + 1 < Z && activeHanging.Contains(v + 1)) OfferSupport(v + 1, v);
         }
+        overloaded.Clear();
         for (int k = supportOrder.Count - 1; k >= 0; k--)
         {
             int v = supportOrder[k], p = parent[v];
-            if (carried[v] > edgeCapacity[v]) failures.Add(v);
+            if (carried[v] > edgeCapacity[v]) overloaded.Add(v);
             if (activeHanging.Contains(p)) carried[p] += carried[v];
             else { rootLoad.TryGetValue(p, out float load); rootLoad[p] = load + carried[v]; }
             Pressure[v] = carried[v];
         }
+        RouteOverloads();
         foreach (int v in activeHanging) if (parent[v] < 0) failures.Add(v);
         foreach (var root in rootLoad)
         {
@@ -258,13 +264,13 @@ public sealed partial class World
             for (int z = 2; z < grounded[c]; z++)
             {
                 int v = c * Z + z;
-                if (Pressure[v] > CompressionCapacity(v)) failures.Add(v);
+                if (Crushes(v)) failures.Add(v);
             }
         foreach (var root in rootLoad)
             for (int z = 2; z <= root.Key % Z; z++)
             {
                 int v = root.Key / Z * Z + z;
-                if (Pressure[v] > CompressionCapacity(v)) failures.Add(v);
+                if (Crushes(v)) failures.Add(v);
             }
         Lap(5);
         failures.Sort(); // bottom before roof in each column, stable ordering across runs
@@ -276,7 +282,7 @@ public sealed partial class World
             int c = v / Z, z = v % Z, dest = z;
             while (dest > 2 && !IsSolid(c, dest - 1)) dest--;
             if (dest < z) { impactSource = 1; TransferVoxel(v, c * Z + dest, true); }
-            else if (Pressure[v] > CompressionCapacity(v))
+            else if (Crushes(v))
             {
                 int burial = c * Z + Math.Max(1, z - 1);
                 SpillVoxel(v, BurialAt(burial).Matter);
@@ -287,6 +293,61 @@ public sealed partial class World
         Lap(6);
         foreach (var a in Agents) if (!a.Dead) SettleAgent(a);
         Lap(7);
+    }
+
+    // Compression failure: under what bears down on the block. A block with nothing solid on top
+    // is not crushed by its own weight or the bodies standing on it — a nearly gnawed-through remnant
+    // is a skin on the block beneath, which bears them; only what hangs from it sideways counts.
+    // (Crushing such a skin only turned its last molecules into loose food without the face's work.)
+    bool Crushes(int v)
+    {
+        float load = Pressure[v];
+        if (v % Z + 1 < Z && Mat[v + 1] == Chemistry.Air) load -= OwnLoad(v);
+        return load > CompressionCapacity(v);
+    }
+
+    // A block whose path breaks falls if there is a cavity under it. If it rests on another hanging
+    // block, the break only means its weight goes down onto that one: the load is added along the
+    // lower block's path, and wherever that path cannot bear it, the failure moves there (and on
+    // down). So a stack too heavy for what holds it fails where it is weakest, instead of standing.
+    readonly List<int> overloaded = new();
+    readonly HashSet<int> failed = new();
+    readonly Queue<int> rerouted = new();
+
+    void RouteOverloads()
+    {
+        failed.Clear(); rerouted.Clear();
+        foreach (int v in overloaded) if (failed.Add(v)) rerouted.Enqueue(v);
+        while (rerouted.TryDequeue(out int v))
+        {
+            int below = v - 1, z = v % Z;
+            // Falls, is crushed, or the block under it is not hanging (grounded rock bears it).
+            if (z <= 2 || !IsSolid(v / Z, z - 1) || Crushes(v) || !activeHanging.Contains(below)
+                || parent[below] < 0)
+            {
+                failures.Add(v);
+                continue;
+            }
+            if (parent[v] == below)
+            {
+                // Its weight already rests on the block below, which cannot bear it in compression.
+                if (failed.Add(below)) rerouted.Enqueue(below);
+                continue;
+            }
+            float load = carried[v];
+            for (int n = below; ; n = parent[n])
+            {
+                if (n == v) { if (failed.Add(below)) rerouted.Enqueue(below); break; }   // it hung from the broken block
+                carried[n] += load; Pressure[n] = carried[n];
+                if (carried[n] > edgeCapacity[n] && failed.Add(n)) rerouted.Enqueue(n);
+                int p = parent[n];
+                if (!activeHanging.Contains(p))
+                {
+                    rootLoad.TryGetValue(p, out float r); rootLoad[p] = r + load;
+                    break;
+                }
+            }
+        }
     }
 
     // A block set down from at most one level higher just lands: whoever stands there climbs onto

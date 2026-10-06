@@ -47,7 +47,7 @@ public sealed partial class World
     }
     Agent TestAgent(int c, int level, int s, int count)
     {
-        int id = NewId();
+        long id = NewId();
         var a = new Agent(id, id, 0, new byte[] { Genome.Yield, 0, 0, 0, 0, 0, 0, 0 }) { Energy = 200, Z = level, Tb = 15 };
         for (int k = 0; k < count; k++) AddMol(a, s);
         Place(a, c); Agents.Add(a);
@@ -98,6 +98,10 @@ public sealed partial class World
         HandRegression();
         FatalActionRegression();
         RegionalStructureRegression();
+        StackRegression();
+        BiteBankRegression();
+        ReachRegression();
+        DepositRegression();
         foreach (int seed in new[] { 1, 7 })
         {
             var w = new World(seed, 800, true);
@@ -320,6 +324,121 @@ public sealed partial class World
         }
         Require(local.LastStructureColumns < N / 10, "local update expanded to the whole world");
         Console.WriteLine($"PASS regional support: matches full solves, shared anchors, {local.LastStructureColumns} active columns / {N}");
+    }
+
+    // A block resting on a hanging block that cannot bear both: the lower one's path fails and both
+    // fall. (The support solver used to leave the upper block without a path and its weight nowhere:
+    // the stack stood for ever.)
+    static void StackRegression()
+    {
+        var w = Fixture(); int c = 90 * W + 140, anchor = c - 1;
+        int s = Enumerable.Range(0, Chemistry.S).Where(s => s % 2 == 0).OrderByDescending(s => w.Chem.Bond[s] / w.Chem.Mass[s]).First();
+        for (int z = 2; z <= 5; z++) w.TestBlock(anchor, z, s + 1);   // a pier of another kind: a weak joint
+        w.TestBlock(c, 5, s);                                        // hangs from the pier over a cavity
+        w.TestBlock(c, 6, s);                                        // rests only on the hanging block
+        float joint = w.BondCapacity(c * Z + 5, anchor * Z + 5), own = w.OwnLoad(c * Z + 5), upper = w.OwnLoad(c * Z + 6);
+        Require(own < 0.8f * joint, $"stack fixture: the lower block alone does not hold ({own} vs {joint})");
+        float extra = Math.Max(0, 1.2f * joint - own - upper);
+        int n = (int)(extra / (w.Chem.Mass[s] * P.Gravity)) + 1;
+        var load = w.TestAgent(c, 7, s, n);
+        var before = w.ElementBudget();
+        w.StepStructure(); w.StepStructure();   // the lower block breaks away; then the upper one has nothing under it
+        Require(w.Mat[c * Z + 5] == 0 && w.Mat[c * Z + 6] == 0 && w.Mat[c * Z + 2] != 0 && w.Mat[c * Z + 3] != 0,
+            $"an overloaded hanging stack stood: z5 {w.Mat[c * Z + 5]} z6 {w.Mat[c * Z + 6]}");
+        BudgetEqual(before, w.ElementBudget(), "stack collapse", 0.01);
+        // Without the load the same stack holds, and its weight reaches the pier.
+        var w2 = Fixture();
+        for (int z = 2; z <= 5; z++) w2.TestBlock(anchor, z, s + 1);
+        w2.TestBlock(c, 5, s); w2.TestBlock(c, 6, s, 255, w2.Chem.MatCap[s + 2] / 10);
+        w2.StepStructure();
+        Require(w2.OwnLoad(c * Z + 5) + w2.OwnLoad(c * Z + 6) < 0.9f * joint, "light stack fixture too heavy");
+        Require((w2.Mat[c * Z + 5] != 0 && w2.Mat[c * Z + 6] != 0 && w2.Pressure[c * Z + 5] >= w2.OwnLoad(c * Z + 5) + w2.OwnLoad(c * Z + 6) - 1e-3f),
+            "a light stack fell or its upper block's weight went nowhere");
+        Console.WriteLine($"PASS hanging stack: overloaded ({own + upper + load.Mass * P.Gravity:F2} on a joint of {joint:F2}) falls, a light one holds with its weight carried");
+    }
+
+    // Weathering and work are kept in molecules of one face: a poke at a hard face does not bank a
+    // fortune for soft calls later, and work at the surface does not pay for a gnawer deeper down.
+    static void BiteBankRegression()
+    {
+        var w = Fixture(); w.Tick = 100000;
+        int c = 100 * W + 10, s = 0;
+        w.TestBlock(c, 2, s); w.TestBlock(c, 3, s);
+        int v = c * Z + 3, deep = c * Z + 2;
+        w.TakeBite(v, 20f, 0);
+        int free = 0; while (w.TakeBite(v, 0.4f, 0) && free < 100000) free++;
+        Require(free <= P.BiteCap, $"a hard poke banked weathering: {free} soft molecules for nothing");
+        w.Tick += 100000;
+        free = 0; while (w.TakeBite(v, 0.4f, 0) && free < 100000) free++;
+        Require(free <= P.BiteCap, $"weathering beyond its cap: {free}");
+        float need = MathF.Exp(6f - P.FaceBarrier) * P.FaceWork;
+        Require(!w.TakeBite(v, 6f, 0.9f * need), "0.9 of a molecule's work freed one");
+        Require(!w.TakeBite(deep, 6f, 0.2f * need), "work at one face paid for another one in the same column");
+        Require(w.TakeBite(deep, 6f, 0.85f * need), "work at a face does not add up");
+        w.Tick = 0;
+        Console.WriteLine("PASS bite bank: weathering capped in molecules, work kept per face");
+    }
+
+    // Gnawing and digging reach a neighbour's rock level with the body or one step down, not the
+    // bottom of a pit; expelled matter lands on a floor it can reach, never in a wall or cave air.
+    static void ReachRegression()
+    {
+        var w = Fixture(); int s = 0;
+        int c = 60 * W + 60, pit = c + 1, step = c + W;
+        for (int z = 2; z < 20; z++) { w.TestBlock(c, z, s, 0); if (z < 19) w.TestBlock(step, z, s, 0); }
+        w.TestBlock(pit, 2, s, 0);
+        var a = w.TestAgent(c, 20, s, 20);
+        a.Energy = 1e6f; w.Tick = 50000;
+        int bottom = w.Units[pit * Z + 2], ledge = w.Units[step * Z + 18];
+        for (int k = 0; k < 2000; k++) { w.Mine(a, c, -1, 0); w.Mine(a, c, -1, 1); }
+        Require(w.Units[pit * Z + 2] == bottom, $"gnawed the bottom of a pit 17 levels down: {bottom} -> {w.Units[pit * Z + 2]}");
+        Require(w.Units[step * Z + 18] < ledge || w.Mat[step * Z + 18] == 0, "could not gnaw a ledge one step down");
+        a.SetGenome(new byte[] { Genome.Dig, Genome.Yield, 0, 0, 0, 0, 0, 0 }, new byte[8]);
+        w.AddMol(a, w.Chem.Solids[0]);
+        w.Dig(a, c, 0);
+        Require(w.Mat[pit * Z + 2] != 0 && a.NDigs == 0, "dug out the bottom of a pit");
+        w.Tick = 0;
+
+        // Expel towards a neighbour whose wall stands where the body is (a cave below its roof).
+        var e = Fixture();
+        int h = 80 * W + 40, n = h + 1, low = h + W;
+        for (int z = 2; z < 5; z++) e.TestBlock(h, z, s);
+        e.TestBlock(n, 2, s);
+        for (int z = 5; z < 9; z++) e.TestBlock(n, z, s);   // cave at 3–4 under a roof at 5–8
+        e.TestBlock(low, 2, s);                              // an open floor two levels down
+        var x = e.TestAgent(h, 5, s, 20);
+        e.StepStructure();
+        var before = e.ElementBudget();
+        for (int k = 0; k < 5; k++) e.Expel(x, h, s, 0);
+        for (int k = 0; k < 3; k++) e.Expel(x, h, s, 1);
+        foreach (var kv in e.Buried)
+            Require(e.Mat[kv.Key] != 0 && (kv.Key % Z + 1 >= Z || e.Mat[kv.Key + 1] == 0), $"expelled matter inside rock or in cave air at z {kv.Key % Z}");
+        Require(Math.Abs(e.C[s][h] - 5) < 1e-4f && Math.Abs(e.C[s][low] - 3) < 1e-4f, $"expelled matter not on the reachable floors: here {e.C[s][h]}, below {e.C[s][low]}");
+        BudgetEqual(before, e.ElementBudget(), "expel", 0.01);
+        Console.WriteLine("PASS reach: no gnawing or digging down a pit, expel lands on a reachable floor");
+    }
+
+    // Deposits: a cave deposit leaves the column's top where it is; more than a block of matter makes
+    // one full block and the rest lies loose on it; ids never wrap around.
+    static void DepositRegression()
+    {
+        var w = Fixture(); int s = 0, c = 40 * W + 100;
+        for (int z = 2; z < 10; z++) if (z != 4 && z != 5) w.TestBlock(c, z, s, z == 9 ? (byte)0 : (byte)255);
+        for (int d = 0; d < 4; d++) for (int z = 2; z < 8; z++) w.TestBlock(w.Nb(c, d), z, s);
+        w.StepStructure();
+        int top = w.Height[c];
+        var add = new ushort[Chemistry.S]; add[s] = 4;
+        w.Deposit(c, 4, add, 25);
+        Require(w.Height[c] == top && w.Mat[c * Z + 9] != 0, "a cave deposit made the column's top slide");
+        int open = 30 * W + 30, cap = w.Chem.MatCap[s + 2];
+        var heap = new ushort[Chemistry.S]; heap[s] = (ushort)Math.Min(ushort.MaxValue, 3 * cap);
+        int total = heap[s];
+        w.Deposit(open, 2, heap, 12);
+        Require(w.Units[open * Z + 2] <= cap && w.VoxelVolume(open * Z + 2) <= P.VoxelSpace + 1e-3f, $"over-full deposit: {w.Units[open * Z + 2]} of {cap}");
+        Require(Math.Abs(w.Units[open * Z + 2] + w.C[s][open] - total) < 1e-3f, "deposit lost matter");
+        w.nextId = int.MaxValue;
+        Require(w.NewId() > int.MaxValue, "ids wrapped around");
+        Console.WriteLine($"PASS deposits: cave deposit keeps the top, {total} molecules make one block of {w.Units[open * Z + 2]} and a loose rest, 64-bit ids");
     }
 
     static void FatalActionRegression()
