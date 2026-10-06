@@ -91,7 +91,8 @@ public sealed partial class World
     long nextStructure;
     public const int Tile = 32, TilesX = W / Tile, TilesY = (H + Tile - 1) / Tile, Tiles = TilesX * TilesY;
     readonly List<Agent>[] tiles = new List<Agent>[Tiles];
-    readonly int[][] colour = new int[4][];   // tile indices of each checkerboard colour
+    public const int Colours = 4;
+    readonly int[][] colour = new int[Colours][];   // tile indices of each checkerboard colour
     readonly List<Agent> newborn = new();
 
     public World(int seed, int initialPop = P.InitialPop, bool abiogenesis = true)
@@ -101,7 +102,7 @@ public sealed partial class World
         mainRng = new Random(seed);
         ctxs = new Ctx[Tiles];
         for (int k = 0; k < Tiles; k++) ctxs[k] = new Ctx { Rng = new Random(seed * 1009 + k), Slot = k };
-        for (int q = 0; q < 4; q++)
+        for (int q = 0; q < Colours; q++)
             colour[q] = Enumerable.Range(0, Tiles).Where(t => (t % TilesX) % 2 == q % 2 && (t / TilesX) % 2 == q / 2).ToArray();
         Chem = new Chemistry(seed);
         for (int k = 0; k < Tiles; k++) tiles[k] = new List<Agent>();
@@ -143,30 +144,56 @@ public sealed partial class World
     public float DayFrac => (float)((double)Tick / P.DayLen % 1.0);
     public float YearFrac => (float)((double)Tick / ((double)P.DayLen * P.YearDays) % 1.0);
 
-    public readonly double[] Prof = new double[8];   // ms spent: environment, agents, bookkeeping
-    public readonly double[] Detail = new double[8]; // finer timings of the sequential phases, for tools/bench
-    public static readonly string[] DetailNames = { "climate", "cellchem", "settle/weather", "body loads", "region", "solve", "failures", "settle agents" };
-    readonly System.Diagnostics.Stopwatch detail = new();
-    void Lap(int k) { Detail[k] += detail.Elapsed.TotalMilliseconds; detail.Restart(); }
+    public readonly double[] Prof = new double[8];   // ms spent: environment, agents, bookkeeping; [4..7] sky, diffusion, chemistry/climate, structure
+    // Finer timings of every stage of the tick, ms summed since the caller last cleared them (tools/bench
+    // prints them per tick and logs them with --log). The first eight keep their old meaning.
+    public readonly double[] Detail = new double[DetailNames.Length];
+    public static readonly string[] DetailNames =
+    {
+        "climate", "cellchem", "settle/weather", "body loads", "region", "solve", "failures", "settle agents",
+        "sky", "diffusion", "erosion", "vents", "strikes", "metamorph", "tile sort", "agents", "merge", "relieve", "alarms", "abiogenesis",
+    };
+    public const int DClimate = 0, DCellChem = 1, DSettle = 2, DBodyLoads = 3, DRegion = 4, DSolve = 5, DFailures = 6, DSettleAgents = 7,
+        DSky = 8, DDiffusion = 9, DErosion = 10, DVents = 11, DStrikes = 12, DMetamorph = 13, DTileSort = 14, DAgents = 15, DMerge = 16,
+        DRelieve = 17, DAlarms = 18, DAbio = 19;
+    // Per colour of the agent phase: summed tile work and the slowest tile, ms (AgentBusy/AgentLongest are their totals).
+    public readonly double[] PhaseBusy = new double[Colours], PhaseLongest = new double[Colours];
+    public long AgentAllocated;   // bytes allocated during the agent phase (approximate: all threads)
+    static readonly double MsPerStamp = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+    long lapAt;
+    void LapStart() => lapAt = System.Diagnostics.Stopwatch.GetTimestamp();
+    void Lap(int k)
+    {
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        Detail[k] += (now - lapAt) * MsPerStamp;
+        lapAt = now;
+    }
     readonly System.Diagnostics.Stopwatch prof = new();
 
     public void Step()
     {
         prof.Restart();
+        LapStart();
         Tick++;
         if (Tick % (P.LightEvery * 2) == 0) UpdateClouds();
         if (Tick % P.LightEvery == 0) UpdateLight();
+        Lap(DSky);
         double checkpoint = prof.Elapsed.TotalMilliseconds;
         Prof[4] += checkpoint;
         if (flowDirty && Tick % 16 == 0) RecomputeFlow();   // terrain changes often; flow weights can lag a little
         Diffuse();
+        Lap(DDiffusion);
         Prof[5] += prof.Elapsed.TotalMilliseconds - checkpoint;
         checkpoint = prof.Elapsed.TotalMilliseconds;
         if (Tick % P.EnvEvery == 0) EnvChem();
         Prof[6] += prof.Elapsed.TotalMilliseconds - checkpoint;
+        LapStart();
         if (Tick % P.ErodeEvery == 0) Erode();
+        Lap(DErosion);
         StepVents();
+        Lap(DVents);
         MaybeStrike();
+        Lap(DStrikes);
         checkpoint = prof.Elapsed.TotalMilliseconds;
         // The more hanging rock there is, the more each pass costs; passes then come less often
         // (every 4 ticks with little, up to every 64 with a planet full of caves).
@@ -175,7 +202,9 @@ public sealed partial class World
             StepStructure();
             nextStructure = Tick + P.StructureEvery * Math.Clamp(1 + LastStructureVoxels / 5000, 1, 16);
         }
+        LapStart();
         if (Tick % P.MetamorphEvery == 0) Metamorphose();
+        Lap(DMetamorph);
         Prof[7] += prof.Elapsed.TotalMilliseconds - checkpoint;
         Prof[0] += prof.Elapsed.TotalMilliseconds; prof.Restart();
 
@@ -183,7 +212,9 @@ public sealed partial class World
         foreach (var a in Agents) if (!a.Dead) tiles[a.Y / Tile * TilesX + a.X / Tile].Add(a);
         foreach (var b in tiles)
             for (int k = b.Count - 1; k > 0; k--) { int j = mainRng.Next(k + 1); (b[k], b[j]) = (b[j], b[k]); }
-        for (int q = 0; q < 4; q++)
+        Lap(DTileSort);
+        long allocated = GC.GetTotalAllocatedBytes(false);
+        for (int q = 0; q < Colours; q++)
         {
             var group = colour[q];
             Parallel.For(0, group.Length, k =>
@@ -193,12 +224,15 @@ public sealed partial class World
                 long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
                 try { foreach (var a in tiles[t]) if (!a.Dead) Live(a); }
                 finally { cur = null; }
-                ctxs[t].Busy = (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+                ctxs[t].Busy = (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * MsPerStamp;
             });
-            double longest = 0;
-            foreach (int t in group) { AgentBusy += ctxs[t].Busy; longest = Math.Max(longest, ctxs[t].Busy); }
-            AgentLongest += longest;
+            double longest = 0, busy = 0;
+            foreach (int t in group) { busy += ctxs[t].Busy; longest = Math.Max(longest, ctxs[t].Busy); }
+            AgentBusy += busy; AgentLongest += longest;
+            PhaseBusy[q] += busy; PhaseLongest[q] += longest;
         }
+        AgentAllocated += GC.GetTotalAllocatedBytes(false) - allocated;
+        Lap(DAgents);
         Prof[1] += prof.Elapsed.TotalMilliseconds; prof.Restart();
         foreach (var ctx in ctxs)
         {
@@ -214,7 +248,9 @@ public sealed partial class World
         Agents.AddRange(newborn);
         newborn.Clear();
         Agents.RemoveAll(a => a.Dead);
+        Lap(DMerge);
         Relieve();   // overfull floors let their smallest bodies go (see World.Volume)
+        Lap(DRelieve);
         int alarmStart = (int)(Tick % 16) * (N / 16);
         for (int c = alarmStart; c < alarmStart + N / 16; c++)
             if (lastAttacker[c] != null && (lastAttacker[c].Dead || Tick - lastAttack[c] > 16)) lastAttacker[c] = null;
@@ -223,11 +259,13 @@ public sealed partial class World
             for (int k = 0; k < ctx.Ev.Length; k++) { Ev[k] += ctx.Ev[k]; ctx.Ev[k] = 0; }
             for (int k = 0; k < 6; k++) { Mined[k] += ctx.Mined[k]; MinedCat[k] += ctx.MinedCat[k]; ctx.Mined[k] = ctx.MinedCat[k] = 0; }
         }
+        Lap(DAlarms);
         Prof[2] += prof.Elapsed.TotalMilliseconds;
         // Abiogenesis is very rare on a living planet; on a nearly empty one the untouched primordial
         // soup tries far more often.
         float barren = Math.Max(0, 1 - Agents.Count / 200f);
         if (Abiogenesis && mainRng.NextDouble() < P.AbioChance * (1 + 160 * barren)) SpawnRandom();
+        Lap(DAbio);
     }
 
     static float Smooth(float a, float b, float x)
@@ -307,7 +345,7 @@ public sealed partial class World
 
     void EnvChem()
     {
-        detail.Restart();
+        LapStart();
         UpdateClimate();
         Lap(0);
         // Each worker owns distinct cells; structural mutations are committed after the barrier.

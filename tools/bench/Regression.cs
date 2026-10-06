@@ -25,6 +25,20 @@ public sealed partial class World
         }
         Require(listed == Agents.Count(a => !a.Dead), "a living body is missing from the cell lists");
     }
+    // A fingerprint of the whole state that matters for the trajectory: terrain, loose matter, bodies.
+    // Two runs that print the same hash at a checkpoint followed the same trajectory (tools/bench).
+    public ulong StateHash()
+    {
+        ulong h = 1469598103934665603UL;
+        void Mix(ulong x) { h ^= x; h *= 1099511628211UL; h ^= h >> 29; }
+        for (int i = 0; i < N; i++) Mix((ulong)Height[i]);
+        for (int v = 0; v < N * Z; v++)
+            if (Mat[v] != 0) Mix((ulong)v << 32 ^ (ulong)Mat[v] << 24 ^ (ulong)Units[v] << 8 ^ Order[v]);
+        foreach (var c in C) for (int i = 0; i < N; i++) Mix((uint)BitConverter.SingleToInt32Bits(c[i]));
+        foreach (var a in Agents)
+            Mix((ulong)a.Id ^ (ulong)a.X << 40 ^ (ulong)a.Y << 50 ^ (ulong)a.Z << 20 ^ (uint)BitConverter.SingleToInt32Bits(a.Energy) ^ a.Hash);
+        return h;
+    }
     static void BudgetEqual(double[] a, double[] b, string stage, double tolerance = 0.002)
     {
         for (int e = 0; e < a.Length; e++) Require(Math.Abs(a[e] - b[e]) <= tolerance, $"{stage}: element {e}: {a[e]:R} -> {b[e]:R} (delta {b[e] - a[e]:R})");

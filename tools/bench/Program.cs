@@ -3,12 +3,15 @@ using System.Diagnostics;
 using System.Linq;
 using Primordium;
 
-// dotnet run -c Release --project tools/bench -- --seed 1 --ticks 50000 --every 5000 [--pop N] [--noabio]
+// dotnet run -c Release --project tools/bench -- --seed 1 --ticks 50000 --every 5000 [--pop N] [--noabio] [--ops] [--audit]
+//   [--log path.csv]: one row per --every interval with population, births, deaths, every stage's ms/tick,
+//   allocation and GC counts, for looking at performance over time.
 if (Array.IndexOf(args, "--self-test") >= 0) { World.RunRegression(); return; }
 if (Array.IndexOf(args, "--bites") >= 0) { foreach (int s in new[] { 1, 2, 3, 5, 7 }) World.BiteReport(s); return; }
 if (Array.IndexOf(args, "--strength") >= 0) { foreach (int s in new[] { 1, 2, 3, 7 }) { Console.WriteLine($"seed {s}"); World.StrengthReport(s); } return; }
 
 int seed = 1, ticks = 20000, every = 1000, pop = P.InitialPop;
+string logPath = null;
 bool abio = Array.IndexOf(args, "--noabio") < 0;
 for (int i = 0; i < args.Length - 1; i++)
 {
@@ -16,6 +19,7 @@ for (int i = 0; i < args.Length - 1; i++)
     if (args[i] == "--ticks") ticks = int.Parse(args[i + 1]);
     if (args[i] == "--every") every = int.Parse(args[i + 1]);
     if (args[i] == "--pop") pop = int.Parse(args[i + 1]);
+    if (args[i] == "--log") logPath = args[i + 1];
 }
 
 World.ProfileOps = Array.IndexOf(args, "--ops") >= 0;
@@ -38,6 +42,17 @@ var sw = Stopwatch.StartNew();
 var prev = new long[(int)EvKind.Count];
 var prevMined = new long[6];
 var prevCat = new long[6];
+System.IO.StreamWriter log = null;
+if (logPath != null)
+{
+    log = new System.IO.StreamWriter(logPath);
+    log.WriteLine("tick,pop,births,deaths,ms_tick,env,agents,bookkeeping," + string.Join(",", World.DetailNames.Select(n => n.Replace(' ', '_').Replace('/', '_')))
+        + ",agent_busy,agent_longest," + string.Join(",", Enumerable.Range(0, World.Colours).Select(q => $"busy{q},longest{q}"))
+        + ",alloc_mb,agent_alloc_mb,gen0,gen1,gen2,gc_pause_pct,heap_mb,dirty_columns,hanging_voxels");
+}
+long prevAlloc = GC.GetTotalAllocatedBytes(false);
+int prevGen0 = GC.CollectionCount(0), prevGen1 = GC.CollectionCount(1), prevGen2 = GC.CollectionCount(2), prevBirths = 0, prevDeaths = 0;
+double prevWall = 0;
 for (int t = 1; t <= ticks; t++)
 {
     w.Step();
@@ -56,6 +71,11 @@ for (int t = 1; t <= ticks; t++)
     Console.WriteLine($"   ms/tick: env {w.Prof[0] / every:F2} agents {w.Prof[1] / every:F2} | climate T {cl.MeanT:F1} water {cl.WaterShare:P0} ice {cl.IceShare:P0} snow {cl.SnowShare:P0} strikes {w.StrikeCount}");
     Console.WriteLine($"   stages ms/tick: sky {w.Prof[4] / every:F3} diffusion {w.Prof[5] / every:F3} chemistry/climate {w.Prof[6] / every:F3} structure {w.Prof[7] / every:F3}; falls {w.CollapsedBlocks}, crushed {w.CrushedBlocks}, buried agents {w.DeathsBuried}, pressure reactions {w.Metamorphoses}");
     Console.WriteLine("   detail ms/tick: " + string.Join(" ", World.DetailNames.Select((n, k) => $"{n} {w.Detail[k] / every:F3}")) + $" | dirty columns last {w.LastStructureColumns}, hanging voxels {w.LastStructureVoxels}; dirt by geometry/weakening/loads/matter {string.Join("/", w.DirtBy)}");
+    long alloc = GC.GetTotalAllocatedBytes(false);
+    int gen0 = GC.CollectionCount(0) - prevGen0, gen1 = GC.CollectionCount(1) - prevGen1, gen2 = GC.CollectionCount(2) - prevGen2;
+    double allocMb = (alloc - prevAlloc) / 1048576.0 / every, agentAllocMb = w.AgentAllocated / 1048576.0 / every, pause = GC.GetGCMemoryInfo().PauseTimePercentage;
+    double wall = sw.Elapsed.TotalMilliseconds, msTick = (wall - prevWall) / every;
+    Console.WriteLine($"   gc: allocated {allocMb:F3} MB/tick (agent phase {agentAllocMb:F3}), collections gen0/1/2 {gen0}/{gen1}/{gen2}, pause {pause:F1}% | wall {msTick:F2} ms/tick");
     Array.Clear(w.DirtBy);
     Console.WriteLine($"   buried: entombed {w.BuriedBy[0]}, roof collapse {w.BuriedBy[1]}, slope creep {w.BuriedBy[2]}, dumped by dig {w.BuriedBy[3]}");
     Array.Clear(w.BuriedBy);
@@ -78,8 +98,24 @@ for (int t = 1; t <= ticks; t++)
         for (int i = 0; i < World.N; i++) if (w.HasCavity[i]) cavities++;
         Console.WriteLine($"   underground: {inCave} bodies in cavities ({deep3} at 3+ below the surface, deepest {deepest}); columns with cavities {cavities}");
     }
-    Console.WriteLine($"   agent tiles: work {w.AgentBusy / every:F2} ms/tick, slowest tile per colour {w.AgentLongest / every:F2}, wall {w.Prof[1] / every:F2}");
-    w.AgentBusy = w.AgentLongest = 0;
+    Console.WriteLine($"   agent tiles: work {w.AgentBusy / every:F2} ms/tick, slowest tile per colour {w.AgentLongest / every:F2}, wall {w.Prof[1] / every:F2}; by colour busy/longest "
+        + string.Join(" ", Enumerable.Range(0, World.Colours).Select(q => $"{w.PhaseBusy[q] / every:F2}/{w.PhaseLongest[q] / every:F2}")));
+    if (log != null)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        string f(double v) => v.ToString("F4", inv);
+        log.WriteLine(string.Join(",", new[] { t.ToString(), w.Agents.Count.ToString(), (w.Births - prevBirths).ToString(), (w.Deaths - prevDeaths).ToString(),
+            f(msTick), f(w.Prof[0] / every), f(w.Prof[1] / every), f(w.Prof[2] / every) }
+            .Concat(w.Detail.Select(d => f(d / every)))
+            .Concat(new[] { f(w.AgentBusy / every), f(w.AgentLongest / every) })
+            .Concat(Enumerable.Range(0, World.Colours).SelectMany(q => new[] { f(w.PhaseBusy[q] / every), f(w.PhaseLongest[q] / every) }))
+            .Concat(new[] { f(allocMb), f(agentAllocMb), gen0.ToString(), gen1.ToString(), gen2.ToString(), f(pause), (GC.GetTotalMemory(false) / 1048576).ToString(),
+                w.LastStructureColumns.ToString(), w.LastStructureVoxels.ToString() })));
+        log.Flush();
+    }
+    prevAlloc = alloc; prevGen0 += gen0; prevGen1 += gen1; prevGen2 += gen2; prevBirths = w.Births; prevDeaths = w.Deaths; prevWall = wall;
+    w.AgentBusy = w.AgentLongest = 0; w.AgentAllocated = 0;
+    Array.Clear(w.PhaseBusy); Array.Clear(w.PhaseLongest);
     if (World.ProfileOps)
     {
         var ops = w.OpTicks();
@@ -93,7 +129,7 @@ for (int t = 1; t <= ticks; t++)
     Console.WriteLine($"t={t} day={w.Day} pop={c.Pop} born={w.Births} died={w.DeathsStarve}/{w.DeathsKilled}/{w.DeathsBroken}/{w.DeathsClimate}/{w.DeathsBuried} spawn={w.Spawns} " +
                       $"gen={w.MaxGen} len={c.AvgLen:F0} E={c.AvgEnergy:F0} age={c.AvgAge:F0} old={c.OldestAge} " +
                       $"| plant={c.Plants} eat={c.Eaters} mine={c.Miners} hunt={c.Hunters} idle={c.Idle} " +
-                      $"| litter={w.MeanLitter():F1} gas={w.C[w.Chem.Gas].Average():F2} h={w.MeanHeight():F2} | {ev} | {t / sw.Elapsed.TotalSeconds:F0} t/s");
+                      $"| litter={w.MeanLitter():F1} gas={w.C[w.Chem.Gas].Average():F2} h={w.MeanHeight():F2} | {ev} | {t / sw.Elapsed.TotalSeconds:F0} t/s | hash {w.StateHash():x16}");
     Console.WriteLine("   mined by grade (with protein): " + string.Join(" ", Enumerable.Range(0, 5).Select(k => $"{k}:{w.Mined[k] - prevMined[k]}({w.MinedCat[k] - prevCat[k]})")) +
                       " | firsts: " + string.Join(", ", w.Firsts.Where(f => f != null).Select(f => $"{w.Chem.MatName[f.Mat]} day {f.Tick / P.DayLen} #{f.Lineage}")));
     Console.WriteLine($"   divide tries {w.DivFail[0]}: no energy {w.DivFail[1]}, small body {w.DivFail[2]}, no room {w.DivFail[3]}, uneven {w.DivFail[4]}");
@@ -106,7 +142,9 @@ for (int t = 1; t <= ticks; t++)
     }
     Array.Copy(w.Mined, prevMined, 6);
     Array.Copy(w.MinedCat, prevCat, 6);
+    prevWall = sw.Elapsed.TotalMilliseconds;   // the reports above are not the simulation's time
 }
+log?.Dispose();
 {
     // What the tall columns are made of, and whether anybody lives on them.
     int towers = 0, looseTowers = 0, inhabited = 0, spikes = 0, depositTops = 0;

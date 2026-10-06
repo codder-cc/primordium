@@ -182,7 +182,7 @@ public sealed partial class World
     // One strongest path per voxel is a deliberately conservative beam approximation, not FEM.
     void StepStructure()
     {
-        detail.Restart();
+        LapStart();
         nextBodyLoad.Clear();
         foreach (var a in Agents)
         {
