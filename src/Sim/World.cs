@@ -64,7 +64,9 @@ public sealed partial class World
     [ThreadStatic] static Ctx cur;
     readonly Ctx[] ctxs;
     readonly SimRng mainRng;
-    public SimRng Rng => cur?.Rng ?? mainRng;
+    public SimRng Rng => cur?.Rng ?? lifeRng ?? mainRng;
+    SimRng lifeRng;   // only while the first bodies are made, if a life seed is given (see the constructor)
+    public int LifeSeed => Settings.LifeSeed;
 
     // Loose matter lying on each cell, per species: remains of the dead and whatever bodies threw
     // out. It stays where it fell (it rots, and compacts into aggregates); only the gas spreads, as air.
@@ -102,8 +104,8 @@ public sealed partial class World
     int phaseNext;
     readonly List<Agent> newborn = new();
 
-    public World(int seed, int initialPop = -1, bool abiogenesis = true)   // initialPop < 0: P.InitialPop
-        : this(new WorldSettings { Seed = seed, InitialPop = initialPop, Abiogenesis = abiogenesis, Strikes = true }) { }   // strikes on, as before (bench, self-test)
+    public World(int seed, int initialPop = -1, bool abiogenesis = true, int lifeSeed = 0)   // initialPop < 0: P.InitialPop
+        : this(new WorldSettings { Seed = seed, InitialPop = initialPop, Abiogenesis = abiogenesis, Strikes = true, LifeSeed = lifeSeed }) { }   // strikes on, as before (bench, self-test)
 
     // A new world from its settings: a preset of laws in the settings replaces the current laws
     // (defaults for those it does not name) before anything is generated.
@@ -115,6 +117,11 @@ public sealed partial class World
 
     // generate = false: only the skeleton (tile layout, chemistry, neighbours) for a world that is
     // about to be filled from a save file.
+    //
+    // Settings.LifeSeed ≠ 0 perturbs life only: the first bodies (genomes, places) and the agents'
+    // random streams. Elements, terrain, vents, water and the primordial litter stay those of the
+    // seed, so repeats of one seed with different life seeds show how much of an outcome is chance.
+    // 0 is the original world of the seed.
     World(WorldSettings settings, int tileSize, bool generate)
     {
         Settings = settings = settings?.Clone() ?? new WorldSettings();
@@ -145,7 +152,9 @@ public sealed partial class World
             colour[q] = Enumerable.Range(0, Tiles).Where(t => (t % TilesX) % PeriodX == q % PeriodX && (t / TilesX) % PeriodY == q / PeriodX).ToArray();
         phaseOrder = new int[Tiles];
         ctxs = new Ctx[Tiles];
-        for (int k = 0; k < Tiles; k++) ctxs[k] = new Ctx { Rng = new SimRng(seed, 1 + k), Slot = k };
+        // A life seed moves the tiles' streams to others (and gives the first bodies their own, below).
+        long life = settings.LifeSeed == 0 ? 0 : (long)Hash32.U((uint)settings.LifeSeed * 2654435761u) << 32 | 1;
+        for (int k = 0; k < Tiles; k++) ctxs[k] = new Ctx { Rng = new SimRng(seed ^ life, 1 + k), Slot = k };
         paramsSeen = ParamRegistry.Version;   // the tables built below use the laws as they are now
         Chem = new Chemistry(seed);
         tiles = new List<Agent>[Tiles];
@@ -181,8 +190,10 @@ public sealed partial class World
         UpdateClouds();
         UpdateLight();
         for (int i = 0; i < N; i++) Temp[i] = TempEq(i);
+        if (life != 0) lifeRng = new SimRng(seed ^ life, -7349);
         for (int k = 0, tries = 0; k < initialPop && tries < initialPop * 20; tries++)
             if (SpawnRandom()) k++;
+        lifeRng = null;
     }
 
     public int Nb(int i, int d) => nb[i * 4 + d];
@@ -497,6 +508,7 @@ public sealed partial class World
                 C[s][i] -= m; C[Chem.SplitA[s]][i] += m;
                 if (Chem.SplitB[s] >= 0) C[Chem.SplitB[s]][i] += m;
                 heatIn[i] += m * Chem.SplitEnergy(s);
+                rowLooseDecay[i / W] += m * Chem.SplitEnergy(s);   // rows are owned by one worker
             }
         }
         // Atmospheric material remains in the budget even over water. Rain deposits existing

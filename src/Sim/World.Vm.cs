@@ -268,11 +268,13 @@ public sealed partial class World
     // Energy from a reaction: part of what is released warms the body instead.
     void Release(Agent a, float de)
     {
-        if (de <= 0) { a.Energy += de; a.LifeUphill -= de; return; }
+        float e0 = a.Energy, h0 = a.HeatHeld;
+        if (de <= 0) { a.Energy += de; a.LifeUphill -= de; Flows[FRounding] += de - ((double)a.Energy - e0); return; }
         a.Energy += de * (1 - P.HeatShare);
         // The heat share warms the body; it reaches the cells only as the body cools (LiveBody).
         a.Tb += de * P.HeatShare * 6f / (5f + a.Mass);
         a.HeatHeld += de * P.HeatShare;
+        Flows[FRounding] += de - ((double)a.Energy - e0) - ((double)a.HeatHeld - h0);   // floats round (see World.Energy)
         a.GainChem += de * (1 - P.HeatShare);
         a.TickChem += de;
         a.LastMeal = a.Age;
@@ -282,7 +284,8 @@ public sealed partial class World
     {
         int p = Chem.Combine[s1, s2];
         if (p < 0) return;
-        float de = (Chem.E[s1] + Chem.E[s2] - Chem.E[p]) * P.EnergyK;
+        int bond = Chem.E[s1] + Chem.E[s2] - Chem.E[p];
+        float de = bond * P.EnergyK;
         float drive = Chance(a, Enzyme.Bind, s1, s2, out int slot);
         int times = Turnovers(Uphill(drive, slot, de)), done = 0;
         for (; done < times; done++)
@@ -293,6 +296,7 @@ public sealed partial class World
             Release(a, de);
         }
         if (done == 0) return;
+        if (de != bond) Flows[FScale] += done * ((double)de - bond);   // P.EnergyK ≠ 1 (see World.Energy)
         a.NBind += done;
         Worked(a, slot, ip);
         Note(EvKind.Bind);
@@ -303,7 +307,8 @@ public sealed partial class World
     {
         int x = Chem.SplitA[s], y = Chem.SplitB[s];
         if (x < 0) return;
-        float de = Chem.SplitEnergy(s) * P.EnergyK;
+        int bond = Chem.SplitEnergy(s);
+        float de = bond * P.EnergyK;
         float drive = Chance(a, Enzyme.Split, s, 0, out int slot);
         int times = Turnovers(Uphill(drive, slot, de)), done = 0;
         for (; done < times; done++)
@@ -314,6 +319,7 @@ public sealed partial class World
             Release(a, de);
         }
         if (done == 0) return;
+        if (de != bond) Flows[FScale] += done * ((double)de - bond);
         a.NSplit += done;
         Worked(a, slot, ip);
         Note(EvKind.Split);
@@ -345,6 +351,7 @@ public sealed partial class World
             float gain = Chem.E[p] - Chem.E[s];
             a.GainPhoto += gain;
             a.TickPhoto += gain;
+            Flows[FPhoto] += gain;
             caught++;
         }
         if (caught == 0) return;

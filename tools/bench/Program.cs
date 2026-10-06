@@ -6,6 +6,10 @@ using Primordium;
 // dotnet run -c Release --project tools/bench -- --seed 1 --ticks 50000 --every 5000 [--pop N] [--noabio] [--ops] [--audit]
 //   [--log path.csv]: one row per --every interval with population, births, deaths, every stage's ms/tick,
 //   allocation and GC counts, for looking at performance over time.
+//   [--life N]: perturb only life (first bodies and agents' random streams) of the seed's world.
+//   Laws: [--preset path.json] [--set Name=value ...] (alias --param) [--param-at TICK:Name=value ...] — see ParamHook.
+//   [--load path] continue a saved world, [--save path] save it at the end.
+//   Batches, comparisons and the long test (--batch, --compare, --run-one, --long-test): see Batch.cs.
 if (Array.IndexOf(args, "--self-test") >= 0) { World.RunRegression(); return; }
 if (Array.IndexOf(args, "--self-test-infra") >= 0) { World.RunInfraRegression(); return; }
 if (Array.IndexOf(args, "--list-params") >= 0)
@@ -14,10 +18,28 @@ if (Array.IndexOf(args, "--list-params") >= 0)
         Console.WriteLine($"{p.Group,-12} {p.Name,-20} {p.Value,10:G6}  [{p.Min:G6} … {p.Max:G6}, step {p.Step:G6}]{(p.Live ? "" : " (new world)")}  {p.Description}");
     return;
 }
+// Laws of the world (P): presets, then single laws, before the world is made; --param-at during the run
+// (the trajectory is the seed plus this timeline).
+ParamHook.Laws laws;
+try
+{
+    laws = ParamHook.Parse(args);
+    foreach (var line in ParamHook.Apply(laws)) Console.WriteLine("set " + line);
+}
+catch (Exception e) when (e is ArgumentException || e is System.IO.IOException || e is System.Text.Json.JsonException)
+{
+    Console.Error.WriteLine("laws: " + e.Message);
+    Environment.Exit(2);
+    return;
+}
+if (Array.IndexOf(args, "--long-test") >= 0) { World.RunLongTest(args); return; }
+if (Array.IndexOf(args, "--batch") >= 0) { Batch.Run(args, laws); return; }
+if (Array.IndexOf(args, "--compare") >= 0) { Batch.Compare(args); return; }
+if (Array.IndexOf(args, "--run-one") >= 0) { Batch.RunOne(args, laws); return; }
 if (Array.IndexOf(args, "--bites") >= 0) { foreach (int s in new[] { 1, 2, 3, 5, 7 }) World.BiteReport(s); return; }
 if (Array.IndexOf(args, "--strength") >= 0) { foreach (int s in new[] { 1, 2, 3, 7 }) { Console.WriteLine($"seed {s}"); World.StrengthReport(s); } return; }
 
-int seed = 1, ticks = 20000, every = 1000, pop = P.InitialPop;
+int seed = 1, ticks = 20000, every = 1000, pop = P.InitialPop, life = 0;
 string logPath = null;
 bool abio = Array.IndexOf(args, "--noabio") < 0;
 for (int i = 0; i < args.Length - 1; i++)
@@ -28,30 +50,10 @@ for (int i = 0; i < args.Length - 1; i++)
     if (args[i] == "--pop") pop = int.Parse(args[i + 1]);
     if (args[i] == "--log") logPath = args[i + 1];
     if (args[i] == "--tile") World.TileSize = int.Parse(args[i + 1]);
+    if (args[i] == "--life") life = int.Parse(args[i + 1]);
 }
 
-// Laws of the world (P): --preset path.json, then --param Name=value (repeatable) before the world is made;
-// --param-at TICK:Name=value changes a law between ticks during the run (the trajectory is the seed plus
-// this timeline).
 var inv0 = System.Globalization.CultureInfo.InvariantCulture;
-var paramAt = new System.Collections.Generic.List<(long tick, string name, double value)>();
-for (int i = 0; i < args.Length - 1; i++)
-    if (args[i] == "--preset") ParamRegistry.Restore(ParamRegistry.LoadPreset(args[i + 1]).Values);
-for (int i = 0; i < args.Length - 1; i++)
-{
-    if (args[i] == "--param")
-    {
-        var kv = args[i + 1].Split('=');
-        if (!ParamRegistry.Set(kv[0], double.Parse(kv[1], inv0))) throw new ArgumentException($"unknown parameter {kv[0]}");
-    }
-    if (args[i] == "--param-at")
-    {
-        var at = args[i + 1].Split(':', 2);
-        var kv = at[1].Split('=');
-        if (ParamRegistry.Find(kv[0]) == null) throw new ArgumentException($"unknown parameter {kv[0]}");
-        paramAt.Add((long.Parse(at[0]), kv[0], double.Parse(kv[1], inv0)));
-    }
-}
 var changedLaws = ParamRegistry.Changes();
 if (changedLaws.Count > 0) Console.WriteLine("laws: " + string.Join(", ", changedLaws.Select(kv => $"{kv.Key}={kv.Value.ToString(inv0)}")));
 
@@ -70,12 +72,16 @@ if (loadPath != null)
     var loadWatch = Stopwatch.StartNew();
     w = World.Load(loadPath);
     Console.WriteLine($"loaded {loadPath} in {loadWatch.ElapsedMilliseconds} ms: seed {w.Seed}, tick {w.Tick}, {w.Agents.Count} bodies, hash {w.StateHash():x16}");
-    // The save brings its own laws; --param given on the command line still overrides them (recorded as a change).
-    foreach (var (name, value) in changedLaws) w.SetParam(name, value);
+    // The save brings its own laws; laws given on the command line still override them (recorded as changes).
+    foreach (var path in laws.Presets) w.ApplyParams(ParamRegistry.LoadPreset(path).Values);
+    foreach (var (name, value) in laws.Set) w.SetParam(name, value);
 }
-else w = new World(seed, pop, abio);
+else w = new World(seed, pop, abio, life);
 bool audit = Array.IndexOf(args, "--audit") >= 0;
 var originalAtoms = audit ? w.ElementBudget() : null;
+w.TrackHeat = audit;
+var originalEnergy = audit ? w.AuditEnergy() : null;
+var evo = new EvoMetrics();
 if (Array.IndexOf(args, "--probe") >= 0)
 {
     // label0 intake split intake split divide jmp0 nop — empty stacks make every operand 0
@@ -98,14 +104,15 @@ if (logPath != null)
     log = new System.IO.StreamWriter(logPath);
     log.WriteLine("tick,pop,births,deaths,ms_tick,env,agents,bookkeeping," + string.Join(",", World.DetailNames.Select(n => n.Replace(' ', '_').Replace('/', '_')))
         + ",agent_busy,agent_longest," + string.Join(",", Enumerable.Range(0, w.Colours).Select(q => $"busy{q},longest{q}"))
-        + ",alloc_mb,agent_alloc_mb,gen0,gen1,gen2,gc_pause_pct,heap_mb,dirty_columns,hanging_voxels");
+        + ",alloc_mb,agent_alloc_mb,gen0,gen1,gen2,gc_pause_pct,heap_mb,dirty_columns,hanging_voxels,mean_temp,"
+        + string.Join(",", EvoMetrics.Names.Skip(1)) + ",energy_drift,energy_tolerance");
 }
 long prevAlloc = GC.GetTotalAllocatedBytes(false);
 int prevGen0 = GC.CollectionCount(0), prevGen1 = GC.CollectionCount(1), prevGen2 = GC.CollectionCount(2), prevBirths = 0, prevDeaths = 0;
 double prevWall = 0;
 for (int t = 1; t <= ticks; t++)
 {
-    foreach (var (at, name, value) in paramAt) if (at == w.Tick) { w.SetParam(name, value); Console.WriteLine($"   tick {w.Tick}: {name} = {ParamRegistry.Get(name).ToString(inv0)}"); }
+    foreach (var line in ParamHook.ApplyDue(laws, w)) Console.WriteLine("   " + line);
     w.Step();
     if (t % every != 0) continue;
     if (audit)
@@ -113,6 +120,10 @@ for (int t = 1; t <= ticks; t++)
         var atoms = w.ElementBudget();
         Console.WriteLine("   atom drift excluding interior input: " + string.Join(" / ", atoms.Select((value, e) => (value - w.InteriorInput[e] - w.HandInput[e] - originalAtoms[e]).ToString("F6"))));
     }
+    EnergyAudit energyNow = audit ? w.AuditEnergy() : null;
+    if (audit) Console.WriteLine("   " + energyNow.Describe(originalEnergy));
+    var evoNow = evo.Sample(w);
+    Console.WriteLine("   evo: " + EvoMetrics.Format(evoNow));
     w.CheckCellLists();   // throws if any cell list is broken
     var c = w.TakeCensus();
     var cl = w.TakeClimate();
@@ -161,7 +172,9 @@ for (int t = 1; t <= ticks; t++)
             .Concat(new[] { f(w.AgentBusy / every), f(w.AgentLongest / every) })
             .Concat(Enumerable.Range(0, w.Colours).SelectMany(q => new[] { f(w.PhaseBusy[q] / every), f(w.PhaseLongest[q] / every) }))
             .Concat(new[] { f(allocMb), f(agentAllocMb), gen0.ToString(), gen1.ToString(), gen2.ToString(), f(pause), (GC.GetTotalMemory(false) / 1048576).ToString(),
-                w.LastStructureColumns.ToString(), w.LastStructureVoxels.ToString() })));
+                w.LastStructureColumns.ToString(), w.LastStructureVoxels.ToString(), f(cl.MeanT) })
+            .Concat(evoNow.Skip(1).Select(f))
+            .Concat(new[] { audit ? f(EnergyAudit.Drift(originalEnergy, energyNow)) : "", audit ? f(EnergyAudit.Tolerance(originalEnergy, energyNow)) : "" })));
         log.Flush();
     }
     prevAlloc = alloc; prevGen0 += gen0; prevGen1 += gen1; prevGen2 += gen2; prevBirths = w.Births; prevDeaths = w.Deaths; prevWall = wall;

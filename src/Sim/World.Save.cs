@@ -29,7 +29,9 @@ public sealed class SaveInfo
 // Call between ticks only (on the thread that steps the world).
 public sealed partial class World
 {
-    public const int SaveVersion = 1;
+    // 2: the energy ledger (World.Energy) and WorldSettings.LifeSeed. Version 1 files still load:
+    // their ledger starts at zero at the load (balances are differences, so they close from there).
+    public const int SaveVersion = 2, OldestSaveVersion = 1;
     static readonly byte[] SaveMagic = Encoding.ASCII.GetBytes("PRIMSAVE");
     const int EndMarker = 0x21444E45;   // "END!"
 
@@ -37,6 +39,7 @@ public sealed partial class World
     // two cannot disagree on order.
     abstract class Sync
     {
+        public int Version = SaveVersion;   // of the file being read (writing: always the current one)
         public abstract bool Reading { get; }
         public abstract void V(ref int x);
         public abstract void V(ref long x);
@@ -105,13 +108,17 @@ public sealed partial class World
         File.Move(tmpPath, full, true);
     }
 
-    public void Save(Stream stream, string note = null, CompressionLevel level = CompressionLevel.Fastest)
+    public void Save(Stream stream, string note = null, CompressionLevel level = CompressionLevel.Fastest) => Save(stream, note, level, SaveVersion);
+
+    // An older format (what an older build wrote: the self-test checks that such files still load).
+    internal void Save(Stream stream, string note, CompressionLevel level, int version)
     {
+        if (version < OldestSaveVersion || version > SaveVersion) throw new ArgumentOutOfRangeException(nameof(version));
         if (!BitConverter.IsLittleEndian) throw new PlatformNotSupportedException("save files are little-endian");
         using (var head = new BinaryWriter(stream, Encoding.UTF8, true))
         {
             head.Write(SaveMagic);
-            head.Write(SaveVersion);
+            head.Write(version);
             head.Write(Tick);
             head.Write(Seed);
             head.Write(Agents.Count(a => !a.Dead));
@@ -121,7 +128,7 @@ public sealed partial class World
         using var z = new BrotliStream(stream, level, true);   // Fastest: quality 1, ~3× faster than GZip and smaller
         using var buf = new BufferedStream(z, 1 << 20);
         using var bw = new BinaryWriter(buf, Encoding.UTF8, true);
-        SyncAll(new Writer(bw));
+        SyncAll(new Writer(bw) { Version = version });
         bw.Write(EndMarker);
     }
 
@@ -137,7 +144,8 @@ public sealed partial class World
         var magic = r.ReadBytes(SaveMagic.Length);
         if (!magic.AsSpan().SequenceEqual(SaveMagic)) throw new InvalidDataException("not a Primordium save file");
         var info = new SaveInfo { Version = r.ReadInt32() };
-        if (info.Version != SaveVersion) throw new InvalidDataException($"save format {info.Version}, this build reads {SaveVersion}");
+        if (info.Version < OldestSaveVersion || info.Version > SaveVersion)
+            throw new InvalidDataException($"save format {info.Version}, this build reads {OldestSaveVersion}…{SaveVersion}");
         info.Tick = r.ReadInt64();
         info.Seed = r.ReadInt32();
         info.Population = r.ReadInt32();
@@ -155,11 +163,11 @@ public sealed partial class World
 
     public static World Load(Stream stream)
     {
-        ReadInfo(stream);
+        var info = ReadInfo(stream);
         using var z = new BrotliStream(stream, CompressionMode.Decompress, true);
         using var buf = new BufferedStream(z, 1 << 20);
         using var br = new BinaryReader(buf, Encoding.UTF8, true);
-        var reader = new Reader(br);
+        var reader = new Reader(br) { Version = info.Version };
         // Settings, laws and tile layout come first: the skeleton is built with them.
         string settingsJson = null;
         reader.V(ref settingsJson);
@@ -212,6 +220,21 @@ public sealed partial class World
         SyncStructure(s);
         SyncLists(s);
         SyncAgents(s);
+        if (s.Version >= 2) SyncEnergy(s);
+    }
+
+    // The energy ledger: every accumulator as it is (per tile and per row, so the sums read after the
+    // load are bit for bit those of the original), the heat seen through heatIn and whether it is tracked.
+    void SyncEnergy(Sync s)
+    {
+        System.Threading.LazyInitializer.EnsureInitialized(ref tileFlow, InitFlows);
+        int slots = tileFlow.Length, flows = FlowCount;
+        s.V(ref slots); s.V(ref flows);
+        if (slots != tileFlow.Length || flows != FlowCount)
+            throw new InvalidDataException($"energy ledger layout differs: {slots}×{flows} saved, {tileFlow.Length}×{FlowCount} built");
+        foreach (var f in tileFlow) s.A<double>(f);
+        s.A<double>(rowLooseDecay);
+        s.V(ref pressureHeat); s.V(ref heatFlushed); s.V(ref TrackHeat);
     }
 
     void SyncLawLog(Sync s)

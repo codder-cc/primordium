@@ -226,6 +226,7 @@ public sealed partial class World
         DisplaceOccupants(best, Height[best]);
         Mat[w] = m; Units[w] = (ushort)Chem.MatCap[m]; Order[w] = 35;
         for (int e = 0; e < Chemistry.ElementCount; e++) InteriorInput[e] += Chem.MatCap[m] * Chem.Atoms[molecule, e];
+        Flows[FVent] += (double)Chem.MatCap[m] * Chem.E[molecule];
         Height[best]++;
         TerrainChanged(best);
         Repose(best);

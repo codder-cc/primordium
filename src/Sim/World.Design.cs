@@ -172,6 +172,15 @@ public sealed partial class World
         var a = new Agent(id, lineage, 0, (byte[])genome.Clone()) { Tb = Temp[cell], Z = Height[cell], Designed = true };
         for (int s = 0; s < Chemistry.S; s++) for (int j = 0; j < counts[s]; j++) AddMol(a, s);
         a.Energy = a.LifeStart = energy;
+        // The ledger (World.Energy): what came from outside is an input; local matter and local splits
+        // only moved energy between reservoirs (loose/rock bonds → body bonds and body energy).
+        if (o.Matter == MatterSource.Import)
+        {
+            double bonds = 0;
+            for (int s = 0; s < Chemistry.S; s++) bonds += (double)counts[s] * Chem.E[s];
+            Flows[FDesign] += bonds;
+        }
+        if (o.Energy == EnergySource.Import) Flows[FDesign] += a.Energy;
         Looks.Apply(a);
         if (d.Hue is float hue) a.Hue = ((hue % 1f) + 1f) % 1f;
         if (d.Sat is float sat) a.Sat = Math.Clamp(sat, 0, 1);
