@@ -31,8 +31,9 @@ public sealed partial class World
 
     public readonly int Seed;
     public readonly Chemistry Chem;
-    // Agents are stepped in Tile×Tile squares coloured like a 2×2 checkerboard: all squares of one
-    // colour in parallel, then the next colour. Everything an agent touches in one tick lies within ~7
+    // Agents are stepped in squares of about TileSize cells, coloured with a period that keeps squares
+    // of one colour SafeGap cells apart (2×2 for 32): all squares of one colour in parallel, then the
+    // next colour. Everything an agent touches in one tick lies within ~7
     // cells of where it started (its reach, a partner's reach and footprint, one step of movement) and
     // vision reads ≤16 cells, so squares stepped together (a whole square apart) never share a cell.
     // What is global is either thread-safe (concurrent sparse stores, Interlocked counters) or
@@ -89,10 +90,16 @@ public sealed partial class World
     readonly int[] nb = new int[N * 4];
     long nextId = 1;
     long nextStructure;
-    public const int Tile = 32, TilesX = W / Tile, TilesY = (H + Tile - 1) / Tile, Tiles = TilesX * TilesY;
-    readonly List<Agent>[] tiles = new List<Agent>[Tiles];
-    public const int Colours = 4;
-    readonly int[][] colour = new int[Colours][];   // tile indices of each checkerboard colour
+    // Tile layout (see the comment on Ctx and docs/SIMULATION.md). TileSize is the nominal side; tiles
+    // of one colour are Period−1 tiles apart in x and in y, i.e. at least SafeGap cells.
+    public static int TileSize = 32;   // tools/bench --tile N compares layouts (set before creating a world)
+    public const int SafeGap = 32;     // ≥ reach 7 of one agent + look 16 of another, with margin
+    public readonly int TilesX, TilesY, Tiles, Colours, PeriodX, PeriodY;
+    readonly byte[] tileCol = new byte[W], tileRow = new byte[H];
+    readonly List<Agent>[] tiles;
+    readonly int[][] colour;          // tile indices of each colour
+    readonly int[] phaseOrder;        // scratch: the tiles of a colour, most populous first
+    int phaseNext;
     readonly List<Agent> newborn = new();
 
     public World(int seed, int initialPop = P.InitialPop, bool abiogenesis = true)
@@ -100,11 +107,28 @@ public sealed partial class World
         Seed = seed;
         Abiogenesis = abiogenesis;
         mainRng = new Random(seed);
+        // Same-colour tiles must be SafeGap cells apart: Period − 1 tiles of at least the nominal size
+        // between them. x wraps, so the number of tile columns is a multiple of the period; the widths
+        // are spread evenly (some a cell wider).
+        int size = Math.Clamp(TileSize, 8, 64);
+        PeriodX = PeriodY = 1 + (SafeGap + size - 1) / size;
+        TilesX = Math.Max(PeriodX, W / size / PeriodX * PeriodX);
+        TilesY = Math.Max(1, H / size);
+        Tiles = TilesX * TilesY;
+        for (int x = 0; x < W; x++) tileCol[x] = (byte)(x * TilesX / W);
+        for (int y = 0; y < H; y++) tileRow[y] = (byte)(y * TilesY / H);
+        if ((PeriodX - 1) * (W / TilesX) < SafeGap || (TilesY >= PeriodY && (PeriodY - 1) * (H / TilesY) < SafeGap))
+            throw new InvalidOperationException($"tile layout {TilesX}×{TilesY} leaves same-colour tiles closer than {SafeGap} cells");
+        Colours = PeriodX * PeriodY;
+        PhaseBusy = new double[Colours]; PhaseLongest = new double[Colours];
+        colour = new int[Colours][];
+        for (int q = 0; q < Colours; q++)
+            colour[q] = Enumerable.Range(0, Tiles).Where(t => (t % TilesX) % PeriodX == q % PeriodX && (t / TilesX) % PeriodY == q / PeriodX).ToArray();
+        phaseOrder = new int[Tiles];
         ctxs = new Ctx[Tiles];
         for (int k = 0; k < Tiles; k++) ctxs[k] = new Ctx { Rng = new Random(seed * 1009 + k), Slot = k };
-        for (int q = 0; q < Colours; q++)
-            colour[q] = Enumerable.Range(0, Tiles).Where(t => (t % TilesX) % 2 == q % 2 && (t / TilesX) % 2 == q / 2).ToArray();
         Chem = new Chemistry(seed);
+        tiles = new List<Agent>[Tiles];
         for (int k = 0; k < Tiles; k++) tiles[k] = new List<Agent>();
         for (int i = 0; i < N; i++)
         {
@@ -151,13 +175,13 @@ public sealed partial class World
     public static readonly string[] DetailNames =
     {
         "climate", "cellchem", "settle/weather", "body loads", "region", "solve", "failures", "settle agents",
-        "sky", "diffusion", "erosion", "vents", "strikes", "metamorph", "tile sort", "agents", "merge", "relieve", "alarms", "abiogenesis",
+        "sky", "diffusion", "erosion", "vents", "strikes", "metamorph", "tile sort", "agents", "merge", "relieve", "alarms", "abiogenesis", "burials",
     };
     public const int DClimate = 0, DCellChem = 1, DSettle = 2, DBodyLoads = 3, DRegion = 4, DSolve = 5, DFailures = 6, DSettleAgents = 7,
         DSky = 8, DDiffusion = 9, DErosion = 10, DVents = 11, DStrikes = 12, DMetamorph = 13, DTileSort = 14, DAgents = 15, DMerge = 16,
-        DRelieve = 17, DAlarms = 18, DAbio = 19;
+        DRelieve = 17, DAlarms = 18, DAbio = 19, DBurials = 20;
     // Per colour of the agent phase: summed tile work and the slowest tile, ms (AgentBusy/AgentLongest are their totals).
-    public readonly double[] PhaseBusy = new double[Colours], PhaseLongest = new double[Colours];
+    public readonly double[] PhaseBusy, PhaseLongest;
     public long AgentAllocated;   // bytes allocated during the agent phase (approximate: all threads)
     static readonly double MsPerStamp = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
     long lapAt;
@@ -203,31 +227,45 @@ public sealed partial class World
             nextStructure = Tick + P.StructureEvery * Math.Clamp(1 + LastStructureVoxels / 5000, 1, 16);
         }
         LapStart();
-        if (Tick % P.MetamorphEvery == 0) Metamorphose();
-        Lap(DMetamorph);
+        if (Tick % P.MetamorphEvery == 0) Metamorphose();   // laps DMetamorph itself
+        Lap(DBurials);
         Prof[7] += prof.Elapsed.TotalMilliseconds - checkpoint;
         Prof[0] += prof.Elapsed.TotalMilliseconds; prof.Restart();
 
         foreach (var b in tiles) b.Clear();
-        foreach (var a in Agents) if (!a.Dead) tiles[a.Y / Tile * TilesX + a.X / Tile].Add(a);
-        foreach (var b in tiles)
-            for (int k = b.Count - 1; k > 0; k--) { int j = mainRng.Next(k + 1); (b[k], b[j]) = (b[j], b[k]); }
+        // Where each body is is read in parallel (that is what costs: touching every body); the lists
+        // are then filled in the order of Agents.
+        int pop = SnapshotAgents();
+        Parallel.For(0, (pop + 4095) / 4096, chunk =>
+        {
+            for (int i = chunk * 4096, end = Math.Min(pop, i + 4096); i < end; i++)
+            {
+                var a = everyone[i];
+                agentTile[i] = a.Dead ? -1 : tileRow[a.Y] * TilesX + tileCol[a.X];
+            }
+        });
+        for (int i = 0; i < pop; i++) if (agentTile[i] >= 0) tiles[agentTile[i]].Add(everyone[i]);
+        Array.Clear(everyone, 0, pop);
         Lap(DTileSort);
         long allocated = GC.GetTotalAllocatedBytes(false);
+        int workers = Environment.ProcessorCount;
         for (int q = 0; q < Colours; q++)
         {
+            // The most populous tiles first, handed out one at a time to whichever worker is free:
+            // a hot spot starts at once instead of after a batch of small tiles. Which thread steps a
+            // tile does not matter (each has its own Ctx and Rng).
             var group = colour[q];
-            Parallel.For(0, group.Length, k =>
+            int n = 0;
+            foreach (int t in group) if (tiles[t].Count > 0) phaseOrder[n++] = t;
+            Array.Sort(phaseOrder, 0, n, tileBySize ??= Comparer<int>.Create((p, r) =>
+                tiles[p].Count != tiles[r].Count ? tiles[r].Count.CompareTo(tiles[p].Count) : p.CompareTo(r)));
+            phaseNext = 0;
+            Parallel.For(0, Math.Min(workers, n), _ =>
             {
-                int t = group[k];
-                cur = ctxs[t];
-                long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-                try { foreach (var a in tiles[t]) if (!a.Dead) Live(a); }
-                finally { cur = null; }
-                ctxs[t].Busy = (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * MsPerStamp;
+                for (int k; (k = Interlocked.Increment(ref phaseNext) - 1) < n;) StepTile(phaseOrder[k]);
             });
             double longest = 0, busy = 0;
-            foreach (int t in group) { busy += ctxs[t].Busy; longest = Math.Max(longest, ctxs[t].Busy); }
+            for (int k = 0; k < n; k++) { var c = ctxs[phaseOrder[k]]; busy += c.Busy; longest = Math.Max(longest, c.Busy); }
             AgentBusy += busy; AgentLongest += longest;
             PhaseBusy[q] += busy; PhaseLongest[q] += longest;
         }
@@ -247,7 +285,7 @@ public sealed partial class World
         }
         Agents.AddRange(newborn);
         newborn.Clear();
-        Agents.RemoveAll(a => a.Dead);
+        RemoveDead();
         Lap(DMerge);
         Relieve();   // overfull floors let their smallest bodies go (see World.Volume)
         Lap(DRelieve);
@@ -266,6 +304,45 @@ public sealed partial class World
         float barren = Math.Max(0, 1 - Agents.Count / 200f);
         if (Abiogenesis && mainRng.NextDouble() < P.AbioChance * (1 + 160 * barren)) SpawnRandom();
         Lap(DAbio);
+    }
+
+    IComparer<int> tileBySize;
+
+    // Agents.RemoveAll(a => a.Dead), with the bodies looked at in parallel; the order is kept.
+    void RemoveDead()
+    {
+        int total = SnapshotAgents();
+        Parallel.For(0, (total + 4095) / 4096, chunk =>
+        {
+            for (int i = chunk * 4096, end = Math.Min(total, i + 4096); i < end; i++) agentTile[i] = everyone[i].Dead ? 1 : 0;
+        });
+        int alive = 0;
+        for (int i = 0; i < total; i++) if (agentTile[i] == 0) everyone[alive++] = everyone[i];
+        if (alive < total)
+        {
+            Agents.Clear();
+            Agents.AddRange(new ArraySegment<Agent>(everyone, 0, alive));
+        }
+        Array.Clear(everyone, 0, total);
+    }
+    int[] agentTile = new int[1024];
+    Agent[] everyone = new Agent[1024];
+
+    // One tile's agents, in an order shuffled by the tile's own random stream.
+    void StepTile(int t)
+    {
+        var ctx = ctxs[t];
+        cur = ctx;
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        try
+        {
+            var list = tiles[t];
+            var rng = ctx.Rng;
+            for (int k = list.Count - 1; k > 0; k--) { int j = rng.Next(k + 1); (list[k], list[j]) = (list[j], list[k]); }
+            foreach (var a in list) if (!a.Dead) Live(a);
+        }
+        finally { cur = null; }
+        ctx.Busy = (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * MsPerStamp;
     }
 
     static float Smooth(float a, float b, float x)

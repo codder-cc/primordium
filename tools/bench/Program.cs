@@ -20,6 +20,7 @@ for (int i = 0; i < args.Length - 1; i++)
     if (args[i] == "--every") every = int.Parse(args[i + 1]);
     if (args[i] == "--pop") pop = int.Parse(args[i + 1]);
     if (args[i] == "--log") logPath = args[i + 1];
+    if (args[i] == "--tile") World.TileSize = int.Parse(args[i + 1]);
 }
 
 World.ProfileOps = Array.IndexOf(args, "--ops") >= 0;
@@ -47,7 +48,7 @@ if (logPath != null)
 {
     log = new System.IO.StreamWriter(logPath);
     log.WriteLine("tick,pop,births,deaths,ms_tick,env,agents,bookkeeping," + string.Join(",", World.DetailNames.Select(n => n.Replace(' ', '_').Replace('/', '_')))
-        + ",agent_busy,agent_longest," + string.Join(",", Enumerable.Range(0, World.Colours).Select(q => $"busy{q},longest{q}"))
+        + ",agent_busy,agent_longest," + string.Join(",", Enumerable.Range(0, w.Colours).Select(q => $"busy{q},longest{q}"))
         + ",alloc_mb,agent_alloc_mb,gen0,gen1,gen2,gc_pause_pct,heap_mb,dirty_columns,hanging_voxels");
 }
 long prevAlloc = GC.GetTotalAllocatedBytes(false);
@@ -99,7 +100,7 @@ for (int t = 1; t <= ticks; t++)
         Console.WriteLine($"   underground: {inCave} bodies in cavities ({deep3} at 3+ below the surface, deepest {deepest}); columns with cavities {cavities}");
     }
     Console.WriteLine($"   agent tiles: work {w.AgentBusy / every:F2} ms/tick, slowest tile per colour {w.AgentLongest / every:F2}, wall {w.Prof[1] / every:F2}; by colour busy/longest "
-        + string.Join(" ", Enumerable.Range(0, World.Colours).Select(q => $"{w.PhaseBusy[q] / every:F2}/{w.PhaseLongest[q] / every:F2}")));
+        + string.Join(" ", Enumerable.Range(0, w.Colours).Select(q => $"{w.PhaseBusy[q] / every:F2}/{w.PhaseLongest[q] / every:F2}")));
     if (log != null)
     {
         var inv = System.Globalization.CultureInfo.InvariantCulture;
@@ -108,7 +109,7 @@ for (int t = 1; t <= ticks; t++)
             f(msTick), f(w.Prof[0] / every), f(w.Prof[1] / every), f(w.Prof[2] / every) }
             .Concat(w.Detail.Select(d => f(d / every)))
             .Concat(new[] { f(w.AgentBusy / every), f(w.AgentLongest / every) })
-            .Concat(Enumerable.Range(0, World.Colours).SelectMany(q => new[] { f(w.PhaseBusy[q] / every), f(w.PhaseLongest[q] / every) }))
+            .Concat(Enumerable.Range(0, w.Colours).SelectMany(q => new[] { f(w.PhaseBusy[q] / every), f(w.PhaseLongest[q] / every) }))
             .Concat(new[] { f(allocMb), f(agentAllocMb), gen0.ToString(), gen1.ToString(), gen2.ToString(), f(pause), (GC.GetTotalMemory(false) / 1048576).ToString(),
                 w.LastStructureColumns.ToString(), w.LastStructureVoxels.ToString() })));
         log.Flush();

@@ -123,22 +123,34 @@ public sealed partial class World
     readonly List<Agent> crowd = new();
     readonly List<(Agent a, int from, int to, int level)> shifts = new();
     readonly Dictionary<int, float> arriving = new();
+    readonly bool[] overfull = new bool[N];
+
+    // Does a floor of this cell hold more than it has room for? Everybody on one floor (nearly always)
+    // is one sum; bodies on several floors go to the full sweep.
+    bool Overfull(int c)
+    {
+        var head = Head[c];
+        if (head == null) return false;
+        if (head.NextInCell == null && Big[c] == null) return Share(head) + LooseAt(c, head.Z) > Space(c, head.Z);
+        for (var a = head.NextInCell; a != null; a = a.NextInCell) if (a.Z != head.Z) return true;
+        return FloorVolume(c, head.Z) > Space(c, head.Z);
+    }
 
     // The moves are decided first and made afterwards, so a body pushed into a cell further on in
     // the sweep is not pushed again in the same tick (which would drift crowds one way).
     void Relieve()
     {
         shifts.Clear(); arriving.Clear();
+        // Which floors are overfull is read in parallel (nothing is moved until all moves are decided);
+        // the sweep then visits only those, in cell order.
+        System.Threading.Tasks.Parallel.For(0, H, y =>
+        {
+            for (int c = y * W, end = c + W; c < end; c++) overfull[c] = Overfull(c);
+        });
         for (int c = 0; c < N; c++)
         {
+            if (!overfull[c]) continue;
             var head = Head[c];
-            if (head == null) continue;
-            if (head.NextInCell == null && Big[c] == null && Share(head) + LooseAt(c, head.Z) <= Space(c, head.Z)) continue;
-            // Fast path: everybody on one floor that is not overfull (the same sum the sweep below
-            // would make, so the outcome is identical) — no list, no sort.
-            bool oneFloor = true;
-            for (var a = head.NextInCell; a != null && oneFloor; a = a.NextInCell) oneFloor = a.Z == head.Z;
-            if (oneFloor && FloorVolume(c, head.Z) <= Space(c, head.Z)) continue;
             crowd.Clear();
             for (var a = head; a != null; a = a.NextInCell) crowd.Add(a);
             // By floor, then smallest first (ties by id: the result never depends on list order).

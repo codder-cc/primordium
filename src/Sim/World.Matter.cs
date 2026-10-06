@@ -502,6 +502,7 @@ public sealed partial class World
                 annealable[c] = more;
             }
         });
+        Lap(DMetamorph);
         // Burial remains at depth. Pressure changes lattice order and promotes only legal reactions.
         foreach (var entry in Buried)
         {

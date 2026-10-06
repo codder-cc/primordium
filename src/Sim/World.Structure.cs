@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace Primordium;
 
@@ -76,6 +77,40 @@ public sealed partial class World
             a.Z = level;
             if (a.Energy <= 0) Die(a, c, CauseBroken);
         }
+    }
+
+    // Would SettleAgent do anything to this body? (Read-only: checked in parallel.)
+    bool Unsettled(Agent a)
+    {
+        if (a.Dead) return false;
+        int c = a.Y * W + a.X;
+        if (IsSolid(c, a.Z)) return true;
+        int level = WalkLevel(c, a.Z);
+        return level >= 0 && level < a.Z;
+    }
+
+    // Copies Agents into `everyone` (and sizes the per-body scratch arrays); returns the count.
+    int SnapshotAgents()
+    {
+        int pop = Agents.Count;
+        if (agentTile.Length < pop) { agentTile = new int[pop * 2]; everyone = new Agent[pop * 2]; }
+        if (agentVoxel.Length < pop) { agentVoxel = new int[pop * 2]; agentWeight = new float[pop * 2]; }
+        Agents.CopyTo(everyone);
+        return pop;
+    }
+    int[] agentVoxel = new int[1024];
+    float[] agentWeight = new float[1024];
+
+    // foreach (var a in Agents) if (!a.Dead) SettleAgent(a): the check in parallel, the settling in order.
+    void SettleAll()
+    {
+        int pop = SnapshotAgents();
+        Parallel.For(0, (pop + 2047) / 2048, chunk =>
+        {
+            for (int i = chunk * 2048, end = Math.Min(pop, i + 2048); i < end; i++) agentTile[i] = Unsettled(everyone[i]) ? 1 : 0;
+        });
+        for (int i = 0; i < pop; i++) if (agentTile[i] != 0) SettleAgent(everyone[i]);
+        Array.Clear(everyone, 0, pop);
     }
 
     bool LoadMatters(int v, float delta)
@@ -201,12 +236,31 @@ public sealed partial class World
     {
         LapStart();
         nextBodyLoad.Clear();
-        foreach (var a in Agents)
+        // Bodies are looked at in parallel (where each stands, what it weighs); settling, which can
+        // kill, and adding up the loads go in the order of Agents as before. Settling one body changes
+        // nothing another's check or weight reads (deaths do not change geometry).
+        int pop = SnapshotAgents();
+        Parallel.For(0, (pop + 2047) / 2048, chunk =>
         {
+            for (int i = chunk * 2048, end = Math.Min(pop, i + 2048); i < end; i++) agentTile[i] = Unsettled(everyone[i]) ? 1 : 0;
+        });
+        for (int i = 0; i < pop; i++) if (agentTile[i] != 0) SettleAgent(everyone[i]);
+        Parallel.For(0, (pop + 2047) / 2048, chunk =>
+        {
+            for (int i = chunk * 2048, end = Math.Min(pop, i + 2048); i < end; i++)
+            {
+                var a = everyone[i];
+                if (a.Dead || a.Cells > 1) { agentVoxel[i] = -1; continue; }
+                // In water the bed bears only what the body weighs there (its mass less the water it displaces).
+                agentWeight[i] = (InWater(a) ? Weight(a) : a.Mass) * P.Gravity / a.Cells;
+                agentVoxel[i] = (a.Y * W + a.X) * Z + Math.Max(0, a.Z - 1);
+            }
+        });
+        for (int i = 0; i < pop; i++)
+        {
+            if (agentVoxel[i] >= 0) { nextBodyLoad.Add(agentVoxel[i], agentWeight[i]); continue; }
+            var a = everyone[i];
             if (a.Dead) continue;
-            SettleAgent(a);
-            if (a.Dead) continue;
-            // In water the bed bears only what the body weighs there (its mass less the water it displaces).
             float weight = (InWater(a) ? Weight(a) : a.Mass) * P.Gravity / a.Cells;
             for (int k = 0; k < a.Cells; k++)
             {
@@ -214,6 +268,7 @@ public sealed partial class World
                 nextBodyLoad.Add(c * Z + Math.Max(0, level - 1), weight);
             }
         }
+        Array.Clear(everyone, 0, pop);
         // A body's weight matters where it can tip the balance: on a roof or ledge, or when the change
         // is a noticeable share of what the floor block can bear. Small shifts on solid ground wait for
         // the next real change of that column (the stored loads are always current).
@@ -311,7 +366,7 @@ public sealed partial class World
             }
         }
         Lap(6);
-        foreach (var a in Agents) if (!a.Dead) SettleAgent(a);
+        SettleAll();
         Lap(7);
     }
 
