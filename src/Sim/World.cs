@@ -64,7 +64,9 @@ public sealed partial class World
     [ThreadStatic] static Ctx cur;
     readonly Ctx[] ctxs;
     readonly Random mainRng;
-    public Random Rng => cur?.Rng ?? mainRng;
+    public Random Rng => cur?.Rng ?? lifeRng ?? mainRng;
+    Random lifeRng;   // only while the first bodies are made, if a life seed is given (see the constructor)
+    public readonly int LifeSeed;
 
     // Loose matter lying on each cell, per species: remains of the dead and whatever bodies threw
     // out. It stays where it fell (it rots, and compacts into aggregates); only the gas spreads, as air.
@@ -102,9 +104,14 @@ public sealed partial class World
     int phaseNext;
     readonly List<Agent> newborn = new();
 
-    public World(int seed, int initialPop = P.InitialPop, bool abiogenesis = true)
+    // lifeSeed ≠ 0 perturbs life only: the first bodies (genomes, places) and the agents' random
+    // streams. Elements, terrain, vents, water and the primordial litter stay those of `seed`, so
+    // repeats of one seed with different life seeds show how much of an outcome is chance.
+    // 0 is the original world of `seed`.
+    public World(int seed, int initialPop = P.InitialPop, bool abiogenesis = true, int lifeSeed = 0)
     {
         Seed = seed;
+        LifeSeed = lifeSeed;
         Abiogenesis = abiogenesis;
         mainRng = new Random(seed);
         // Same-colour tiles must be SafeGap cells apart: Period − 1 tiles of at least the nominal size
@@ -126,7 +133,8 @@ public sealed partial class World
             colour[q] = Enumerable.Range(0, Tiles).Where(t => (t % TilesX) % PeriodX == q % PeriodX && (t / TilesX) % PeriodY == q / PeriodX).ToArray();
         phaseOrder = new int[Tiles];
         ctxs = new Ctx[Tiles];
-        for (int k = 0; k < Tiles; k++) ctxs[k] = new Ctx { Rng = new Random(seed * 1009 + k), Slot = k };
+        int life = lifeSeed == 0 ? 0 : (int)Hash32.U((uint)lifeSeed * 2654435761u) | 1;
+        for (int k = 0; k < Tiles; k++) ctxs[k] = new Ctx { Rng = new Random(unchecked(seed * 1009 + k) ^ life), Slot = k };
         Chem = new Chemistry(seed);
         tiles = new List<Agent>[Tiles];
         for (int k = 0; k < Tiles; k++) tiles[k] = new List<Agent>();
@@ -159,8 +167,10 @@ public sealed partial class World
         UpdateClouds();
         UpdateLight();
         for (int i = 0; i < N; i++) Temp[i] = TempEq(i);
+        if (lifeSeed != 0) lifeRng = new Random(unchecked(seed * 7349 + 1) ^ life);
         for (int k = 0, tries = 0; k < initialPop && tries < initialPop * 20; tries++)
             if (SpawnRandom()) k++;
+        lifeRng = null;
     }
 
     public int Nb(int i, int d) => nb[i * 4 + d];
@@ -474,6 +484,7 @@ public sealed partial class World
                 C[s][i] -= m; C[Chem.SplitA[s]][i] += m;
                 if (Chem.SplitB[s] >= 0) C[Chem.SplitB[s]][i] += m;
                 heatIn[i] += m * Chem.SplitEnergy(s);
+                rowLooseDecay[i / W] += m * Chem.SplitEnergy(s);   // rows are owned by one worker
             }
         }
         // Atmospheric material remains in the budget even over water. Rain deposits existing

@@ -268,11 +268,13 @@ public sealed partial class World
     // Energy from a reaction: part of what is released warms the body instead.
     void Release(Agent a, float de)
     {
-        if (de <= 0) { a.Energy += de; a.LifeUphill -= de; return; }
+        float e0 = a.Energy, h0 = a.HeatHeld;
+        if (de <= 0) { a.Energy += de; a.LifeUphill -= de; Flows[FRounding] += de - ((double)a.Energy - e0); return; }
         a.Energy += de * (1 - P.HeatShare);
         // The heat share warms the body; it reaches the cells only as the body cools (LiveBody).
         a.Tb += de * P.HeatShare * 6f / (5f + a.Mass);
         a.HeatHeld += de * P.HeatShare;
+        Flows[FRounding] += de - ((double)a.Energy - e0) - ((double)a.HeatHeld - h0);   // floats round (see World.Energy)
         a.GainChem += de * (1 - P.HeatShare);
         a.TickChem += de;
         a.LastMeal = a.Age;
@@ -345,6 +347,7 @@ public sealed partial class World
             float gain = Chem.E[p] - Chem.E[s];
             a.GainPhoto += gain;
             a.TickPhoto += gain;
+            Flows[FPhoto] += gain;
             caught++;
         }
         if (caught == 0) return;

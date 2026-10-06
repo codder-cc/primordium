@@ -139,10 +139,12 @@ public sealed partial class World
         BiteBankRegression();
         ReachRegression();
         DepositRegression();
+        EnergyRegression();
         foreach (int seed in new[] { 1, 7 })
         {
-            var w = new World(seed, 800, true);
+            var w = new World(seed, 800, true) { TrackHeat = true };
             var before = w.ElementBudget();
+            var energy = w.AuditEnergy();
             for (int t = 0; t < 1200; t++) w.Step();
             var after = w.ElementBudget();
             for (int e = 0; e < after.Length; e++) after[e] -= w.InteriorInput[e] + w.HandInput[e];
@@ -161,7 +163,8 @@ public sealed partial class World
             }
             Require(w.C.All(c => c.All(x => x >= 0 && float.IsFinite(x))), "invalid environmental amount");
             w.CheckCellLists();
-            Console.WriteLine($"PASS 1200 ticks seed {seed}: population {w.Agents.Count}, max atom drift {before.Zip(after, (a, b) => Math.Abs(a - b)).Max():F6}, falls {w.CollapsedBlocks}, buried {w.DeathsBuried}");
+            string energyNote = EnergyWorldCheck(w, energy, $"world seed {seed}");
+            Console.WriteLine($"PASS 1200 ticks seed {seed}: population {w.Agents.Count}, max atom drift {before.Zip(after, (a, b) => Math.Abs(a - b)).Max():F6}, {energyNote}, falls {w.CollapsedBlocks}, buried {w.DeathsBuried}");
         }
         // Repeat independently; thread scheduling must not affect world or population state.
         var one = new World(42, 80, false); var two = new World(42, 80, false);

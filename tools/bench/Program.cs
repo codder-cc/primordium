@@ -6,11 +6,20 @@ using Primordium;
 // dotnet run -c Release --project tools/bench -- --seed 1 --ticks 50000 --every 5000 [--pop N] [--noabio] [--ops] [--audit]
 //   [--log path.csv]: one row per --every interval with population, births, deaths, every stage's ms/tick,
 //   allocation and GC counts, for looking at performance over time.
+//   [--life N]: perturb only life (first bodies and agents' random streams) of the seed's world.
+//   [--set Name=value]: change a parameter (see ParamHook). Batches, comparisons and the long test: see Batch.cs.
+try { foreach (var (name, value) in ParamHook.Parse(args)) ParamHook.Apply(name, value); }
+catch (ArgumentException e) { Console.Error.WriteLine("--set: " + e.Message); Environment.Exit(2); }
 if (Array.IndexOf(args, "--self-test") >= 0) { World.RunRegression(); return; }
+if (Array.IndexOf(args, "--long-test") >= 0) { World.RunLongTest(args); return; }
+if (Array.IndexOf(args, "--batch") >= 0) { Batch.Run(args); return; }
+if (Array.IndexOf(args, "--compare") >= 0) { Batch.Compare(args); return; }
+if (Array.IndexOf(args, "--run-one") >= 0) { Batch.RunOne(args); return; }
 if (Array.IndexOf(args, "--bites") >= 0) { foreach (int s in new[] { 1, 2, 3, 5, 7 }) World.BiteReport(s); return; }
 if (Array.IndexOf(args, "--strength") >= 0) { foreach (int s in new[] { 1, 2, 3, 7 }) { Console.WriteLine($"seed {s}"); World.StrengthReport(s); } return; }
 
-int seed = 1, ticks = 20000, every = 1000, pop = P.InitialPop;
+int seed = 1, ticks = 20000, every = 1000, pop = P.InitialPop, life = 0;
+foreach (var (name, value) in ParamHook.Parse(args)) Console.WriteLine($"set {ParamHook.Apply(name, value)}");   // applied above already; idempotent
 string logPath = null;
 bool abio = Array.IndexOf(args, "--noabio") < 0;
 for (int i = 0; i < args.Length - 1; i++)
@@ -21,12 +30,16 @@ for (int i = 0; i < args.Length - 1; i++)
     if (args[i] == "--pop") pop = int.Parse(args[i + 1]);
     if (args[i] == "--log") logPath = args[i + 1];
     if (args[i] == "--tile") World.TileSize = int.Parse(args[i + 1]);
+    if (args[i] == "--life") life = int.Parse(args[i + 1]);
 }
 
 World.ProfileOps = Array.IndexOf(args, "--ops") >= 0;
-var w = new World(seed, pop, abio);
+var w = new World(seed, pop, abio, life);
 bool audit = Array.IndexOf(args, "--audit") >= 0;
 var originalAtoms = audit ? w.ElementBudget() : null;
+w.TrackHeat = audit;
+var originalEnergy = audit ? w.AuditEnergy() : null;
+var evo = new EvoMetrics();
 if (Array.IndexOf(args, "--probe") >= 0)
 {
     // label0 intake split intake split divide jmp0 nop — empty stacks make every operand 0
@@ -49,7 +62,8 @@ if (logPath != null)
     log = new System.IO.StreamWriter(logPath);
     log.WriteLine("tick,pop,births,deaths,ms_tick,env,agents,bookkeeping," + string.Join(",", World.DetailNames.Select(n => n.Replace(' ', '_').Replace('/', '_')))
         + ",agent_busy,agent_longest," + string.Join(",", Enumerable.Range(0, w.Colours).Select(q => $"busy{q},longest{q}"))
-        + ",alloc_mb,agent_alloc_mb,gen0,gen1,gen2,gc_pause_pct,heap_mb,dirty_columns,hanging_voxels");
+        + ",alloc_mb,agent_alloc_mb,gen0,gen1,gen2,gc_pause_pct,heap_mb,dirty_columns,hanging_voxels,mean_temp,"
+        + string.Join(",", EvoMetrics.Names.Skip(1)) + ",energy_drift,energy_tolerance");
 }
 long prevAlloc = GC.GetTotalAllocatedBytes(false);
 int prevGen0 = GC.CollectionCount(0), prevGen1 = GC.CollectionCount(1), prevGen2 = GC.CollectionCount(2), prevBirths = 0, prevDeaths = 0;
@@ -63,6 +77,10 @@ for (int t = 1; t <= ticks; t++)
         var atoms = w.ElementBudget();
         Console.WriteLine("   atom drift excluding interior input: " + string.Join(" / ", atoms.Select((value, e) => (value - w.InteriorInput[e] - w.HandInput[e] - originalAtoms[e]).ToString("F6"))));
     }
+    EnergyAudit energyNow = audit ? w.AuditEnergy() : null;
+    if (audit) Console.WriteLine("   " + energyNow.Describe(originalEnergy));
+    var evoNow = evo.Sample(w);
+    Console.WriteLine("   evo: " + EvoMetrics.Format(evoNow));
     w.CheckCellLists();   // throws if any cell list is broken
     var c = w.TakeCensus();
     var cl = w.TakeClimate();
@@ -111,7 +129,9 @@ for (int t = 1; t <= ticks; t++)
             .Concat(new[] { f(w.AgentBusy / every), f(w.AgentLongest / every) })
             .Concat(Enumerable.Range(0, w.Colours).SelectMany(q => new[] { f(w.PhaseBusy[q] / every), f(w.PhaseLongest[q] / every) }))
             .Concat(new[] { f(allocMb), f(agentAllocMb), gen0.ToString(), gen1.ToString(), gen2.ToString(), f(pause), (GC.GetTotalMemory(false) / 1048576).ToString(),
-                w.LastStructureColumns.ToString(), w.LastStructureVoxels.ToString() })));
+                w.LastStructureColumns.ToString(), w.LastStructureVoxels.ToString(), f(cl.MeanT) })
+            .Concat(evoNow.Skip(1).Select(f))
+            .Concat(new[] { audit ? f(EnergyAudit.Drift(originalEnergy, energyNow)) : "", audit ? f(EnergyAudit.Tolerance(originalEnergy, energyNow)) : "" })));
         log.Flush();
     }
     prevAlloc = alloc; prevGen0 += gen0; prevGen1 += gen1; prevGen2 += gen2; prevBirths = w.Births; prevDeaths = w.Deaths; prevWall = wall;

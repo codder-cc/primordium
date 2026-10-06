@@ -80,6 +80,7 @@ public sealed partial class World
 
     void UpdateClimate()
     {
+        FlushedHeat();
         Parallel.For(0, H, y =>
         {
             for (int x = 0; x < W; x++)
@@ -202,6 +203,7 @@ public sealed partial class World
                     // Irradiation excites the same formula; it cannot transmute elements.
                     int product = Chem.PhotoUp[s];
                     C[product >= 0 ? product : s][i] += m;
+                    if (product >= 0) Flows[FStrike] += (double)m * (Chem.E[product] - Chem.E[s]);
                 }
                 for (var a = Head[i]; a != null; a = a.NextInCell)
                     if (rng.NextDouble() < 0.3 + 0.7 * k) Irradiate(a, k, rng);
