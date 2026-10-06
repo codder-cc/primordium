@@ -8,31 +8,39 @@ namespace Primordium;
 
 public partial class Main : Node
 {
-    public World World { get; private set; }
+    // The world is stepped on its own thread (SimRunner) and owned by it: the main thread reads the
+    // published SimFrame and the terrain arrays, and changes the world only through Sim.Do(...).
+    public SimRunner Sim { get; private set; }
+    public World World => Sim?.World;
     public View3D View { get; private set; }
-    public int Tpf = 8;
-    public bool Paused;
-    public double Tps, SimMs, ViewMs;   // smoothed: ms per tick of simulation, ms per frame of drawing
-    public Census Census = new();
-    public readonly List<int[]> Hist = new();                 // every 100 ticks: all, plants, eaters, miners, hunters
-    public readonly long[] EvRate = new long[(int)EvKind.Count];
-    public List<(long lin, int n, int gen, Agent rep)> Lineages = new();
-    public int KinCount;
+    public SimFrame Frame;                      // the newest published picture of the world
+    public int Tpf { get => Sim.Tpf; set => Sim.Tpf = value; }
+    public bool Paused { get => Sim.Paused; set => Sim.Paused = value; }
+    public double Tps => Sim.Tps;
+    public double SimMs => Sim.SimMs;
+    public double ViewMs;                       // smoothed ms per frame of drawing
+    SimStats Stats => Sim.Stats;
+    public Census Census => Stats.Census;
+    public World.Climate Climate => Stats.Climate;
+    public List<(long lin, int n, int gen, Agent rep)> Lineages => Stats.Lineages;
+    public List<(string name, Agent a, string value)> Records => Stats.Records;
+    public int KinCount => Stats.KinCount;
     public bool ShowRecords;
-    public long FastTo = -1, FastFrom;   // fast-forward: simulate without drawing until this tick
-    public bool FastForward => FastTo > (World?.Tick ?? 0);
-    public readonly List<(string name, Agent a, string value)> Records = new();
-    public readonly List<float> SelHist = new();   // energy of the selected agent, every 5 ticks
-    Agent histOf;
-    public World.Climate Climate;
+    public long FastTo { get => Sim.FastTo; set => Sim.FastTo = value; }   // fast-forward: simulate without drawing until this tick
+    public long FastFrom => Sim.FastFrom;
+    public bool FastForward => Sim?.FastForward ?? false;
     int initialPop = P.InitialPop;
     bool abiogenesis = true;
 
     Hud hud;
+    PerfOverlay perf;
+    int perfEvery, perfQuit = -1, perfDone, pauseAfter = -1, startTpf = 8;
+    double hudWait;
+    bool hudInput;
+    readonly HashSet<string> printedErrors = new();
     PanelContainer fastPanel;
     LineEdit fastEdit;
     Label fastNote;
-    readonly long[] evPrev = new long[(int)EvKind.Count];
     int frame, shotFrames = -1;
     string shotPath;
     bool lDown, rDown, mDown, dragged;
@@ -40,7 +48,8 @@ public partial class Main : Node
 
     // The hand: a brush that pours matter (a new random kind every stroke) or water, kills or digs.
     public static readonly string[] ToolNames = { "", "насыпать", "вода", "убить", "копнуть" };
-    public int Tool, PourSpecies = -1;
+    public int Tool;
+    public volatile int PourSpecies = -1;   // chosen on the simulation thread (it draws from the world's random numbers)
     public float BrushR = 3;
     bool painting;
     double paintWait;
@@ -65,6 +74,12 @@ public partial class Main : Node
             if (args[i] == "--zoom") zoom = float.Parse(args[i + 1], System.Globalization.CultureInfo.InvariantCulture);
             if (args[i] == "--tool") startTool = int.Parse(args[i + 1]);
             if (args[i] == "--paint") paintDabs = int.Parse(args[i + 1]);
+            if (args[i] == "--overlay") startOverlay = int.Parse(args[i + 1]);
+            if (args[i] == "--perf") perfEvery = int.Parse(args[i + 1]);
+            if (args[i] == "--perfquit") perfQuit = int.Parse(args[i + 1]);
+            if (args[i] == "--pauseafter") pauseAfter = int.Parse(args[i + 1]);
+            if (args[i] == "--tpf") startTpf = int.Parse(args[i + 1]);
+            if (args[i] == "--viewthreads") View3D.ViewWorkers = int.Parse(args[i + 1]);
         }
 
         View = new View3D();
@@ -74,34 +89,28 @@ public partial class Main : Node
         hud = new Hud { Main = this };
         layer.AddChild(hud);
         BuildFastForm(layer);
+        perf = new PerfOverlay { Main = this };
+        layer.AddChild(perf);
+        if (Array.IndexOf(args, "--perfshow") >= 0) perf.Visible = true;
 
-        NewWorld(seed);
-        for (int i = 0; i < warm; i++) Tick();
-        Census = World.TakeCensus();
-        ComputeLineages();
+        NewWorld(seed, warm);
         View.Slice = slice;
+        View.Overlay = startOverlay;
         if (zoom > 0) View.ZoomAt(zoom);
         if (Array.IndexOf(args, "--strike") >= 0)
         {
             // For screenshots: strike the busiest place right away.
             var a = Lineages.Count > 0 ? Lineages[0].rep : null;
-            if (a != null) World.StrikeAt(a.X, a.Y, 9);
+            if (a != null) Sim.Do(w => w.StrikeAt(a.X, a.Y, 9));
         }
         if (focus > 0 && Lineages.Count > 0)
         {
             // Select an agent of the biggest lineage (or the body covering most cells) and look at it
             // from close up (for screenshots).
             View.Selected = Lineages[0].rep;
-            if (Array.IndexOf(args, "--oldest") >= 0)
-            {
-                ComputeRecords();
-                if (Records.Count > 0) View.Selected = Records[0].a;
-            }
+            if (Array.IndexOf(args, "--oldest") >= 0 && Records.Count > 0) View.Selected = Records[0].a;
             if (Array.IndexOf(args, "--big") >= 0)
-            {
-                ComputeRecords();
                 foreach (var r in Records) if (r.name.StartsWith("занимает")) View.Selected = r.a;
-            }
             View.LookAt(View.Selected);
             View.ZoomAt(focus);
         }
@@ -110,78 +119,55 @@ public partial class Main : Node
         if (shotPath != null) shotFrames = 60;
     }
 
-    void NewWorld(int seed)
+    int startOverlay;
+
+    // A new world: the old simulation thread is stopped, the new world is warmed up here
+    // (synchronously, as before) and then runs on its own thread.
+    void NewWorld(int seed, int warm = 0)
     {
-        World = new World(seed, initialPop, abiogenesis);
+        bool wasPaused = Sim?.Paused ?? false;
+        int tpf = Sim?.Tpf ?? startTpf;
+        Sim?.Stop();
+        var sim = new SimRunner(new World(seed, initialPop, abiogenesis)) { Tpf = tpf, Paused = wasPaused };
+        var sw = Stopwatch.StartNew();
+        for (int i = 0; i < warm; i++)
+        {
+            sim.TickOnce();
+            if (perfEvery > 0 && i % 1000 == 999) GD.Print($"warm {i + 1} pop {sim.World.Agents.Count} {sw.Elapsed.TotalSeconds:F0}s");
+        }
         painting = false;
-        if (Tool == 1) PourSpecies = World.RandomPourable();
-        View.SetWorld(World);
-        Hist.Clear();
-        Array.Clear(EvRate);
-        Array.Clear(evPrev);
-        Lineages.Clear();
-        Census = new Census();
+        if (Tool == 1) PourSpecies = sim.World.RandomPourable();
+        View.SetWorld(sim.World);
+        Sim = sim;
+        sim.Start();
+        Frame = sim.Acquire();
+        perf?.Reset(sim);
     }
 
-    void Tick()
+    public override void _Notification(int what)
     {
-        World.Step();
-        var s = View.Selected;
-        if (s != histOf) { histOf = s; SelHist.Clear(); }
-        if (s is { Dead: false } && World.Tick % 5 == 0)
-        {
-            SelHist.Add(s.Energy);
-            if (SelHist.Count > 300) SelHist.RemoveAt(0);
-        }
-        if (World.Tick % 100 == 0)
-        {
-            var c = World.TakeCensus();
-            Hist.Add(new[] { c.Pop, c.Plants, c.Eaters, c.Miners, c.Hunters });
-            if (Hist.Count > 400) Hist.RemoveAt(0);
-        }
-        if (World.Tick % 1000 == 0)
-        {
-            for (int k = 0; k < EvRate.Length; k++) EvRate[k] = World.Ev[k] - evPrev[k];
-            Array.Copy(World.Ev, evPrev, evPrev.Length);
-        }
+        if (what == NotificationWMCloseRequest) Sim?.Stop();
     }
+
+    public override void _ExitTree() => Sim?.Stop();
 
     public override void _Process(double delta)
     {
         if (World == null) return;
-        int done = 0;
-        var sw = Stopwatch.StartNew();
+        var total = Stopwatch.StartNew();
+        if (Sim.Error is { } err && printedErrors.Add(err)) GD.PrintErr("simulation stopped: " + err);
+        Frame = Sim.Acquire();
+        if (View.Selected is { Dead: true } && View.Follow) View.Follow = false;
+        Sim.Selected = View.Selected;
+        Sim.Hover = View.Hover;
+        Sim.WantStress = View.Overlay == 7;
+        frame++;
         if (FastForward)
         {
-            // Nothing is drawn: spend most of the frame simulating.
-            while (World.Tick < FastTo && sw.Elapsed.TotalMilliseconds < 250) { Tick(); done++; }
-            Tps = Tps * 0.7 + done / Math.Max(1e-3, sw.Elapsed.TotalSeconds) * 0.3;
-            if (!FastForward)
-            {
-                FastTo = -1;
-                Census = World.TakeCensus();
-                Climate = World.TakeClimate();
-                ComputeLineages();
-                ComputeRecords();
-            }
-            frame++;
-            hud.QueueRedraw();
+            // Nothing is drawn but the progress: the simulation thread runs flat out.
+            if ((hudWait -= delta) <= 0) { hud.QueueRedraw(); hudWait = 0.1; }
+            Perf(delta, total);
             return;
-        }
-        if (!Paused)
-        {
-            while (done < Tpf && sw.Elapsed.TotalMilliseconds < 28) { Tick(); done++; }
-            if (done > 0) SimMs = SimMs * 0.9 + sw.Elapsed.TotalMilliseconds / done * 0.1;
-        }
-        Tps = Tps * 0.92 + (Paused ? 0 : done / Math.Max(1e-3, delta)) * 0.08;
-        if (frame++ % 20 == 0)
-        {
-            Census = World.TakeCensus();
-            Climate = World.TakeClimate();
-            ComputeLineages();
-            var sel = View.Selected;
-            KinCount = sel == null ? 0 : World.Agents.Count(a => !a.Dead && a != sel && Looks.Kin(a, sel) > 0);
-            ComputeRecords();
         }
         var mouse = GetViewport().GetMousePosition();
         View.BrushCell = Tool > 0 && !OverPanel(mouse) ? View.PickCell(mouse) : -1;
@@ -212,19 +198,25 @@ public partial class Main : Node
             fastPanel.Position = new Vector2((vs.X - Hud.PanelW - fastPanel.Size.X) / 2, (vs.Y - fastPanel.Size.Y) / 2);
         }
 
-        sw.Restart();
+        var sw = Stopwatch.StartNew();
+        View.Frame = Frame;
         View.Refresh((float)delta);
-        hud.QueueRedraw();
         ViewMs = ViewMs * 0.9 + sw.Elapsed.TotalMilliseconds * 0.1;
+        // The panel redraws ~10 times a second, ~30 while the mouse moves or keys are pressed.
+        hudWait -= delta;
+        if (hudWait <= 0 || (hudInput && hudWait <= 0.067) || shotFrames >= 0)
+        {
+            hud.QueueRedraw();
+            hudWait = 0.1;
+            hudInput = false;
+        }
 
         if (shotFrames == 8 && Array.IndexOf(OS.GetCmdlineUserArgs(), "--big") >= 0)
         {
-            ComputeRecords();
             foreach (var r in Records) if (r.name.StartsWith("занимает")) { View.Selected = r.a; View.LookAt(r.a); View.ZoomAt(22); }
         }
         if (shotFrames == 8 && Array.IndexOf(OS.GetCmdlineUserArgs(), "--oldest") >= 0)
         {
-            ComputeRecords();
             if (Records.Count > 0) { View.Selected = Records[0].a; View.LookAt(Records[0].a); }
         }
         if (shotFrames == 30 && paintDabs > 0)
@@ -235,7 +227,32 @@ public partial class Main : Node
         if (shotFrames > 0 && --shotFrames == 0)
         {
             GetViewport().GetTexture().GetImage().SavePng(shotPath);
+            Sim.Stop();
             GetTree().Quit();
+        }
+        Perf(delta, total);
+    }
+
+    // The F3 overlay and the --perf log.
+    void Perf(double delta, Stopwatch total)
+    {
+        perf.Frame(delta, total.Elapsed.TotalMilliseconds, hud.DrawMs, View.Prof);
+        hud.DrawMs = 0;
+        Array.Clear(View.Prof);
+        if (perfEvery > 0 && perf.Frames >= perfEvery)
+        {
+            string line = perf.Report(false);
+            GD.Print(line);
+            if (perf.Visible) perf.Show(perf.Report(true));
+            perf.Reset(Sim);
+            perfDone++;
+            if (perfDone == pauseAfter) { Paused = true; GD.Print("PERF -> paused"); }
+            if (perfDone == perfQuit) { Sim.Stop(); GetTree().Quit(); }
+        }
+        else if (perfEvery <= 0 && perf.Visible && perf.Seconds >= 0.5)
+        {
+            perf.Show(perf.Report(true));
+            perf.Reset(Sim);
         }
     }
 
@@ -303,8 +320,9 @@ public partial class Main : Node
             fastNote.AddThemeColorOverride("font_color", new Color(1f, 0.55f, 0.5f));
             return;
         }
-        long target = until ? (n - 1) * P.DayLen : World.Tick + n * P.DayLen;
-        if (target <= World.Tick)
+        long now = Sim.Tick;
+        long target = until ? (n - 1) * P.DayLen : now + n * P.DayLen;
+        if (target <= now)
         {
             fastNote.Text = $"сутки {n} уже прошли (сейчас {World.Day + 1})";
             fastNote.AddThemeColorOverride("font_color", new Color(1f, 0.55f, 0.5f));
@@ -316,53 +334,8 @@ public partial class Main : Node
 
     void StartFast(long target)
     {
-        FastFrom = World.Tick;
+        Sim.FastFrom = Sim.Tick;
         FastTo = target;
-    }
-
-    // The most remarkable living bodies right now.
-    void ComputeRecords()
-    {
-        Records.Clear();
-        Agent Max(Func<Agent, float> f)
-        {
-            Agent best = null;
-            float bv = float.MinValue;
-            foreach (var a in World.Agents)
-            {
-                if (a.Dead) continue;
-                float v = f(a);
-                if (v > bv) { bv = v; best = a; }
-            }
-            return best;
-        }
-        static float Protected(Agent a)
-        {
-            int n = 0;
-            foreach (var b in a.Prot) if (b > 20) n++;
-            return n / (float)a.Prot.Length;
-        }
-        void Add(string name, Func<Agent, float> f, Func<Agent, string> show, bool needPositive = false)
-        {
-            var a = Max(f);
-            if (a != null && (!needPositive || f(a) > 0)) Records.Add((name, a, show(a)));
-        }
-        Add("старейший", a => a.Age, a => $"возраст {a.Age:N0}");
-        Add("больше всех детей", a => a.NChildren, a => $"детей {a.NChildren}", true);
-        Add("самое глубокое поколение", a => a.Gen, a => $"поколение {a.Gen}");
-        Add("самый крупный", a => a.Mass, a => $"масса {a.Mass:0} · {a.Cells} кл.");
-        Add("занимает больше всех клеток", a => a.Cells + a.Mass * 1e-4f, a => $"{a.Cells} клеток · масса {a.Mass:0}");
-        Add("самый сытый", a => a.Energy, a => $"энергия {a.Energy:0}");
-        Add("больше всех белков", a => a.EnzymeTotal, a => $"белков {a.EnzymeTotal:0.0}", true);
-        Add("самый закреплённый геном", Protected, a => $"закреплено {Protected(a):P0}", true);
-        Add("самый длинный геном", a => a.G.Length, a => $"{a.G.Length} байт");
-        Add("главный убийца", a => a.NKills, a => $"убил {a.NKills}", true);
-        Add("больше всех атак", a => a.NAttacks, a => $"атак {a.NAttacks}", true);
-        Add("распространитель генов", a => a.NInjects, a => $"вставок {a.NInjects}", true);
-        Add("больше всех спаривался", a => a.NMates, a => $"спариваний {a.NMates}", true);
-        Add("в самой тесной клетке", a => World.Count[a.Y * World.W + a.X], a => $"соседей {World.Count[a.Y * World.W + a.X] - 1}");
-        Add("самое горячее тело", a => a.Tb, a => $"{a.Tb:+0;-0} °C");
-        Add("самое холодное тело", a => -a.Tb, a => $"{a.Tb:+0;-0} °C");
     }
 
     public void Focus(Agent a)
@@ -371,37 +344,36 @@ public partial class Main : Node
         View.LookAt(a);
     }
 
-    void ComputeLineages()
-    {
-        Lineages = World.Agents.Where(a => !a.Dead).GroupBy(a => a.Lineage)
-            .Select(g => (g.Key, g.Count(), g.Max(a => a.Gen), g.OrderByDescending(a => a.Gen).First()))
-            .OrderByDescending(t => t.Item2).Take(5).ToList();
-    }
-
     bool OverPanel(Vector2 p) => p.X > GetViewport().GetVisibleRect().Size.X - Hud.PanelW;
 
-    // One dab of the brush at a column (15 a second while the button is held).
+    // One dab of the brush at a column (15 a second while the button is held). Applied by the
+    // simulation thread between ticks.
     void Paint(int c)
     {
         int x = c % World.W, y = c / World.W;
+        float r = BrushR;
         switch (Tool)
         {
-            case 1: World.Pour(x, y, BrushR, PourSpecies, 0.25f); break;   // a quarter of a block at the centre per dab
-            case 2: World.PourWater(x, y, BrushR, 0.15f); break;
-            case 3: World.KillIn(x, y, BrushR); break;
-            case 4: World.DigOut(x, y, BrushR, 0.25f); break;
+            case 1: Sim.Do(w => { if (PourSpecies >= 0) w.Pour(x, y, r, PourSpecies, 0.25f); }); break;   // a quarter of a block at the centre per dab
+            case 2: Sim.Do(w => w.PourWater(x, y, r, 0.15f)); break;
+            case 3: Sim.Do(w => w.KillIn(x, y, r)); break;
+            case 4: Sim.Do(w => w.DigOut(x, y, r, 0.25f)); break;
         }
     }
+
+    // A new random kind of matter for pouring (drawn from the world's random numbers, so on its thread).
+    void NewPourSpecies() => Sim.Do(w => PourSpecies = w.RandomPourable());
 
     void SetTool(int t)
     {
         Tool = Tool == t ? 0 : t;   // the same key again puts the brush away
         painting = false;
-        if (Tool == 1) PourSpecies = World.RandomPourable();
+        if (Tool == 1) NewPourSpecies();
     }
 
     public override void _UnhandledInput(InputEvent e)
     {
+        hudInput = true;
         switch (e)
         {
             case InputEventKey { Pressed: true, Echo: false } k:
@@ -428,15 +400,16 @@ public partial class Main : Node
     void OnKey(InputEventKey k)
     {
         var v = View;
+        hudWait = 0;   // show the change right away
         switch (k.PhysicalKeycode)
         {
             case Key.Space: Paused = !Paused; break;
             case Key.T:
                 if (FastForward) FastTo = -1;
-                else if (k.ShiftPressed) StartFast(World.Tick + 10L * P.DayLen);
+                else if (k.ShiftPressed) StartFast(Sim.Tick + 10L * P.DayLen);
                 else OpenFastForm();
                 break;
-            case Key.Period: if (Paused) Tick(); break;
+            case Key.Period: if (Paused) Sim.Step(); break;
             case Key.Equal: case Key.KpAdd: Tpf = Math.Min(256, Tpf * 2); break;
             case Key.Minus: case Key.KpSubtract: Tpf = Math.Max(1, Tpf / 2); break;
             case Key.Q: v.RotateStep(-1); break;
@@ -446,10 +419,10 @@ public partial class Main : Node
                 v.Follow = !v.Follow && v.Selected != null;
                 if (v.Follow) v.LookAt(v.Selected);
                 break;
+            case Key.F3: perf.Visible = !perf.Visible; perf.Reset(Sim); break;
             case Key.K: v.KinFocus = !v.KinFocus; break;
             case Key.B: ShowRecords = !ShowRecords; break;
             case Key.O:
-                ComputeRecords();
                 if (Records.Count > 0) { Focus(Records[0].a); v.Follow = true; }
                 break;
             case Key.H: hud.Legend = !hud.Legend; break;
@@ -475,16 +448,20 @@ public partial class Main : Node
                     // A group of newcomers under the cursor (or somewhere at random).
                     int c = View.PickCell(GetViewport().GetMousePosition());
                     if (c < 0) c = (int)(GD.Randi() % World.N);
-                    World.SpawnGroup(c % World.W, c / World.W, 40);
+                    Sim.Do(w => w.SpawnGroup(c % World.W, c / World.W, 40));
                     break;
                 }
-            case Key.A: World.Abiogenesis = abiogenesis = !World.Abiogenesis; break;
+            case Key.A:
+                abiogenesis = !abiogenesis;
+                bool on = abiogenesis;
+                Sim.Do(w => w.Abiogenesis = on);
+                break;
             case Key.X:
-                if (k.ShiftPressed) World.AutoStrikes = !World.AutoStrikes;
+                if (k.ShiftPressed) Sim.Do(w => w.AutoStrikes = !w.AutoStrikes);
                 else
                 {
                     int c = View.PickCell(GetViewport().GetMousePosition());
-                    if (c >= 0) World.StrikeAt(c % World.W, c / World.W, 8);
+                    if (c >= 0) Sim.Do(w => w.StrikeAt(c % World.W, c / World.W, 8));
                 }
                 break;
             case Key.R: NewWorld(k.ShiftPressed ? World.Seed : (int)(Time.GetTicksMsec() % 100000)); break;
@@ -520,7 +497,7 @@ public partial class Main : Node
                     if (Tool > 0)
                     {
                         // A stroke: pouring takes a new random kind of matter each time.
-                        if (Tool == 1) PourSpecies = World.RandomPourable();
+                        if (Tool == 1) NewPourSpecies();
                         painting = true; paintWait = 0;
                         return;
                     }
