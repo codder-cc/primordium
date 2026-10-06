@@ -1,0 +1,14 @@
+<Project Sdk="Godot.NET.Sdk/4.3.0">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <Nullable>disable</Nullable>
+    <RootNamespace>Primordium</RootNamespace>
+    <!-- the simulation is heavy; optimise even when run from the editor -->
+    <Optimize>true</Optimize>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- tools/bench is a separate headless runner that compiles src/Sim on its own -->
+    <Compile Remove="tools/**" />
+  </ItemGroup>
+</Project>

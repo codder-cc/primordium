@@ -1,0 +1,18 @@
+# Godot / .NET build output
+.godot/
+bin/
+obj/
+*.tmp
+.mono/
+# local snapshots, OS and editor junk
+.backup/
+.DS_Store
+*.swp
+.vs/
+.vscode/
+.idea/
+# screenshots and run logs
+Screenshot*
+*.png.import
+/runs/
+*.log
