@@ -544,6 +544,15 @@ void fragment() {
         zoom = Math.Clamp((W + 16) * vs.Y / Math.Max(200, vs.X - PanelWidth), 60, 420);
     }
 
+    // Fly to a column (a chronicle event whose body is gone).
+    public void LookAtCell(int x, int y)
+    {
+        if (x < 0 || y < 0 || x >= W || y >= H) return;
+        Follow = false;
+        target = new Vector3(x + 0.5f, Ground(y * W + x), y + 0.5f);
+        zoom = Math.Min(zoom, 60);
+    }
+
     public void LookAt(Agent a)
     {
         target = AgentPos(a);

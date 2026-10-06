@@ -94,6 +94,18 @@ public sealed class Agent
     public int NCatMined;                                        // hard-rock molecules torn out with a protein's help
     public int LastMeal = -1;                                    // its age at its last energy-releasing reaction
 
+    // Chronicle (World.Chronicle.cs): observation only, never read by the simulation itself.
+    public long ParentId;            // the body that divided (or the first mate); 0 for a founder
+    public long TrackedAncestor;     // the nearest tracked ancestor (a chain of them leads to the founder)
+    public long InfectedBy;          // the lineage that last wrote code into it (inject from another lineage), 0 none
+    public int CaveAge = -1;         // its age when it went under a roof (checked every 64 ticks), -1 in the open
+    public bool Tracked;             // keeps a biography (Bio) and is fossilised when it dies
+    public bool Established;         // its lineage had ≥ 10 bodies at the last survey (derived, not saved): only those make "firsts"
+    public byte TrackWhy;            // Chronicle.Why* bits: why it is tracked
+    public byte BioSeen;             // first protein of each kind (bits 0–3), first catalysed reaction (bit 4) noted
+    public BioEntry[] Bio;           // ring of the last Chronicle.BioCap entries (only while tracked)
+    public int BioN;                 // entries written in total (the newest is Bio[(BioN − 1) % cap])
+
     public Agent(long id, long lineage, int gen, byte[] g, byte[] prot = null)
     {
         Id = id; Lineage = lineage; Gen = gen;

@@ -22,6 +22,17 @@ public partial class Hud : Control
         return null;
     }
 
+    // Other clickable places of the panel: the inspector's tabs and the biography's links.
+    readonly List<(Rect2 r, Action act)> clicks = new();
+    public int AgentTab;   // 0 overview, 1 biography
+
+    public bool Click(Vector2 p)
+    {
+        foreach (var (r, act) in clicks)
+            if (r.HasPoint(p)) { act(); QueueRedraw(); return true; }
+        return false;
+    }
+
     static readonly Color Fg = new(0.93f, 0.94f, 0.97f), Dim = new(0.6f, 0.64f, 0.71f), Acc = new(1f, 0.82f, 0.4f),
         PanelBg = new(0.055f, 0.06f, 0.075f, 0.96f), BarBg = new(0.03f, 0.035f, 0.045f, 0.8f), Rule = new(1, 1, 1, 0.08f);
     static readonly Color CPlant = new(0.4f, 0.9f, 0.35f), CEater = new(0.35f, 0.62f, 1f), CMiner = new(1f, 0.65f, 0.25f), CHunter = new(1f, 0.25f, 0.2f);
@@ -102,6 +113,7 @@ public partial class Hud : Control
         var vs = GetViewportRect().Size;
         float px = vs.X - PanelW;
         hits.Clear();
+        clicks.Clear();
         if (Main.FastForward) { DrawFastForward(w, vs); return; }
         DrawRect(new Rect2(px, 0, PanelW, vs.Y), PanelBg);
         DrawLine(new Vector2(px, 0), new Vector2(px, vs.Y), Rule);
@@ -371,7 +383,7 @@ public partial class Hud : Control
             T(22, vs.Y - 85, l2, Dim, 12);
         }
         T(16, vs.Y - 56, "Space пауза · . шаг · +/− скорость · T промотка на N суток, ⇧T на 10 · R новый мир, ⇧R тот же · P снимок · 1–4 кисть · F3 замер", Dim, 12);
-        T(16, vs.Y - 40, "F2 законы мира · F4 новый мир · F5 быстро сохранить, F9 загрузить · F6 сохранения · F7 конструктор существ · 5 посадить дизайн", Dim, 12);
+        T(16, vs.Y - 40, "F2 законы мира · F4 новый мир · F5 быстро сохранить, F9 загрузить · F6 сохранения · F7 конструктор существ · 5 посадить дизайн · F8 хроника", Dim, 12);
         T(16, vs.Y - 24, "ЛКМ / WASD / два пальца — сдвиг · ПКМ / Q E — поворот · колесо / щипок — зум · G вся карта · C разрез, [ ] сдвиг", Dim, 12);
         T(16, vs.Y - 8, "клик — агент · H легенда · B рекорды · O старейший · K родня · F следить · V окраска · M поверхность · L свет · N жизнь · A абиогенез · X удар", Dim, 12);
     }
@@ -402,6 +414,7 @@ public partial class Hud : Control
                 DrawPolyline(pts, cols[k], k == 0 ? 1.6f : 1.2f, true);
             }
             T(x + 6, y + 14, $"макс {mx:N0}", Dim, 11);
+            EventMarks(x, y, cw, gh, hn);
         }
         y += gh + 14;
         var c = Main.Census;
@@ -584,6 +597,9 @@ public partial class Hud : Control
             y += 24;
         }
 
+        y = Tabs(x, y, cw);
+        if (AgentTab == 1) return BioPanel(w, a, x, y, cw);
+
         // How it lives, in words.
         y = Section(x, y, "Как живёт");
         foreach (var line in Wrap(LifeStory(a), cw, 12)) { T(x, y + 10, line, Fg, 12); y += 15; }
@@ -741,6 +757,173 @@ public partial class Hud : Control
             var lc = here ? Acc : Dim.Lerp(new Color(1f, 0.8f, 0.35f), MathF.Min(1, prot[i] / 80f));
             T(x, y, $"{(here ? "→" : " ")}{i,4}  {s}", lc, 12, mono);
             i += len;
+        }
+        return y + 20;
+    }
+
+    // Important chronicle events over the population graph: a tick of the event's colour at its time
+    // (the graph has a sample every 100 ticks, the newest at the frame's tick).
+    void EventMarks(float x, float y, float cw, float gh, int hn)
+    {
+        var events = Main.Sim.Chronicle.Events;
+        long last = Main.Frame.Tick / 100 * 100, first = last - (hn - 1) * 100L;
+        var m = GetViewport().GetMousePosition();
+        string tip = null;
+        float tipX = 0;
+        for (int i = events.Length - 1; i >= 0; i--)
+        {
+            var e = events[i];
+            if (e.Tick < first) break;
+            if (!e.Important || e.Type == EvType.Player) continue;
+            float ex = x + (e.Tick - first) / 100f * cw / Math.Max(1, hn - 1);
+            if (ex > x + cw) continue;
+            var c = ChronicleWindow.TypeColors[(int)e.Type];
+            DrawLine(new Vector2(ex, y), new Vector2(ex, y + 7), c, 2);
+            if (MathF.Abs(m.X - ex) < 3 && m.Y >= y - 2 && m.Y <= y + gh) { tip = $"{Chronicle.Day(e.Tick)}: {e.Text}"; tipX = ex; }
+        }
+        if (tip != null)
+        {
+            float tw = Math.Min(TW(tip, 11) + 12, Math.Max(80, x + cw - tipX + 200));
+            float tx = Math.Clamp(tipX - tw / 2, x - 10, x + cw + 10 - tw);
+            DrawRect(new Rect2(tx, y + gh - 18, tw, 16), new Color(0.03f, 0.035f, 0.045f, 0.95f));
+            T(tx + 6, y + gh - 6, tip, Fg, 11);
+        }
+    }
+
+    // A link in the panel: accent text that does something when clicked. Returns where it ends.
+    float Link(float x, float y, string s, Action act, int size = 12)
+    {
+        float w = TW(s, size);
+        var r = new Rect2(x - 2, y - size, w + 4, size + 5);
+        bool inside = y - size >= clipTop && y <= clipBot;
+        if (inside)
+        {
+            clicks.Add((r, act));
+            bool hover = r.HasPoint(GetViewport().GetMousePosition());
+            if (hover) DrawRect(r, new Color(1, 1, 1, 0.07f));
+            DrawLine(new Vector2(x, y + 2), new Vector2(x + w, y + 2), Acc with { A = hover ? 0.9f : 0.35f }, 1);
+        }
+        T(x, y, s, Acc, size);
+        return x + w;
+    }
+
+    float Tabs(float x, float y, float cw)
+    {
+        string[] names = { "Обзор", "Биография" };
+        float tx = x;
+        for (int k = 0; k < names.Length; k++)
+        {
+            float w = TW(names[k], 13, bold) + 24;
+            var r = new Rect2(tx, y + 2, w, 22);
+            if (r.Position.Y >= clipTop && r.End.Y <= clipBot)
+            {
+                DrawRect(r, k == AgentTab ? new Color(0.24f, 0.21f, 0.12f) : new Color(1, 1, 1, 0.05f));
+                if (k == AgentTab) DrawRect(new Rect2(tx, y + 22, w, 2), Acc);
+                int tab = k;
+                clicks.Add((r, () => { AgentTab = tab; AgentScroll = 0; }));
+            }
+            T(tx + 12, y + 18, names[k], k == AgentTab ? Acc : Dim, 13, bold);
+            tx += w + 4;
+        }
+        DrawLine(new Vector2(x, y + 24), new Vector2(x + cw, y + 24), Rule);
+        return y + 30;
+    }
+
+    // The biography tab: how it is watched, its parent, tracked ancestors and children (links), energy
+    // and mass lately, and its biography, newest first.
+    float BioPanel(World w, Agent a, float x, float y, float cw)
+    {
+        var f = Main.Frame;
+        var view = Main.Sim.Chronicle;
+        bool mine = f.Sel == a;
+        var ui = Main.Ui;
+        if (mine && f.SelTracked)
+            foreach (var line in Wrap($"биография ведётся: {Chronicle.WhyText(a.TrackWhy)} · записей {a.BioN}" + (a.BioN > Chronicle.BioCap ? $" (хранятся последние {Chronicle.BioCap})" : ""), cw, 12))
+            { T(x, y + 12, line, Dim, 12); y += 15; }
+        else { T(x, y + 12, "биография начнётся со следующего тика (выбранное существо отслеживается)", Dim, 12); y += 15; }
+        y += 6;
+
+        // Parent.
+        float lx = x + TW("родитель: ", 12);
+        T(x, y + 12, "родитель: ", Dim, 12);
+        if (a.ParentId <= 0) T(lx, y + 12, "нет — основатель линии" + (a.Designed ? " (посажен игроком)" : ""), Fg, 12);
+        else if (mine && f.SelParent is { } parent) Link(lx, y + 12, $"#{parent.Id} — жив, показать", () => { Main.Focus(parent); });
+        else if (view.FossilOf(a.ParentId) is { } pf) Link(lx, y + 12, $"#{a.ParentId} — окаменелость", () => ui.Fossil.Show(pf));
+        else T(lx, y + 12, $"#{a.ParentId} — не сохранился", Dim, 12);
+        y += 18;
+
+        // Tracked ancestors up to the founder.
+        var chain = new List<long>();
+        for (long id = a.TrackedAncestor; id > 0 && chain.Count < 8; id = view.Ancestry.TryGetValue(id, out var n) ? n.TrackedParent : 0) chain.Add(id);
+        if (chain.Count > 0)
+        {
+            T(x, y + 12, "предки под наблюдением:", Dim, 12);
+            lx = x + TW("предки под наблюдением: ", 12);
+            foreach (long id in chain)
+            {
+                string mark = id == chain[^1] && view.Ancestry.TryGetValue(id, out var n0) && n0.TrackedParent == 0 ? " (основатель)" : "";
+                long target = id;
+                if (lx > x + cw - 120) { y += 16; lx = x + 12; }
+                if (view.FossilOf(id) is { } af) lx = Link(lx, y + 12, $"#{id}{mark}", () => ui.Fossil.Show(af)) + 8;
+                else if (Main.FindAlive(id) is { } alive) lx = Link(lx, y + 12, $"#{id}{mark}", () => Main.Focus(alive)) + 8;
+                else { T(lx, y + 12, $"#{target}{mark}", Dim, 12); lx += TW($"#{target}{mark}", 12) + 8; }
+            }
+            y += 18;
+        }
+
+        // Children alive (and how many are gone).
+        int kidsAlive = mine ? f.SelKids.Count : 0;
+        T(x, y + 12, $"детей {a.NChildren}" + (mine ? $", живы {kidsAlive}" : "") + (kidsAlive > 0 ? ":" : ""), Dim, 12);
+        lx = x + TW($"детей {a.NChildren}" + (mine ? $", живы {kidsAlive}" : "") + ": ", 12);
+        if (mine)
+            for (int k = 0; k < Math.Min(kidsAlive, 18); k++)
+            {
+                var kid = f.SelKids[k];
+                string s = $"#{kid.Id}";
+                if (lx + TW(s, 12) > x + cw) { y += 16; lx = x + 12; }
+                lx = Link(lx, y + 12, s, () => Main.Focus(kid)) + 8;
+            }
+        if (kidsAlive > 18) T(lx, y + 12, $"и ещё {kidsAlive - 18}", Dim, 12);
+        y += 18;
+        if (a.Dead && view.FossilOf(a.Id) is { } own) { Link(x, y + 12, "открыть окаменелость", () => ui.Fossil.Show(own)); y += 18; }
+        y += 4;
+
+        // Energy and mass over the last ticks.
+        int hc = mine ? f.SelHistN : 0;
+        if (hc > 1)
+        {
+            float gh = 40, me = 1f, mm = 1f;
+            for (int k = 0; k < hc; k++) { me = Math.Max(me, f.SelHist[k]); mm = Math.Max(mm, f.SelMass[k]); }
+            if (y > clipTop && y + gh < clipBot)
+            {
+                DrawRect(new Rect2(x, y + 2, cw, gh), new Color(1, 1, 1, 0.04f));
+                var pe = new Vector2[hc];
+                var pm = new Vector2[hc];
+                for (int k = 0; k < hc; k++)
+                {
+                    float px = x + k * cw / (SimRunner.SelHistCap - 1f);
+                    pe[k] = new Vector2(px, y + 2 + gh - Math.Max(0, f.SelHist[k]) / me * (gh - 2));
+                    pm[k] = new Vector2(px, y + 2 + gh - Math.Max(0, f.SelMass[k]) / mm * (gh - 2));
+                }
+                DrawPolyline(pm, new Color(0.45f, 0.7f, 1f), 1.3f, true);
+                DrawPolyline(pe, new Color(0.4f, 0.9f, 0.5f), 1.3f, true);
+            }
+            T(x + 4, y + 13, $"энергия (зелёная, макс {me:0}) и масса (синяя, макс {mm:0}) за {hc * 5} тиков", Dim, 10);
+            y += gh + 8;
+        }
+
+        // The biography itself, newest first.
+        y = Section(x, y, "Жизнь" + (mine && f.SelBioN > 0 ? $" — {f.SelBioN} записей, новые сверху" : ""));
+        if (!mine || f.SelBioN == 0) { T(x, y + 10, "пока пусто", Dim, 12); return y + 24; }
+        var ch = w.Chem;
+        for (int k = f.SelBioN - 1; k >= 0; k--)
+        {
+            var e = f.SelBio[k];
+            T(x, y + 10, $"{Chronicle.Day(e.Tick)} · тик {e.Tick}", Dim, 11);
+            float tx2 = x + 150;
+            var c = e.Kind switch { BioKind.Death or BioKind.Killed => new Color(1f, 0.55f, 0.5f), BioKind.Event or BioKind.Record => Acc, BioKind.Born or BioKind.Child => new Color(0.5f, 0.95f, 0.55f), _ => Fg };
+            foreach (var line in Wrap(Chronicle.BioText(e, ch), cw - 150, 12)) { T(tx2, y + 10, line, c, 12); y += 15; }
+            y += 1;
         }
         return y + 20;
     }

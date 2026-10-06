@@ -184,6 +184,7 @@ public sealed partial class World
         Strikes.Add(new Strike { X = cx, Y = cy, R = r, T = Tick });
         if (Strikes.Count > 12) Strikes.RemoveAt(0);
         StrikeCount++;
+        int struck = 0;
         for (int dy = -r; dy <= r; dy++)
         {
             int y = cy + dy;
@@ -204,7 +205,7 @@ public sealed partial class World
                     C[product >= 0 ? product : s][i] += m;
                 }
                 for (var a = Head[i]; a != null; a = a.NextInCell)
-                    if (rng.NextDouble() < 0.3 + 0.7 * k) Irradiate(a, k, rng);
+                    if (rng.NextDouble() < 0.3 + 0.7 * k) { Irradiate(a, k, rng); struck++; }
                 int h = Height[i];
                 if (d <= r / 3f && h > 2 && Mat[i * Z + h - 1] != Chemistry.Bedrock)
                 {
@@ -214,6 +215,7 @@ public sealed partial class World
             }
         }
         // SpillVoxel already invalidated each affected column.
+        Add(EvType.Climate, $"удар с орбиты ({cx}, {cy}), радиус {r}: облучено {struck} {Plural(struck, "тело", "тела", "тел")}", null, struck, struck >= 50, null, cx, cy);
     }
 
     void Irradiate(Agent a, float k, SimRng rng)
@@ -241,6 +243,7 @@ public sealed partial class World
         Dissipate(a, 4 * k);
         a.SetGenome(g.ToArray(), p.ToArray());
         a.NStruck++;
+        BioNote(a, Tick, BioKind.Struck, 0, a.G.Length);
         AddFlash(a.X, a.Y, FlashStrike);
     }
 

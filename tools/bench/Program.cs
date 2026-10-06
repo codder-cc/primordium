@@ -6,6 +6,7 @@ using Primordium;
 // dotnet run -c Release --project tools/bench -- --seed 1 --ticks 50000 --every 5000 [--pop N] [--noabio] [--ops] [--audit]
 //   [--log path.csv]: one row per --every interval with population, births, deaths, every stage's ms/tick,
 //   allocation and GC counts, for looking at performance over time.
+//   [--chronicle]: print the world's chronicle as events happen (World.Chronicle).
 if (Array.IndexOf(args, "--self-test") >= 0) { World.RunRegression(); return; }
 if (Array.IndexOf(args, "--self-test-infra") >= 0) { World.RunInfraRegression(); return; }
 if (Array.IndexOf(args, "--list-params") >= 0)
@@ -98,15 +99,23 @@ if (logPath != null)
     log = new System.IO.StreamWriter(logPath);
     log.WriteLine("tick,pop,births,deaths,ms_tick,env,agents,bookkeeping," + string.Join(",", World.DetailNames.Select(n => n.Replace(' ', '_').Replace('/', '_')))
         + ",agent_busy,agent_longest," + string.Join(",", Enumerable.Range(0, w.Colours).Select(q => $"busy{q},longest{q}"))
-        + ",alloc_mb,agent_alloc_mb,gen0,gen1,gen2,gc_pause_pct,heap_mb,dirty_columns,hanging_voxels");
+        + ",alloc_mb,agent_alloc_mb,gen0,gen1,gen2,gc_pause_pct,heap_mb,dirty_columns,hanging_voxels,chronicle_events,chronicle_important,fossils");
 }
 long prevAlloc = GC.GetTotalAllocatedBytes(false);
 int prevGen0 = GC.CollectionCount(0), prevGen1 = GC.CollectionCount(1), prevGen2 = GC.CollectionCount(2), prevBirths = 0, prevDeaths = 0;
 double prevWall = 0;
+bool printChronicle = Array.IndexOf(args, "--chronicle") >= 0;
+long chronicleSeen = w.Chronicle.NextSeq - 1;
 for (int t = 1; t <= ticks; t++)
 {
     foreach (var (at, name, value) in paramAt) if (at == w.Tick) { w.SetParam(name, value); Console.WriteLine($"   tick {w.Tick}: {name} = {ParamRegistry.Get(name).ToString(inv0)}"); }
     w.Step();
+    if (printChronicle && w.Chronicle.NextSeq - 1 > chronicleSeen)
+    {
+        foreach (var e in w.Chronicle.Since(chronicleSeen))
+            Console.WriteLine($"   chronicle {(e.Important ? "!" : " ")} {e.Tick,7} {Chronicle.TypeNames[(int)e.Type],-16} {e.Text}");
+        chronicleSeen = w.Chronicle.NextSeq - 1;
+    }
     if (t % every != 0) continue;
     if (audit)
     {
@@ -161,7 +170,8 @@ for (int t = 1; t <= ticks; t++)
             .Concat(new[] { f(w.AgentBusy / every), f(w.AgentLongest / every) })
             .Concat(Enumerable.Range(0, w.Colours).SelectMany(q => new[] { f(w.PhaseBusy[q] / every), f(w.PhaseLongest[q] / every) }))
             .Concat(new[] { f(allocMb), f(agentAllocMb), gen0.ToString(), gen1.ToString(), gen2.ToString(), f(pause), (GC.GetTotalMemory(false) / 1048576).ToString(),
-                w.LastStructureColumns.ToString(), w.LastStructureVoxels.ToString() })));
+                w.LastStructureColumns.ToString(), w.LastStructureVoxels.ToString(),
+                (w.Chronicle.NextSeq - 1).ToString(), w.Chronicle.Important.Count.ToString(), w.Chronicle.Fossils.Count.ToString() })));
         log.Flush();
     }
     prevAlloc = alloc; prevGen0 += gen0; prevGen1 += gen1; prevGen2 += gen2; prevBirths = w.Births; prevDeaths = w.Deaths; prevWall = wall;

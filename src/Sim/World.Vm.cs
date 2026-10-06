@@ -1,4 +1,5 @@
 using System;
+using System.Numerics;
 
 namespace Primordium;
 
@@ -210,12 +211,18 @@ public sealed partial class World
         if (slot >= 0)
         {
             a.Enz[slot].Amount += 1; a.Enz[slot].Matter += 1; a.Enz[slot].Src = ip;
+            if (a.Enz[slot].Amount >= 3 && a.Enz[slot].Amount < 4 && a.Prot[ip] > 0) ChronProtein(a, a.Enz[slot]);   // kept and proven useful: news?
             return;
         }
         slot = a.EnzN++;
         if (slot == a.Enz.Length) Array.Resize(ref a.Enz, a.Enz.Length * 2);   // no limit on kinds kept
         spec.Amount = spec.Matter = 1; spec.Material = (byte)m; spec.Src = ip;
         a.Enz[slot] = spec;
+        if (a.Bio != null && (a.BioSeen & 1 << spec.Kind) == 0)
+        {
+            a.BioSeen |= (byte)(1 << spec.Kind);
+            BioNote(a, Tick, BioKind.Protein, spec.A | spec.B << 5, spec.Eff, spec.Kind);
+        }
     }
 
     // How strongly a reaction is driven right now: the best matching protein (its amount × quality ×
@@ -294,6 +301,7 @@ public sealed partial class World
         }
         if (done == 0) return;
         a.NBind += done;
+        if (slot >= 0) ChronReaction(a, Enzyme.Bind, s1, s2);
         Worked(a, slot, ip);
         Note(EvKind.Bind);
         Act(a, ActEat, -1);
@@ -315,6 +323,7 @@ public sealed partial class World
         }
         if (done == 0) return;
         a.NSplit += done;
+        if (slot >= 0) ChronReaction(a, Enzyme.Split, s, 0);
         Worked(a, slot, ip);
         Note(EvKind.Split);
         Act(a, ActEat, -1);
@@ -349,6 +358,7 @@ public sealed partial class World
         }
         if (caught == 0) return;
         a.NPhoto += caught;
+        if (slot >= 0) ChronReaction(a, Enzyme.Photo, s, 0);
         Worked(a, slot, ip);
         Note(EvKind.Photo);
         Act(a, ActEat, -1);
@@ -530,6 +540,8 @@ public sealed partial class World
         float sa = Strength(a), st = MathF.Sqrt(t.Mass + 1);
         float dmg = power * 2 * sa / (sa + st);
         int units = (int)(dmg * 0.5f + Rng.NextDouble());
+        if (t.Bio != null && (t.BioN == 0 || t.Bio[(t.BioN - 1) % t.Bio.Length] is not { Kind: BioKind.Killed } last || last.Other != a.Id))
+            BioNote(t, Tick, BioKind.Killed, a.Id, units);   // attacked (once per attacker in a row)
         for (int k = 0; k < units && t.InvTotal > 0; k++)
         {
             int s = RandomMol(t);
@@ -547,6 +559,8 @@ public sealed partial class World
         {
             Die(t, tc, CauseKilled);
             a.NKills++;
+            if (BitOperations.IsPow2(a.NKills)) BioNote(a, Tick, BioKind.Kill, t.Id, a.NKills);
+            if (units > 0) Propose(EvType.FirstPredator, Chronicle.OnceKey(EvType.FirstPredator), a, t, units);
             Note(EvKind.Kill);
             AddFlash(t.X, t.Y, FlashKill);
         }
@@ -561,6 +575,7 @@ public sealed partial class World
         RemoveMol(t, s);
         AddMol(a, s);
         a.NTakes++;
+        if (BitOperations.IsPow2(a.NTakes)) BioNote(a, Tick, BioKind.Theft, t.Id, a.NTakes);
         Note(EvKind.Take);
         Act(a, ActSocial, -1);
     }
@@ -573,6 +588,7 @@ public sealed partial class World
         RemoveMol(a, s);
         AddMol(t, s);
         a.NGives++;
+        if (BitOperations.IsPow2(a.NGives)) BioNote(a, Tick, BioKind.Gift, t.Id, a.NGives);
         Note(EvKind.Give);
         Act(a, ActSocial, -1);
     }
@@ -635,7 +651,15 @@ public sealed partial class World
         Array.Copy(dst.Prot, at, np, at + len, tg.Length - at);
         dst.SetGenome(ng, np);
         a.NInjects++;
-        if (!pull) t.NInfected++;
+        if (!pull)
+        {
+            t.NInfected++;
+            if (a.Lineage != t.Lineage)
+            {
+                if (t.Bio != null && t.InfectedBy != a.Lineage) BioNote(t, Tick, BioKind.Infected, a.Lineage);
+                t.InfectedBy = a.Lineage;   // observation only (the chronicle's "first parasite")
+            }
+        }
         Note(EvKind.Inject);
         AddFlash(t.X, t.Y, FlashInject, t.Y * W + t.X == cell ? -1 : Neighbour4(cell, t.Y * W + t.X));
     }

@@ -23,6 +23,7 @@ public sealed partial class World
         SaveLoadRegression();
         AsmRegression();
         DesignRegression();
+        ChronicleRegression();
         ParamRegistry.ResetDefaults();
     }
 

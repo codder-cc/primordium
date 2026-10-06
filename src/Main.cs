@@ -112,7 +112,7 @@ public partial class Main : Node
             {
                 // "window" or "window:view" (newworld:more, creator:looks, creator:help) — for screenshots.
                 var part = item.Split(':');
-                var win = Ui.ById(part[0] == "params" ? "laws" : part[0]) ?? throw new ArgumentException("--open: laws|params, newworld[:more], saves, creator[:looks|:help]");
+                var win = Ui.ById(part[0] == "params" ? "laws" : part[0]) ?? throw new ArgumentException("--open: laws|params, newworld[:more], saves, creator[:looks|:help], chronicle[:fossils], fossil[:bio|:ancestry]");
                 win.Open();
                 if (part.Length > 1) win.ShowView(part[1]);
             }
@@ -138,6 +138,14 @@ public partial class Main : Node
             View.ZoomAt(focus);
         }
         if (Array.IndexOf(args, "--fastform") >= 0) OpenFastForm();   // for screenshots of the form
+        // For screenshots of the biography: select the living body with the longest biography, show that tab.
+        if (Array.IndexOf(args, "--seltracked") >= 0)
+            Sim.Do(w =>
+            {
+                var a = w.Agents.Where(x => !x.Dead && x.Tracked).OrderByDescending(x => x.BioN).ThenBy(x => x.Id).FirstOrDefault();
+                if (a != null) Ui.Post(() => { View.Selected = a; View.LookAt(a); View.ZoomAt(30); });
+            });
+        for (int i = 0; i < args.Length - 1; i++) if (args[i] == "--tab") hud.AgentTab = args[i + 1] == "bio" ? 1 : 0;
         if (startTool > 0) SetTool(startTool);
         if (shotPath != null) shotFrames = uiTest >= 0 ? 128 : 60;   // with --uitest: after the planting, with its toasts and a planted body selected
     }
@@ -387,6 +395,19 @@ public partial class Main : Node
         FastTo = target;
     }
 
+    // A living body of the newest frame by its id (null if it is dead or gone).
+    public Agent FindAlive(long id)
+    {
+        var f = Frame;
+        if (f == null || id <= 0) return null;
+        for (int k = 0; k < f.Count; k++)
+        {
+            var a = f.Agents[k].Ref;
+            if (a != null && a.Id == id && !a.Dead) return a;
+        }
+        return null;
+    }
+
     public void Focus(Agent a)
     {
         View.Selected = a;
@@ -475,6 +496,7 @@ public partial class Main : Node
             case Key.F5: Ui.Saves.QuickSave(); break;
             case Key.F6: Ui.Saves.Toggle(); break;
             case Key.F7: Ui.Creator.Toggle(); break;
+            case Key.F8: Ui.Chronicle.Toggle(); break;
             case Key.F9: Ui.Saves.QuickLoad(); break;
             case Key.K: v.KinFocus = !v.KinFocus; break;
             case Key.B: ShowRecords = !ShowRecords; break;
@@ -548,6 +570,7 @@ public partial class Main : Node
             case MouseButton.Left:
                 if (mb.Pressed)
                 {
+                    if (hud.Click(mb.Position)) return;   // tabs and links of the inspector
                     var hit = hud.HitTest(mb.Position);
                     if (hit != null) { Focus(hit); return; }
                     if (OverPanel(mb.Position)) return;

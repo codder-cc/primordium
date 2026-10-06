@@ -55,6 +55,10 @@ public sealed partial class World
         {
             DesignedLineages[lineage] = design.Name;
             if (result.Made == result.Requested) result.Error = null;
+            foreach (var a in result.Agents) TrackNew(a, Chronicle.WhyDesigned);
+            Add(EvType.Player, $"посажен дизайн «{design.Name}»: {result.Made} {Plural(result.Made, "тело", "тела", "тел")}, линия #{lineage}, " +
+                (options.Matter == MatterSource.Import ? "вещество извне" : "вещество местное") + ", " + (options.Energy == EnergySource.Import ? "энергия извне" : "энергия местная"),
+                result.Agents[0], result.Made, true);
         }
         return result;
     }

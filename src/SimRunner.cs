@@ -43,6 +43,40 @@ public sealed class SimFrame
     public readonly int[] Hist = new int[SimRunner.HistCap * 5];
     public int HistN;
     public readonly long[] EvRate = new long[(int)EvKind.Count];
+    public readonly float[] SelMass = new float[SimRunner.SelHistCap];   // mass of the selected body, alongside SelHist
+    // The selected body's biography (oldest first), its parent and children alive, its tracked ancestors.
+    public readonly BioEntry[] SelBio = new BioEntry[Chronicle.BioCap];
+    public int SelBioN;
+    public bool SelTracked;
+    public Agent SelParent;
+    public readonly List<Agent> SelKids = new();
+    public int SelKidsDead;   // children it had that are no longer alive
+}
+
+// The chronicle as the game may read it on any thread: a copy made by the simulation thread whenever
+// the chronicle changed (at most a few times a second). Events and fossils are never changed after
+// they were added; ancestry nodes are copied.
+public sealed class ChronicleView
+{
+    public static readonly ChronicleView Empty = new();
+    public ChronicleEvent[] Events = Array.Empty<ChronicleEvent>();   // important and recent, in order
+    public long[] Counts = new long[(int)EvType.Count];               // all ever added, by type
+    public Fossil[] Fossils = Array.Empty<Fossil>();
+    public Dictionary<long, Fossil> FossilByAgent = new();
+    public Dictionary<long, AncestryNode> Ancestry = new();
+    public long Version, Tick;
+    public int WorldGeneration;
+    public string[] Molecules = Array.Empty<string>();                 // the world's molecule names (for fossils)
+
+    public Fossil FossilOf(long id) => FossilByAgent.TryGetValue(id, out var f) ? f : null;
+
+    // A fossil for an event's body: the kept one, or one made from the genome the event remembered.
+    public Fossil FossilFor(ChronicleEvent e)
+    {
+        if (e.AgentId != 0 && FossilByAgent.TryGetValue(e.AgentId, out var f)) return f;
+        if (e.Genome == null) return null;
+        return new Fossil { AgentId = e.AgentId, Lineage = e.Lineage, BornTick = e.Tick, DiedTick = -1, Genome = e.Genome, EventSeq = e.Seq, Energy = 40 };
+    }
 }
 
 // Runs World.Step on its own thread. The thread owns the world: everything that changes it (the hand,
@@ -78,6 +112,14 @@ public sealed class SimRunner
 
     public volatile SimStats Stats = new();
     public volatile string Error;
+    public volatile ChronicleView Chronicle = ChronicleView.Empty;   // replaced, never changed (see ChronicleView)
+    long chronicleSeen = -1;
+    double chronicleAt;
+    Agent trackedSel, kidsOf;
+    double kidsAt;
+    readonly List<Agent> kids = new();
+    int kidsDead;
+    Agent parentOf, parent;
 
     // Diagnostics (written by the simulation thread, read by the perf overlay).
     public double Tps, SimMs;                        // ticks per second, ms per tick (smoothed)
@@ -93,7 +135,7 @@ public sealed class SimRunner
     volatile bool want = true;
 
     // Kept on the simulation thread, copied into frames.
-    readonly float[] selHist = new float[SelHistCap];
+    readonly float[] selHist = new float[SelHistCap], selMass = new float[SelHistCap];
     int selHistN;
     Agent histOf;
     readonly int[] hist = new int[HistCap * 5];
@@ -134,6 +176,7 @@ public sealed class SimRunner
     {
         // Before the thread starts the caller may step and read the world directly (warm-up).
         RefreshStats();
+        PublishChronicle(World, true);
         Publish();
         thread = new Thread(Run) { Name = "simulation", IsBackground = true };
         thread.Start();
@@ -152,12 +195,15 @@ public sealed class SimRunner
     {
         long t0 = Stopwatch.GetTimestamp();
         var w = World;
-        w.Step();
         var s = Selected;
+        // A body the player looks at keeps a biography from now on (observation only, between ticks).
+        if (s != trackedSel) { trackedSel = s; if (s is { Dead: false }) w.Track(s, Primordium.Chronicle.WhyPlayer); }
+        w.Step();
         if (s != histOf) { histOf = s; selHistN = 0; }
         if (s is { Dead: false } && w.Tick % 5 == 0)
         {
-            if (selHistN == SelHistCap) { Array.Copy(selHist, 1, selHist, 0, SelHistCap - 1); selHistN--; }
+            if (selHistN == SelHistCap) { Array.Copy(selHist, 1, selHist, 0, SelHistCap - 1); Array.Copy(selMass, 1, selMass, 0, SelHistCap - 1); selHistN--; }
+            selMass[selHistN] = s.Mass;
             selHist[selHistN++] = s.Energy;
         }
         if (w.Tick % 100 == 0)
@@ -379,8 +425,10 @@ public sealed class SimRunner
         var hov = Hover;
         f.Hover = hov;
         if (hov != null) f.HoverFloorFill = w.FloorFill(hov.Y * World.W + hov.X, hov.Z);
-        if (sel == histOf) { Array.Copy(selHist, f.SelHist, selHistN); f.SelHistN = selHistN; }
+        if (sel == histOf) { Array.Copy(selHist, f.SelHist, selHistN); Array.Copy(selMass, f.SelMass, selHistN); f.SelHistN = selHistN; }
         else f.SelHistN = 0;
+        FillBiography(f, w, sel);
+        PublishChronicle(w, false);
         Array.Copy(hist, f.Hist, histN * 5);
         f.HistN = histN;
         Array.Copy(evRate, f.EvRate, evRate.Length);
@@ -403,6 +451,57 @@ public sealed class SimRunner
                 }
         }
     }
+
+    // The selected body's biography, parent and children (the children are looked up a few times a second).
+    void FillBiography(SimFrame f, World w, Agent sel)
+    {
+        f.SelKids.Clear();
+        f.SelBioN = 0; f.SelTracked = false; f.SelParent = null; f.SelKidsDead = 0;
+        if (sel == null) return;
+        f.SelTracked = sel.Tracked;
+        var bio = Primordium.Chronicle.BioOf(sel);
+        Array.Copy(bio, f.SelBio, bio.Length);
+        f.SelBioN = bio.Length;
+        double now = Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
+        if (sel != kidsOf || now - kidsAt > 0.5)
+        {
+            kidsOf = sel; kidsAt = now;
+            kids.Clear();
+            if (sel != parentOf) { parentOf = sel; parent = null; }
+            foreach (var a in w.Agents)
+            {
+                if (a.Dead) continue;
+                if (a.ParentId == sel.Id) kids.Add(a);
+                else if (a.Id == sel.ParentId) parent = a;
+            }
+            if (parent is { Dead: true }) parent = null;
+            kidsDead = Math.Max(0, sel.NChildren - kids.Count);
+        }
+        f.SelKids.AddRange(kids);
+        f.SelParent = parent;
+        f.SelKidsDead = kidsDead;
+    }
+
+    // A fresh ChronicleView when the chronicle changed (at most four times a second unless forced).
+    void PublishChronicle(World w, bool force)
+    {
+        var c = w.Chronicle;
+        double now = Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
+        if (!force && (c.Version == chronicleSeen || now - chronicleAt < 0.25)) return;
+        chronicleSeen = c.Version; chronicleAt = now;
+        var v = new ChronicleView
+        {
+            Events = c.All().ToArray(), Counts = (long[])c.Counts.Clone(), Fossils = c.Fossils.ToArray(),
+            FossilByAgent = new Dictionary<long, Fossil>(c.FossilByAgent), Version = c.Version, Tick = w.Tick, WorldGeneration = WorldGeneration,
+            Molecules = (string[])w.Chem.Name.Clone(),
+        };
+        foreach (var (id, n) in c.Ancestry)
+            v.Ancestry[id] = new AncestryNode { Id = n.Id, ParentId = n.ParentId, TrackedParent = n.TrackedParent, Lineage = n.Lineage, Gen = n.Gen, Born = n.Born, Died = n.Died, Cause = n.Cause, Why = n.Why };
+        Chronicle = v;
+    }
+
+    // Start a biography for a body (the player asked to watch it).
+    public void Track(Agent a) => Do(w => { if (a != null) { w.Track(a, Primordium.Chronicle.WhyPlayer); PublishChronicle(w, true); } });
 
     // ---- commands for the UI (all applied by the simulation thread between ticks) ----
     // Results come back through the optional callback (called on the simulation thread: marshal to the
@@ -480,6 +579,7 @@ public sealed class SimRunner
     SaveOutcome SaveNow(World w, string path, string note)
     {
         var o = new SaveOutcome { Path = path, Tick = w.Tick };
+        w.Add(EvType.Player, $"{(note == "autosave" ? "автосохранение" : "сохранено")}: {System.IO.Path.GetFileName(path)}");
         var t0 = Stopwatch.GetTimestamp();
         try { w.Save(path, note); o.Bytes = new System.IO.FileInfo(path).Length; }
         catch (Exception e) { o.Error = e.Message; }
@@ -495,6 +595,7 @@ public sealed class SimRunner
         try
         {
             var w = World.Load(path);
+            w.Add(EvType.Player, $"загружено: {System.IO.Path.GetFileName(path)} (тик {w.Tick:N0})");
             ReplaceWorld(w);
             Notice($"загружено: {System.IO.Path.GetFileName(path)} (seed {w.Seed}, тик {w.Tick:N0}, особей {w.Agents.Count:N0})");
             done?.Invoke(w, null);
@@ -561,6 +662,7 @@ public sealed class SimRunner
         world = w;
         Selected = Hover = null;
         histOf = null; selHistN = 0; histN = 0;
+        trackedSel = kidsOf = parentOf = null; parent = null; kids.Clear();
         Array.Copy(w.Ev, evPrev, evPrev.Length);
         Array.Clear(evRate);
         Array.Clear(Stress);
@@ -568,6 +670,7 @@ public sealed class SimRunner
         autosavedTick = -1;
         PublishDesigned(w);
         WorldGeneration++;
+        PublishChronicle(w, true);
         RefreshStats();
         Publish();
     }

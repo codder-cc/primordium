@@ -196,6 +196,11 @@ public static class ParamRegistry
         // Space
         I("StrikeMin", "Космос", "Меньше всего тиков между ударами", 1, 200000, 100);
         I("StrikeMax", "Космос", "Больше всего тиков между ударами", 1, 200000, 100);
+        // Chronicle (only what is remembered and shown)
+        I("ChronicleCap", "Хроника", "Сколько обычных событий хроники помнить (важные — всегда)", 100, 200000, 100);
+        I("FossilCap", "Хроника", "Сколько окаменелостей хранить (лишние — наименее важные)", 10, 20000, 10);
+        I("ChronicleTrackKids", "Хроника", "Вести биографию детей посаженных существ (1 — да)", 0, 1, 1);
+        F("ChronicleCaveDays", "Хроника", "Суток под крышей для события «житель пещер»", 0.1, 50, 0.1);
 
         var missing = typeof(P).GetFields(BindingFlags.Public | BindingFlags.Static)
             .Where(f => !f.IsLiteral && !f.IsInitOnly && !byName.ContainsKey(f.Name)).Select(f => f.Name).ToList();

@@ -26,7 +26,7 @@ public sealed partial class World
         if (p == null) return false;
         double was = p.Value;
         ParamRegistry.Set(p, value);
-        if (p.Value != was) ParamLog.Add(new ParamChange { Tick = Tick, Name = p.Name, Value = p.Value });
+        if (p.Value != was) { ParamLog.Add(new ParamChange { Tick = Tick, Name = p.Name, Value = p.Value }); ChronLaw(p, was); }
         ApplyParamChanges();
         return true;
     }

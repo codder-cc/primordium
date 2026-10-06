@@ -182,8 +182,10 @@ public sealed partial class World
         }
         if (Vents.Count < P.VentCount && Tick >= nextVentAt)
         {
+            int vents = Vents.Count;
             SpawnVent();
             nextVentAt = Tick + Rng.Next(3000, 15000);
+            if (Vents.Count > vents) { var v = Vents[^1]; Add(EvType.Climate, $"проснулся вулкан ({v.X}, {v.Y}), сила {v.Strength:0.00}", null, v.Strength, false, null, v.X, v.Y); }
         }
         if (ventsDirty) { RecomputeVentFields(); ventsDirty = false; }
     }

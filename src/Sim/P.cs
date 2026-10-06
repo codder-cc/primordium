@@ -158,6 +158,12 @@ public static class P
     // Space
     public static int StrikeMin = 2500, StrikeMax = 8000;   // ticks between mutagenic strikes
 
+    // Chronicle (observation only: none of these changes what happens in the world)
+    public static int ChronicleCap = 10000;     // ordinary events kept (important ones are kept for ever)
+    public static int FossilCap = 1000;         // fossils kept; the least important go first
+    public static int ChronicleTrackKids = 1;   // 1: the first-generation children of planted designs keep a biography too
+    public static float ChronicleCaveDays = 1;  // days under a roof that make a body the first cave dweller
+
     // The values the fields above start with (captured before anything can change them; declared
     // last, so every initializer above has run). ParamRegistry resets to these.
     internal static readonly System.Collections.Generic.Dictionary<string, double> Defaults = CaptureDefaults();

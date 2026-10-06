@@ -50,6 +50,11 @@ public sealed partial class World
         public readonly List<Agent> Newborn = new();
         public readonly List<Discovery> Firsts = new();
         public readonly List<(Agent from, Agent partner)> Unlinks = new();   // links broken with a partner out of reach
+        // The chronicle (World.Chronicle.cs): proposed "firsts", the deepest body, tracked bodies that died.
+        public readonly List<ChronCand> Chron = new();
+        public readonly List<Agent> TrackedDeaths = new();
+        public Agent DepthAgent;
+        public int DepthBest;
         public double Busy;   // ms spent stepping this tile's agents (diagnostics)
         public readonly long[] OpTicks = new long[Genome.OpSlots + 2];   // with ProfileOps: time per instruction kind, + VM-less rest, + births
     }
@@ -198,10 +203,11 @@ public sealed partial class World
     {
         "climate", "cellchem", "settle/weather", "body loads", "region", "solve", "failures", "settle agents",
         "sky", "diffusion", "erosion", "vents", "strikes", "metamorph", "tile sort", "agents", "merge", "relieve", "alarms", "abiogenesis", "burials",
+        "chronicle",
     };
     public const int DClimate = 0, DCellChem = 1, DSettle = 2, DBodyLoads = 3, DRegion = 4, DSolve = 5, DFailures = 6, DSettleAgents = 7,
         DSky = 8, DDiffusion = 9, DErosion = 10, DVents = 11, DStrikes = 12, DMetamorph = 13, DTileSort = 14, DAgents = 15, DMerge = 16,
-        DRelieve = 17, DAlarms = 18, DAbio = 19, DBurials = 20;
+        DRelieve = 17, DAlarms = 18, DAbio = 19, DBurials = 20, DChronicle = 21;
     // Per colour of the agent phase: summed tile work and the slowest tile, ms (AgentBusy/AgentLongest are their totals).
     public readonly double[] PhaseBusy, PhaseLongest;
     public long AgentAllocated;   // bytes allocated during the agent phase (approximate: all threads)
@@ -295,6 +301,13 @@ public sealed partial class World
         AgentAllocated += GC.GetTotalAllocatedBytes(false) - allocated;
         Lap(DAgents);
         Prof[1] += prof.Elapsed.TotalMilliseconds; prof.Restart();
+        Lap(DMerge);
+        // The chronicle's proposals, tile by tile in tile order (before the newborns are listed).
+        foreach (var ctx in ctxs) ChronMerge(ctx);
+        foreach (var a in newborn) if (a.Tracked) Node(a);
+        int firstsBefore = 0;
+        foreach (var f in Firsts) if (f != null) firstsBefore++;
+        Lap(DChronicle);
         foreach (var ctx in ctxs)
         {
             foreach (int c in ctx.Dirty) structuralDirty.Add(c);
@@ -308,8 +321,11 @@ public sealed partial class World
         }
         Agents.AddRange(newborn);
         newborn.Clear();
+        ChronDiscoveries(firstsBefore);   // (its finder may have died this tick: still listed)
         RemoveDead();
         Lap(DMerge);
+        if (Tick % SurveyEvery == 0) ChronSurvey();
+        Lap(DChronicle);
         Relieve();   // overfull floors let their smallest bodies go (see World.Volume)
         Lap(DRelieve);
         int alarmStart = (int)(Tick % 16) * (N / 16);
