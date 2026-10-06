@@ -30,7 +30,9 @@ public partial class Main : Node
     public long FastFrom => Sim.FastFrom;
     public bool FastForward => Sim?.FastForward ?? false;
     int initialPop = P.InitialPop;
-    bool abiogenesis = true;
+    // Off by default (the player starts life and strikes): A and ⇧X toggle them, --abio/--strikes at start.
+    bool abiogenesis, strikes;
+    int worldGeneration;
 
     Hud hud;
     PerfOverlay perf;
@@ -59,7 +61,9 @@ public partial class Main : Node
     {
         DisplayServer.WindowSetMode(DisplayServer.WindowMode.Maximized);
         var args = OS.GetCmdlineUserArgs();
+        if (Array.IndexOf(args, "--abio") >= 0) abiogenesis = true;
         if (Array.IndexOf(args, "--noabio") >= 0) abiogenesis = false;
+        if (Array.IndexOf(args, "--strikes") >= 0) strikes = true;
         ShowRecords = Array.IndexOf(args, "--records") >= 0;
         int seed = (int)(Time.GetTicksMsec() % 100000), warm = 0, slice = -1;
         float zoom = 0, focus = 0;
@@ -128,7 +132,8 @@ public partial class Main : Node
         bool wasPaused = Sim?.Paused ?? false;
         int tpf = Sim?.Tpf ?? startTpf;
         Sim?.Stop();
-        var sim = new SimRunner(new World(seed, initialPop, abiogenesis)) { Tpf = tpf, Paused = wasPaused };
+        var settings = new WorldSettings { Seed = seed, InitialPop = initialPop, Abiogenesis = abiogenesis, Strikes = strikes };
+        var sim = new SimRunner(new World(settings)) { Tpf = tpf, Paused = wasPaused };
         var sw = Stopwatch.StartNew();
         for (int i = 0; i < warm; i++)
         {
@@ -138,6 +143,7 @@ public partial class Main : Node
         painting = false;
         if (Tool == 1) PourSpecies = sim.World.RandomPourable();
         View.SetWorld(sim.World);
+        worldGeneration = sim.WorldGeneration;
         Sim = sim;
         sim.Start();
         Frame = sim.Acquire();
@@ -156,6 +162,14 @@ public partial class Main : Node
         if (World == null) return;
         var total = Stopwatch.StartNew();
         if (Sim.Error is { } err && printedErrors.Add(err)) GD.PrintErr("simulation stopped: " + err);
+        if (Sim.WorldGeneration != worldGeneration)
+        {
+            // The simulation thread swapped in another world (SimRunner.NewWorld or Load).
+            worldGeneration = Sim.WorldGeneration;
+            View.SetWorld(Sim.World);
+            abiogenesis = Sim.World.Abiogenesis;
+            strikes = Sim.World.AutoStrikes;
+        }
         Frame = Sim.Acquire();
         if (View.Selected is { Dead: true } && View.Follow) View.Follow = false;
         Sim.Selected = View.Selected;
@@ -457,7 +471,7 @@ public partial class Main : Node
                 Sim.Do(w => w.Abiogenesis = on);
                 break;
             case Key.X:
-                if (k.ShiftPressed) Sim.Do(w => w.AutoStrikes = !w.AutoStrikes);
+                if (k.ShiftPressed) { strikes = !strikes; Sim.SetStrikes(strikes); }
                 else
                 {
                     int c = View.PickCell(GetViewport().GetMousePosition());

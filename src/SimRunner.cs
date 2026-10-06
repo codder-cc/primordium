@@ -52,7 +52,11 @@ public sealed class SimRunner
 {
     public const int SelHistCap = 300, HistCap = 400;
 
-    public readonly World World;
+    // The world this thread steps. It is replaced (NewWorld, Load) only by this thread, between ticks;
+    // WorldGeneration counts replacements so the view can notice and call View.SetWorld.
+    volatile World world;
+    public World World => world;
+    public volatile int WorldGeneration;
     readonly ConcurrentQueue<Action<World>> commands = new();
     readonly AutoResetEvent wake = new(false);
     Thread thread;
@@ -97,7 +101,7 @@ public sealed class SimRunner
 
     public SimRunner(World world)
     {
-        World = world;
+        this.world = world;
         Array.Copy(world.Ev, evPrev, evPrev.Length);
     }
 
@@ -206,6 +210,7 @@ public sealed class SimRunner
             {
                 bool acted = false;
                 while (commands.TryDequeue(out var c)) { c(World); acted = true; }
+                if (!FastForward) MaybeAutosave(clock.Elapsed.TotalSeconds);
                 bool ticked = false;
                 double now = clock.Elapsed.TotalSeconds;
                 long ft = FastTo;
@@ -395,5 +400,151 @@ public sealed class SimRunner
                     Stress[i] = stress;
                 }
         }
+    }
+
+    // ---- commands for the UI (all applied by the simulation thread between ticks) ----
+    // Results come back through the optional callback (called on the simulation thread: marshal to the
+    // main thread before touching Godot) and as a line in Notices.
+
+    public readonly ConcurrentQueue<string> Notices = new();   // human-readable outcomes, for a status line
+    void Notice(string text) { Notices.Enqueue(text); while (Notices.Count > 50) Notices.TryDequeue(out _); }
+
+    // Laws (P). Read access from any thread: ParamRegistry.All (fixed metadata) and ParamValues (a fresh
+    // array after every change, never mutated); ParamVersion changes with every change.
+    public static IReadOnlyList<ParamInfo> Params => ParamRegistry.All;
+    public static IReadOnlyList<string> ParamGroups => ParamRegistry.Groups;
+    public static double[] ParamValues => ParamRegistry.Published;
+    public static long ParamVersion => ParamRegistry.Version;
+
+    public void SetParam(string name, double value, Action<bool> done = null) => Do(w =>
+    {
+        bool ok = w.SetParam(name, value);
+        Notice(ok ? $"закон {name} = {ParamRegistry.Get(name).ToString(System.Globalization.CultureInfo.InvariantCulture)}" : $"нет закона {name}");
+        done?.Invoke(ok);
+    });
+
+    public void ResetParams() => Do(w => { w.ResetParams(); Notice("законы мира — по умолчанию"); });
+
+    public void ApplyPreset(ParamPreset preset) => Do(w =>
+    {
+        var unknown = w.ApplyParams(preset.Values);
+        Notice($"набор законов «{preset.Name}»" + (unknown.Count > 0 ? $", неизвестны: {string.Join(", ", unknown)}" : ""));
+    });
+
+    public void LoadPreset(string path, Action<ParamPreset, string> done = null) => Do(w =>
+    {
+        try { var p = ParamRegistry.LoadPreset(path); w.ApplyParams(p.Values); Notice($"законы из {path}"); done?.Invoke(p, null); }
+        catch (Exception e) { Notice($"не прочитать {path}: {e.Message}"); done?.Invoke(null, e.Message); }
+    });
+
+    // Saves the current laws as a preset (only those that differ from the defaults unless full).
+    public void SavePreset(string path, string name, string description = "", bool full = false) => Do(_ =>
+    {
+        try { ParamRegistry.SavePreset(path, ParamRegistry.Capture(name, description, full)); Notice($"законы сохранены: {path}"); }
+        catch (Exception e) { Notice($"не сохранить {path}: {e.Message}"); }
+    });
+
+    public void SetAbiogenesis(bool on) => Do(w => w.Abiogenesis = on);
+    public void SetStrikes(bool on) => Do(w => w.AutoStrikes = on);
+
+    // A new world from settings (its preset, if any, replaces the laws), made on this thread and
+    // swapped in between ticks; `warm` ticks are stepped before it is shown.
+    public void NewWorld(WorldSettings settings, int warm = 0, Action<World> done = null) => Do(_ =>
+    {
+        var w = new World(settings);
+        for (int i = 0; i < warm; i++) w.Step();
+        ReplaceWorld(w);
+        Notice($"новый мир: seed {w.Seed}");
+        done?.Invoke(w);
+    });
+
+    public sealed class SaveOutcome
+    {
+        public string Path, Error;
+        public long Tick, Bytes;
+        public double Ms;
+        public bool Ok => Error == null;
+    }
+
+    public void Save(string path, string note = null, Action<SaveOutcome> done = null) => Do(w => done?.Invoke(SaveNow(w, path, note)));
+
+    SaveOutcome SaveNow(World w, string path, string note)
+    {
+        var o = new SaveOutcome { Path = path, Tick = w.Tick };
+        var t0 = Stopwatch.GetTimestamp();
+        try { w.Save(path, note); o.Bytes = new System.IO.FileInfo(path).Length; }
+        catch (Exception e) { o.Error = e.Message; }
+        o.Ms = (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency;
+        Notice(o.Ok ? $"сохранено: {path} (тик {o.Tick}, {o.Bytes / 1048576.0:F1} МБ, {o.Ms:F0} мс)" : $"не сохранить {path}: {o.Error}");
+        return o;
+    }
+
+    // Loads a saved world in place of the current one (its laws come with it).
+    public void Load(string path, Action<World, string> done = null) => Do(_ =>
+    {
+        try
+        {
+            var w = World.Load(path);
+            ReplaceWorld(w);
+            Notice($"загружено: {path} (seed {w.Seed}, тик {w.Tick})");
+            done?.Invoke(w, null);
+        }
+        catch (Exception e) { Notice($"не загрузить {path}: {e.Message}"); done?.Invoke(null, e.Message); }
+    });
+
+    public static SaveInfo ReadSaveInfo(string path) => World.ReadInfo(path);
+
+    // Plants a player design at cell (x, y) (see World.SpawnDesign for where matter and energy come from).
+    public void SpawnDesign(CreatureDesign design, int x, int y, SpawnOptions options, Action<SpawnResult> done = null)
+    {
+        var d = design.Clone();   // the UI may keep editing its copy
+        Do(w =>
+        {
+            var r = w.SpawnDesign(d, x, y, options);
+            Notice($"«{d.Name}»: {r}");
+            done?.Invoke(r);
+        });
+    }
+
+    // Autosave: every AutosaveMinutes of wall time (0 = off) into AutosaveDir/autosave_K.sav, K
+    // rotating through AutosaveSlots. Not while fast-forwarding; skipped while paused with nothing new.
+    public volatile float AutosaveMinutes;
+    public volatile string AutosaveDir;
+    public volatile int AutosaveSlots = 3;
+    public volatile SaveOutcome LastAutosave;
+    double autosaveAt = -1;
+    long autosavedTick = -1;
+    int autosaveSlot;
+
+    void MaybeAutosave(double now)
+    {
+        float minutes = AutosaveMinutes;
+        string dir = AutosaveDir;
+        if (minutes <= 0 || string.IsNullOrEmpty(dir)) { autosaveAt = -1; return; }
+        if (autosaveAt < 0) { autosaveAt = now + minutes * 60; return; }
+        if (now < autosaveAt) return;
+        autosaveAt = now + minutes * 60;
+        var w = World;
+        if (w.Tick == autosavedTick) return;
+        string path = System.IO.Path.Combine(dir, $"autosave_{autosaveSlot}.sav");
+        autosaveSlot = (autosaveSlot + 1) % Math.Max(1, AutosaveSlots);
+        LastAutosave = SaveNow(w, path, "autosave");
+        autosavedTick = w.Tick;
+    }
+
+    // Swaps in another world (on this thread, between ticks) and forgets what belonged to the old one.
+    void ReplaceWorld(World w)
+    {
+        world = w;
+        Selected = Hover = null;
+        histOf = null; selHistN = 0; histN = 0;
+        Array.Copy(w.Ev, evPrev, evPrev.Length);
+        Array.Clear(evRate);
+        Array.Clear(Stress);
+        FastTo = -1;
+        autosavedTick = -1;
+        WorldGeneration++;
+        RefreshStats();
+        Publish();
     }
 }
