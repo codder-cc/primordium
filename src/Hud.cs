@@ -78,10 +78,27 @@ public partial class Hud : Control
         return t;
     }
 
+    public double DrawMs;   // summed since Main last read it (perf overlay)
+    string lastError;
+
+    // The panel reads bodies the simulation thread is changing: a torn read must not take the game
+    // down, it only spoils one redraw.
     public override void _Draw()
     {
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        try { DrawPanel(); }
+        catch (Exception e)
+        {
+            clipTop = float.MinValue; clipBot = float.MaxValue;
+            if (e.Message != lastError) { lastError = e.Message; GD.PrintErr("hud: " + e.Message); }
+        }
+        DrawMs += (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+    }
+
+    void DrawPanel()
+    {
         var w = Main?.World;
-        if (w == null) return;
+        if (w == null || Main.Frame == null) return;
         var vs = GetViewportRect().Size;
         float px = vs.X - PanelW;
         hits.Clear();
@@ -214,7 +231,7 @@ public partial class Hud : Control
         string l1 = $"#{a.Id} · {Looks.ShapeNames[a.Shape]} · линия #{a.Lineage} · поколение {a.Gen}" + (a.Cells > 1 ? $" · на {a.Cells} клетках" : "");
         string l2 = $"{DietName(a)} · энергия {Math.Max(0, a.Energy):F0} (удобный запас {a.Store:F0}) · возраст {a.Age:N0}";
         int cell = a.Y * World.W + a.X;
-        string l3 = $"клетка {w.Temp[cell]:+0;-0} °C, тело {a.Tb:+0;-0} °C · соседей {w.Count[cell] - 1}, место занято на {w.FloorFill(cell, a.Z):P0}" + (w.Water[cell] > 0.05f ? $" · вода {w.Water[cell]:0.0}" : "") +
+        string l3 = $"клетка {w.Temp[cell]:+0;-0} °C, тело {a.Tb:+0;-0} °C · соседей {w.Count[cell] - 1}, место занято на {(Main.Frame.Hover == a ? Main.Frame.HoverFloorFill : 0):P0}" + (w.Water[cell] > 0.05f ? $" · вода {w.Water[cell]:0.0}" : "") +
                     $" · белков {a.EnzN} ({EnzymeBrief(a)})";
         var sel = Main.View.Selected;
         string l4 = sel != null && sel != a ? (Looks.Kin(a, sel) > 0 ? $"родня выбранного · близость {Looks.Kin(a, sel) * 100:F0}%" : "не родня выбранному")
@@ -350,7 +367,7 @@ public partial class Hud : Control
             T(tx, vs.Y - 85, l1, Fg, 13);
             T(22, vs.Y - 69, l2, Dim, 12);
         }
-        T(16, vs.Y - 40, "Space пауза · . шаг · +/− скорость · T промотка на N суток, ⇧T на 10 · R новый мир, ⇧R тот же · P снимок · 1–4 кисть", Dim, 12);
+        T(16, vs.Y - 40, "Space пауза · . шаг · +/− скорость · T промотка на N суток, ⇧T на 10 · R новый мир, ⇧R тот же · P снимок · 1–4 кисть · F3 замер", Dim, 12);
         T(16, vs.Y - 24, "ЛКМ / WASD / два пальца — сдвиг · ПКМ / Q E — поворот · колесо / щипок — зум · G вся карта · C разрез, [ ] сдвиг", Dim, 12);
         T(16, vs.Y - 8, "клик — агент · H легенда · B рекорды · O старейший · K родня · F следить · V окраска · M поверхность · L свет · N жизнь · A абиогенез · X удар", Dim, 12);
     }
@@ -366,16 +383,18 @@ public partial class Hud : Control
         y = Header(x, y, "Население");
         const float gh = 74;
         DrawRect(new Rect2(x, y, cw, gh), new Color(1, 1, 1, 0.04f));
-        var hist = Main.Hist;
-        if (hist.Count > 1)
+        var hist = Main.Frame.Hist;
+        int hn = Main.Frame.HistN;
+        if (hn > 1)
         {
-            int mx = Math.Max(10, hist.Max(h => h[0]));
+            int mx = 10;
+            for (int i = 0; i < hn; i++) mx = Math.Max(mx, hist[i * 5]);
             Color[] cols = { Fg, CPlant, CEater, CMiner, CHunter };
             for (int k = 4; k >= 0; k--)
             {
-                var pts = new Vector2[hist.Count];
-                for (int i = 0; i < hist.Count; i++)
-                    pts[i] = new Vector2(x + i * cw / Math.Max(1, hist.Count - 1), y + gh - 2 - hist[i][k] * (gh - 6) / mx);
+                var pts = new Vector2[hn];
+                for (int i = 0; i < hn; i++)
+                    pts[i] = new Vector2(x + i * cw / Math.Max(1, hn - 1), y + gh - 2 - hist[i * 5 + k] * (gh - 6) / mx);
                 DrawPolyline(pts, cols[k], k == 0 ? 1.6f : 1.2f, true);
             }
             T(x + 6, y + 14, $"макс {mx:N0}", Dim, 11);
@@ -405,7 +424,7 @@ public partial class Hud : Control
         for (int k = 0; k < EvShow.Length; k++)
         {
             float cx = x + (k % 3) * colw, cy = y + 12 + (k / 3) * 17;
-            long v = Main.EvRate[(int)EvShow[k].k];
+            long v = Main.Frame.EvRate[(int)EvShow[k].k];
             T(cx, cy, EvShow[k].name, Dim, 12);
             string s = v.ToString("N0");
             T(cx + colw - 10 - TW(s, 12, bold), cy, s, v > 0 ? Fg : Dim, 12, bold);
@@ -580,19 +599,21 @@ public partial class Hud : Control
         y += 5;
 
         // Energy over the last ticks.
-        var hist = Main.SelHist;
-        if (hist.Count > 1)
+        var hist = Main.Frame.SelHist;
+        int hc = Main.Frame.Sel == a ? Main.Frame.SelHistN : 0;
+        if (hc > 1)
         {
-            float gh = 26, mx = Math.Max(1f, hist.Max());
+            float gh = 26, mx = 1f;
+            for (int k = 0; k < hc; k++) mx = Math.Max(mx, hist[k]);
             if (y > clipTop && y + gh < clipBot)
             {
                 DrawRect(new Rect2(x, y + 2, cw, gh), new Color(1, 1, 1, 0.04f));
-                var pts = new Vector2[hist.Count];
-                for (int k = 0; k < hist.Count; k++)
+                var pts = new Vector2[hc];
+                for (int k = 0; k < hc; k++)
                     pts[k] = new Vector2(x + k * cw / 299f, y + 2 + gh - Math.Max(0, hist[k]) / mx * (gh - 2));
                 DrawPolyline(pts, new Color(0.4f, 0.9f, 0.5f), 1.3f, true);
             }
-            T(x + 4, y + 13, $"энергия за {hist.Count * 5} тиков (макс {mx:0})", Dim, 10);
+            T(x + 4, y + 13, $"энергия за {hc * 5} тиков (макс {mx:0})", Dim, 10);
             y += gh + 6;
         }
 
@@ -611,14 +632,14 @@ public partial class Hud : Control
         y = Section(x, y, "Тело");
         int nextCells = Math.Min(P.MaxCells, a.Cells + 1);
         string grow = a.Cells >= P.MaxCells ? "предел" : $"{nextCells}-я клетка при массе {P.GrowMass * MathF.Pow(nextCells - 1, P.GrowPow):0}";
-        T(x, y + 10, $"{a.InvTotal} молекул (удобно до {a.Room}{(a.Packing > 1 ? $", набит ×{a.Packing:0.0} — держать дороже" : "")}) · масса {a.Mass:F0} · объём {a.Volume:F0} (пол занят на {w.FloorFill(a.Y * World.W + a.X, a.Z):P0}) · клеток {a.Cells} ({grow})", Dim, 12);
+        T(x, y + 10, $"{a.InvTotal} молекул (удобно до {a.Room}{(a.Packing > 1 ? $", набит ×{a.Packing:0.0} — держать дороже" : "")}) · масса {a.Mass:F0} · объём {a.Volume:F0} (пол занят на {(Main.Frame.Sel == a ? Main.Frame.SelFloorFill : 0):P0}) · клеток {a.Cells} ({grow})", Dim, 12);
         T(x, y + 25, $"уровень {a.Z} · {Where(w, a)} · тело {a.Tb:+0;-0} °C", Dim, 12);
         if (y + 30 > clipTop && y + 30 < clipBot) DrawCircle(new Vector2(x + 6, y + 37), 6, View3D.KinColor(a));
         T(x + 18, y + 41, $"облик: {Looks.ShapeNames[a.Shape]} · родни на планете {Main.KinCount:N0}" +
                           (Main.View.KinFocus ? " (подсвечена, K — выкл.)" : " (K — подсветить)"), Fg, 12);
         y += 50;
-        int supportVoxel = (a.Y * World.W + a.X) * World.Z + Math.Clamp(a.Z - 1, 0, World.Z - 1);
-        T(x, y + 10, $"опора: нагрузка {w.Pressure[supportVoxel]:F1} / прочность {w.CompressionCapacity(supportVoxel):F1} · порядок {w.Order[supportVoxel] / 255f:P0}", Dim, 11);
+        var fr = Main.Frame;
+        if (fr.Sel == a) T(x, y + 10, $"опора: нагрузка {fr.SelPressure:F1} / прочность {fr.SelCapacity:F1} · порядок {fr.SelOrder:P0}", Dim, 11);
         y += 16;
         float lx = x;
         y += 10;
@@ -680,7 +701,8 @@ public partial class Hud : Control
         // The whole genome at a glance: colour = kind of instruction, brightness = how well proven
         // (protected) the byte is. Settled blocks — "organs" — stand out as bright runs.
         var g = a.G;
-        int n = g.Length, cur = a.Ip % n;
+        var prot = a.Prot;   // replaced together with G: read both once and stay within both
+        int n = Math.Min(g.Length, prot.Length), cur = a.Ip % Math.Max(1, n);
         T(x, y + 10, "геном: цвет — вид команды, яркость — закреплённость", Dim, 11);
         y += 14;
         if (y > clipTop && y + 12 < clipBot)
@@ -688,7 +710,7 @@ public partial class Hud : Control
             float bw2 = cw / n;
             for (int i = 0; i < n; i++)
             {
-                float pr = a.Prot[i] / 255f;
+                float pr = prot[i] / 255f;
                 DrawRect(new Rect2(x + i * bw2, y, MathF.Max(1, bw2 - 0.5f), 10), OpColor(g[i]).Darkened(0.5f - 0.5f * MathF.Min(1, pr * 3)));
             }
             DrawRect(new Rect2(x + cur * bw2 - 1, y - 2, 2, 14), Fg);
@@ -703,7 +725,7 @@ public partial class Hud : Control
             y += 15;
             string s = Genome.DisAt(g, i, out int len);
             bool here = cur >= i && cur < i + len;
-            var lc = here ? Acc : Dim.Lerp(new Color(1f, 0.8f, 0.35f), MathF.Min(1, a.Prot[i] / 80f));
+            var lc = here ? Acc : Dim.Lerp(new Color(1f, 0.8f, 0.35f), MathF.Min(1, prot[i] / 80f));
             T(x, y, $"{(here ? "→" : " ")}{i,4}  {s}", lc, 12, mono);
             i += len;
         }
@@ -754,9 +776,15 @@ public partial class Hud : Control
         return string.Join(" · ", parts);
     }
 
+    // Wrapped lines are kept: the long explanations are the same every redraw.
+    readonly Dictionary<(string, float, int, Font), List<string>> wrapped = new();
+
     List<string> Wrap(string text, float width, int size, Font f = null)
     {
-        var lines = new List<string>();
+        var key = (text, width, size, f);
+        if (wrapped.TryGetValue(key, out var cached)) return cached;
+        if (wrapped.Count > 256) wrapped.Clear();
+        var lines = wrapped[key] = new List<string>();
         var cur = "";
         foreach (var word in text.Split(' '))
         {

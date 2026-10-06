@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Godot;
 
 namespace Primordium;
@@ -7,12 +8,18 @@ namespace Primordium;
 // 2.5D view of the planet. Every column is one box: its sides show the strata (looked up in a voxel
 // texture by the shader), its top shows the surface or a chosen overlay, lit by the simulated sun.
 // Agents (View3D.Agents.cs) stand on the columns.
+//
+// The world is stepped on another thread (SimRunner). Bodies, links, flashes, strikes and vents come
+// from the published SimFrame; terrain arrays are read directly (a torn number only shows for a frame).
+// Nothing here calls into the world in a way that writes to it.
 public partial class View3D : Node3D
 {
     const float BH = P.BlockH;
     const int W = World.W, H = World.H, Z = World.Z, N = World.N;
 
     public World World { get; private set; }
+    public SimFrame Frame;           // set by Main every frame
+    public float[] Stress;           // per column, for the load overlay (filled by the simulation thread)
     public Camera3D Cam { get; private set; }
     public int Overlay;              // 0 surface, 1 temperature, 2 light, 3 remains, 4 density, 5 deaths, 6 body heat, 7+s one species
     public int ColorMode;            // see ColorModeNames
@@ -25,19 +32,45 @@ public partial class View3D : Node3D
     public int OverlayCount => FirstSpecies + Chemistry.S;
     public const int FirstSpecies = 9;   // overlays before the per-molecule ones
 
-    MultiMesh terrain, caveTerrain;
+    // Timings of the steps of Refresh, ms summed since Main last cleared them (perf overlay).
+    public const int ProfSlots = 10;
+    public static readonly string[] ProfNames = { "camera", "voxels", "terrain", "water", "agents", "links", "flashes", "drops", "misc", "agent-upload" };
+    public readonly double[] Prof = new double[ProfSlots];
+    readonly Stopwatch profSw = new();
+    void Lap(int k) { Prof[k] += profSw.Elapsed.TotalMilliseconds; profSw.Restart(); }
+
+    // The columns are drawn in bands of rows, each its own MultiMesh: only bands that changed are uploaded.
+    const int BandRows = 16, Bands = H / BandRows, BandN = BandRows * W;
+    readonly MultiMesh[] bands = new MultiMesh[Bands];
+    readonly float[][] bandBuf = new float[Bands][];
+    readonly bool[] bandDirty = new bool[Bands];
+    readonly int[] shapedVer = new int[N];
+    int colourBand, shapeRow, shapedSlice = -2, colouredOverlay = -1, sweepLeft;
+    public int BandsUploaded;   // diagnostics
+    bool colouredLighting;
+    long colouredTick = -1;
+
+    MultiMesh caveTerrain;
+    float[] caveBuf = Array.Empty<float>();
+    bool cavesChanged;
     readonly int[] topBase = new int[N];
     readonly Dictionary<int, List<(int bottom, int top)>> caveRuns = new();
     ShaderMaterial terrainMat;
-    Image voxImg;
-    ImageTexture voxTex, palTex;
-    // The strata texture packs the levels in Slabs side-by-side strips of ZS levels each, so that its
-    // height (H·ZS) stays within what a GPU takes (192 levels in one strip would be 30720 rows).
-    const int Slabs = (H * Z + 8191) / 8192, ZS = (Z + Slabs - 1) / Slabs, TexW = W * Slabs, TexH = H * ZS;
-    byte[] vox = new byte[TexW * TexH];
+    ImageTexture palTex;
+
+    // The strata texture: a texture array of 256×256 tiles, each holding 16 rows of the map × 16
+    // levels. A changed column rewrites its bytes; only tiles whose bytes really changed are
+    // uploaded (eating a block partly changes nothing here, and the air above the land never changes).
+    const int TileRows = 16, TileLevels = 16, YTiles = H / TileRows, ZTiles = (Z + TileLevels - 1) / TileLevels, Layers = YTiles * ZTiles;
+    const int TileH = TileRows * TileLevels;
+    readonly byte[][] voxTile = new byte[Layers][];
+    readonly bool[] tileDirty = new bool[Layers];
+    Texture2DArray voxTex;
+    Image tileImg;
+    readonly int[] voxVer = new int[N];
     float groundY = 6;   // typical surface level, where the camera looks
-    readonly float[] tBuf = new float[N * 16];
-    int seenTerrain = -1, frame, shapedTerrain = -1, shapedSlice = -2;
+    int seenTerrain = -1, frame;
+    public int TilesUploaded;   // diagnostics
     readonly List<MeshInstance3D> ventMarks = new();
     StandardMaterial3D ventMat;
 
@@ -48,11 +81,12 @@ public partial class View3D : Node3D
     const string TerrainShader = @"
 shader_type spatial;
 render_mode unshaded, cull_back;
-uniform sampler2D vox : filter_nearest;
+uniform sampler2DArray vox : filter_nearest;
 uniform sampler2D pal : filter_nearest;
 uniform int zmax;
-uniform int zs;
 uniform int wmax;
+uniform int hmax;
+uniform int ytiles;
 uniform float bh;
 uniform float side_lit;
 varying vec3 wpos;
@@ -75,10 +109,10 @@ void fragment() {
     } else {
         l = max(l, side_lit);
         vec3 inside = wpos - vec3(nrm.x, 0.0, nrm.z) * 0.02;
-        int x = int(floor(inside.x));
-        int y = int(floor(inside.z));
+        int x = clamp(int(floor(inside.x)), 0, wmax - 1);
+        int y = clamp(int(floor(inside.z)), 0, hmax - 1);
         int z = clamp(int(floor(wpos.y / bh)), 0, zmax - 1);
-        float m = texelFetch(vox, ivec2(x + (z / zs) * wmax, y * zs + z % zs), 0).r;
+        float m = texelFetch(vox, ivec3(x, (y % 16) * 16 + z % 16, (z / 16) * ytiles + y / 16), 0).r;
         col = texelFetch(pal, ivec2(int(m * 255.0 + 0.5), 0), 0).rgb;
         float f = fract(wpos.y / bh);
         col *= 0.84 + 0.16 * smoothstep(0.0, 0.1, f);
@@ -95,14 +129,19 @@ void fragment() {
         Cam = new Camera3D { Projection = Camera3D.ProjectionType.Orthogonal, Size = zoom, Near = 1f, Far = 3000f, Current = true };
         AddChild(Cam);
 
-        terrain = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D, UseCustomData = true, Mesh = new BoxMesh() };
-        terrain.InstanceCount = N;
         terrainMat = new ShaderMaterial { Shader = new Shader { Code = TerrainShader } };
-        AddChild(new MultiMeshInstance3D { Multimesh = terrain, MaterialOverride = terrainMat, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
+        var box = new BoxMesh();
+        for (int b = 0; b < Bands; b++)
+        {
+            bands[b] = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D, UseCustomData = true, Mesh = box, InstanceCount = BandN };
+            bandBuf[b] = new float[BandN * 16];
+            AddChild(new MultiMeshInstance3D { Multimesh = bands[b], MaterialOverride = terrainMat, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
+        }
 
-        caveTerrain = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D, UseCustomData = true, Mesh = new BoxMesh() };
+        caveTerrain = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D, UseCustomData = true, Mesh = box };
         AddChild(new MultiMeshInstance3D { Multimesh = caveTerrain, MaterialOverride = terrainMat, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
 
+        for (int l = 0; l < Layers; l++) voxTile[l] = new byte[W * TileH];
         ventMat = new StandardMaterial3D { ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded, AlbedoColor = new Color(1f, 0.42f, 0.12f) };
         BuildAgentNodes();
         BuildWeatherNodes();
@@ -111,6 +150,7 @@ void fragment() {
     public void SetWorld(World w)
     {
         World = w;
+        Frame = null;
         Selected = null;
         Hover = null;
         Follow = false;
@@ -119,49 +159,64 @@ void fragment() {
         var pal = Image.CreateEmpty(w.Chem.MatCount, 1, false, Image.Format.Rgba8);
         for (int m = 0; m < w.Chem.MatCount; m++)
         {
-            var c = m < w.Chem.MatCount ? w.Chem.MatCol[m] : new Rgb(1, 0, 1);
+            var c = w.Chem.MatCol[m];
             pal.SetPixel(m, 0, new Color(c.R, c.G, c.B));
         }
         palTex = ImageTexture.CreateFromImage(pal);
-        Array.Fill(voxH, -1);
+        Array.Fill(voxVer, int.MinValue);
+        Array.Fill(shapedVer, int.MinValue);
+        shapedSlice = -2;
+        colouredOverlay = -1;
         caveRuns.Clear();
-        RebuildVoxels();
+        foreach (var t in voxTile) Array.Clear(t);
+        RebuildVoxels(true);
         terrainMat.SetShaderParameter("vox", voxTex);
         terrainMat.SetShaderParameter("pal", palTex);
         terrainMat.SetShaderParameter("zmax", Z);
-        terrainMat.SetShaderParameter("zs", ZS);
         terrainMat.SetShaderParameter("wmax", W);
+        terrainMat.SetShaderParameter("hmax", H);
+        terrainMat.SetShaderParameter("ytiles", YTiles);
         double hs = 0;
-        for (int i = 0; i < N; i++) hs += w.Height[i];
+        for (int i = 0; i < N; i++) { hs += w.Height[i]; groundTop[i] = Ground(i); }
         groundY = (float)(hs / N) * BH;
         target.Y = groundY;
         terrainMat.SetShaderParameter("bh", BH);
     }
 
-    // The strata texture: only columns whose height changed since last time are rewritten (blocks get
-    // eaten all the time, but a column changes shape only when one disappears or is laid down).
-    readonly int[] voxH = new int[N];
-    readonly byte[] voxTop = new byte[N];
-
-    void RebuildVoxels()
+    // Columns whose version changed get their bytes rewritten; caves are re-traced for them.
+    void RebuildVoxels(bool create = false)
     {
         var w = World;
-        bool all = voxImg == null;
+        seenTerrain = w.TerrainVersion;
+        var mat = w.Mat;
         for (int i = 0; i < N; i++)
         {
-            int h = w.Height[i];
-            byte top = h > 0 ? w.Mat[i * Z + h - 1] : (byte)0;
-            if (!all && voxH[i] == w.ColumnVersion[i]) continue;
-            voxH[i] = w.ColumnVersion[i];
-            voxTop[i] = top;
-            int x = i % W, y = i / W;
-            for (int z = 0; z < Z; z++) vox[(y * ZS + z % ZS) * TexW + z / ZS * W + x] = z < h ? w.Mat[i * Z + z] : (byte)0;
-            caveRuns.Remove(i); topBase[i] = 0;
+            int ver = w.ColumnVersion[i];
+            if (voxVer[i] == ver) continue;
+            voxVer[i] = ver;
+            int h = Math.Clamp(w.Height[i], 0, Z);
+            int x = i % W, y = i / W, yt = y / TileRows, row = (y % TileRows) * TileLevels;
+            int b0 = i * Z;
+            for (int zt = 0; zt < ZTiles; zt++)
+            {
+                int layer = zt * YTiles + yt;
+                var t = voxTile[layer];
+                bool dirty = false;
+                for (int dz = 0, z = zt * TileLevels; dz < TileLevels && z < Z; dz++, z++)
+                {
+                    byte m = z < h ? mat[b0 + z] : (byte)0;
+                    int o = (row + dz) * W + x;
+                    if (t[o] != m) { t[o] = m; dirty = true; }
+                }
+                if (dirty) tileDirty[layer] = true;
+            }
+            bool hadCaves = caveRuns.Remove(i);
+            topBase[i] = 0;
             List<(int bottom, int top)> runs = null;
             int start = -1;
             for (int z = 0; z <= h; z++)
             {
-                bool solid = z < h && w.IsSolid(i, z);
+                bool solid = z < h && mat[b0 + z] != Chemistry.Air;
                 if (solid && start < 0) start = z;
                 if (!solid && start >= 0)
                 {
@@ -171,49 +226,71 @@ void fragment() {
                 }
             }
             if (runs != null) caveRuns[i] = runs;
+            if (hadCaves || runs != null) cavesChanged = true;
         }
-        if (voxImg == null)
+        if (create || voxTex == null)
         {
-            voxImg = Image.CreateFromData(TexW, TexH, false, Image.Format.R8, vox);
-            voxTex = ImageTexture.CreateFromImage(voxImg);
+            var imgs = new Godot.Collections.Array<Image>();
+            for (int l = 0; l < Layers; l++) imgs.Add(Image.CreateFromData(W, TileH, false, Image.Format.R8, voxTile[l]));
+            voxTex ??= new Texture2DArray();
+            voxTex.CreateFromImages(imgs);
+            tileImg ??= Image.CreateFromData(W, TileH, false, Image.Format.R8, voxTile[0]);
+            Array.Clear(tileDirty);
+            cavesChanged = true;
+            return;
         }
-        else
+        for (int l = 0; l < Layers; l++)
         {
-            voxImg.SetData(TexW, TexH, false, Image.Format.R8, vox);
-            voxTex.Update(voxImg);
+            if (!tileDirty[l]) continue;
+            tileDirty[l] = false;
+            tileImg.SetData(W, TileH, false, Image.Format.R8, voxTile[l]);
+            voxTex.UpdateLayer(tileImg, l);
+            TilesUploaded++;
         }
-        seenTerrain = w.TerrainVersion;
-        FillCaves();
     }
 
     public void Refresh(float dt)
     {
-        if (World == null) return;
+        if (World == null || Frame == null) return;
         frame++;
+        profSw.Restart();
         UpdateCamera(dt);
-        if (World.TerrainVersion != seenTerrain && frame % 8 == 0) RebuildVoxels();
+        Lap(0);
+        if (World.TerrainVersion != seenTerrain && frame % 4 == 0) RebuildVoxels();
+        Lap(1);
         terrainMat.SetShaderParameter("side_lit", Slice >= 0 || !Lighting ? 1f : 0.55f);
         FillTerrain();
+        Lap(2);
         FillWater();
-        FillAgents(dt);
+        Lap(3);
+        FillAgents(dt);   // laps "agents" itself, before its uploads
+        Lap(9);
         FillLinks();
+        Lap(5);
         FillFlashes();
+        Lap(6);
         FillDrops();
+        Lap(7);
         UpdateStrikes();
         UpdateVents();
         UpdateRings();
+        Lap(8);
     }
 
-    public Vector3 AgentPos(Agent a) => new(a.X + 0.5f, AgentGround(a), a.Y + 0.5f);
+    public Vector3 AgentPos(Agent a) => new(a.X + 0.5f, AgentGround(a.X, a.Y, a.Z), a.Y + 0.5f);
 
-    public float AgentGround(Agent a) => a.Z == World.Height[a.Y * W + a.X] ? Ground(a.Y * W + a.X) : a.Z * BH;
+    public float AgentGround(int x, int y, int z) => z == World.Height[y * W + x] ? Ground(y * W + x) : z * BH;
+
+    // The ground of each column as last drawn (ShapeColumn): what bodies, effects and marks stand on.
+    readonly float[] groundTop = new float[N];
 
     // Where the ground of a column is: a top block that is partly eaten is drawn thinner.
     public float Ground(int i)
     {
         var w = World;
         int h = w.Height[i];
-        if (h == 0) return 0;
+        if (h <= 0) return 0;
+        if (h > Z) h = Z;
         int v = i * Z + h - 1;
         float f = 0.25f + 0.75f * w.Fill(v);
         return (h - 1 + f) * BH;
@@ -221,119 +298,155 @@ void fragment() {
 
     float Lit(int i) => Lighting ? MathF.Min(1f, World.Light[i]) : 1f;
 
+    // One column's box; true if anything moved.
+    bool ShapeColumn(int i)
+    {
+        int x = i % W, y = i / W, b = y / BandRows, o = (i - b * BandN) * 16;
+        var buf = bandBuf[b];
+        bool hide = Slice >= 0 && y > Slice;
+        float floor = hide ? 0 : topBase[i] * BH;
+        float gr = groundTop[i] = Ground(i);
+        float hh = hide ? 0 : Math.Max(0, gr - floor), sxz = hide ? 0 : 1;
+        bool changed = buf[o] != sxz || buf[o + 5] != hh || buf[o + 7] != floor + hh * 0.5f || buf[o + 3] != x + 0.5f;
+        if (!changed) return false;
+        buf[o] = sxz; buf[o + 1] = 0; buf[o + 2] = 0; buf[o + 3] = x + 0.5f;
+        buf[o + 4] = 0; buf[o + 5] = hh; buf[o + 6] = 0; buf[o + 7] = floor + hh * 0.5f;
+        buf[o + 8] = 0; buf[o + 9] = 0; buf[o + 10] = sxz; buf[o + 11] = y + 0.5f;
+        return true;
+    }
+
     void FillTerrain()
     {
         var w = World;
+        bool all = shapedSlice != Slice;
+        if (all) { cavesChanged = true; shapedSlice = Slice; }
+        if (cavesChanged) FillCaves();
+        // Shapes: the columns whose version changed (their top block was eaten into, laid on, removed),
+        // plus two rows a frame as a sweep for anything else.
+        var ver = w.ColumnVersion;
+        bool changed = false;
+        for (int i = 0; i < N; i++)
+        {
+            int v = ver[i];
+            if (!all && shapedVer[i] == v) continue;
+            shapedVer[i] = v;
+            changed = true;
+            if (ShapeColumn(i)) bandDirty[i / BandN] = true;
+        }
+        for (int r = 0; r < 2; r++, shapeRow = (shapeRow + 1) % H)
+            for (int x = 0; x < W; x++)
+                if (ShapeColumn(shapeRow * W + x)) bandDirty[shapeRow / BandRows] = true;
+
+        // Colours: everything when the overlay or the lighting changed; otherwise one band a frame,
+        // for a full round after the world last changed (nothing while it stands paused).
+        if (Frame.Tick != colouredTick || changed || Overlay == 7) { colouredTick = Frame.Tick; sweepLeft = Bands; }
+        if (colouredOverlay != Overlay || colouredLighting != Lighting || all)
+        {
+            colouredOverlay = Overlay; colouredLighting = Lighting;
+            for (int i = 0; i < N; i++) ColourColumn(i);
+            Array.Fill(bandDirty, true);
+        }
+        else if (sweepLeft > 0)
+        {
+            sweepLeft--;
+            int b = colourBand;
+            colourBand = (colourBand + 1) % Bands;
+            for (int i = b * BandN; i < (b + 1) * BandN; i++) ColourColumn(i);
+            bandDirty[b] = true;
+        }
+        for (int b = 0; b < Bands; b++)
+        {
+            if (!bandDirty[b]) continue;
+            bandDirty[b] = false;
+            bands[b].Buffer = bandBuf[b];
+            BandsUploaded++;
+        }
+    }
+    void ColourColumn(int i)
+    {
+        var w = World;
         var ch = w.Chem;
-        var b = tBuf;
-        // Ground and colours change slowly: refresh a quarter of the rows per frame (all of them when
-        // the terrain or the cut-away has just changed shape).
-        bool reshape = shapedTerrain != w.TerrainVersion || shapedSlice != Slice;
-        if (shapedSlice != Slice) FillCaves();
-        shapedTerrain = w.TerrainVersion;
-        shapedSlice = Slice;
-        for (int y = reshape ? 0 : frame & 3; y < H; y += reshape ? 1 : 4)
-            for (int x = 0; x < W; x++)
-            {
-                int i = y * W + x, o = i * 16;
-                bool hide = Slice >= 0 && y > Slice;
-                float floor = hide ? 0 : topBase[i] * BH;
-                float hh = hide ? 0 : Math.Max(0, Ground(i) - floor), sxz = hide ? 0 : 1;
-                b[o] = sxz; b[o + 1] = 0; b[o + 2] = 0; b[o + 3] = x + 0.5f;
-                b[o + 4] = 0; b[o + 5] = hh; b[o + 6] = 0; b[o + 7] = floor + hh * 0.5f;
-                b[o + 8] = 0; b[o + 9] = 0; b[o + 10] = sxz; b[o + 11] = y + 0.5f;
-            }
-        for (int y = frame & 3; y < H; y += 4)
-            for (int x = 0; x < W; x++)
-            {
-                int i = y * W + x, h = w.Height[i], o = i * 16;
-                Rgb c;
-                float lit = Lit(i);
-                switch (Overlay)
+        int b = i / BandN, o = (i - b * BandN) * 16;
+        var buf = bandBuf[b];
+        int h = Math.Clamp(w.Height[i], 0, Z);
+        Rgb c;
+        float lit = Lit(i);
+        switch (Overlay)
+        {
+            case 0:
                 {
-                    case 0:
-                        {
-                            int v = i * Z + h - 1;
-                            byte m = w.Mat[v];
-                            c = ch.MatCol[m];
-                            if (m >= 2) c = c.Mul(0.7f + 0.3f * w.Fill(v));
-                            float r = 0, g = 0, bl = 0, tot = 0;
-                            for (int s = 0; s < Chemistry.S; s++)
-                            {
-                                if (s == ch.Gas) continue;
-                                float q = w.C[s][i];
-                                tot += q; r += q * ch.Col[s].R; g += q * ch.Col[s].G; bl += q * ch.Col[s].B;
-                            }
-                            if (tot > 0.01f) c = c.Lerp(new Rgb(r / tot, g / tot, bl / tot), 0.4f * tot / (tot + 12f));
-                            if (w.Snow[i] > 0.01f) c = c.Lerp(new Rgb(0.95f, 0.97f, 1f), Math.Min(1f, w.Snow[i] * 4));
-                            break;
-                        }
-                    case 1:
-                        {
-                            // −25 °C deep blue · 0 °C white · +40 °C red
-                            float tc = w.Temp[i];
-                            c = tc < 0 ? new Rgb(0.95f, 0.95f, 0.97f).Lerp(new Rgb(0.12f, 0.25f, 0.8f), Math.Min(1, -tc / 25f))
-                                       : new Rgb(0.95f, 0.95f, 0.97f).Lerp(new Rgb(0.95f, 0.2f, 0.08f), Math.Min(1, tc / 40f));
-                            lit = 1;
-                            break;
-                        }
-                    case 2:
-                        c = new Rgb(0.08f, 0.08f, 0.14f).Lerp(new Rgb(1f, 0.92f, 0.55f), MathF.Min(1, w.Light[i]));
-                        lit = 1;
-                        break;
-                    case 3:
-                        {
-                            float tot = 0;
-                            for (int s = 0; s < Chemistry.S; s++) if (s != ch.Gas) tot += w.C[s][i];
-                            c = new Rgb(0.07f, 0.06f, 0.05f).Lerp(new Rgb(0.6f, 0.95f, 0.35f), tot / (tot + 15f));
-                            break;
-                        }
-                    case 4:
-                        c = new Rgb(0.05f, 0.05f, 0.08f).Lerp(new Rgb(1f, 0.35f, 0.9f), Math.Min(1f, w.Count[i] / 8f));
-                        lit = 1;
-                        break;
-                    case 5:
-                        c = new Rgb(0.05f, 0.05f, 0.06f).Lerp(new Rgb(1f, 0.15f, 0.1f), w.DeathMap[i] / (w.DeathMap[i] + 2f));
-                        lit = 1;
-                        break;
-                    case 6:
-                        c = new Rgb(0.05f, 0.05f, 0.06f).Lerp(new Rgb(1f, 0.6f, 0.1f), w.BodyHeat[i] / (w.BodyHeat[i] + 0.6f));
-                        lit = 1;
-                        break;
-                    case 7:
-                        {
-                            float stress = 0;
-                            for (int z = 2; z < h; z++)
-                            {
-                                int v = i * Z + z;
-                                if (w.Mat[v] >= 2) stress = Math.Max(stress, w.Pressure[v] / Math.Max(0.001f, w.CompressionCapacity(v)));
-                            }
-                            c = new Rgb(0.15f, 0.6f, 0.35f).Lerp(new Rgb(1f, 0.15f, 0.04f), Math.Min(1, stress));
-                            lit = 1; break;
-                        }
-                    case 8:
-                        c = new Rgb(0.28f, 0.22f, 0.16f).Lerp(new Rgb(0.6f, 0.85f, 1f), h > 0 ? w.Order[i * Z + h - 1] / 255f : 0);
-                        lit = 1; break;
-                    default:
-                        {
-                            int s = Overlay - FirstSpecies;
-                            c = new Rgb(0.06f, 0.06f, 0.07f).Lerp(ch.Col[s], MathF.Min(1, w.C[s][i] / 3f));
-                            break;
-                        }
+                    int v = i * Z + Math.Max(0, h - 1);
+                    byte m = w.Mat[v];
+                    c = ch.MatCol[m];
+                    if (m >= 2) c = c.Mul(0.7f + 0.3f * w.Fill(v));
+                    float r = 0, g = 0, bl = 0, tot = 0;
+                    for (int s = 0; s < Chemistry.S; s++)
+                    {
+                        if (s == ch.Gas) continue;
+                        float q = w.C[s][i];
+                        tot += q; r += q * ch.Col[s].R; g += q * ch.Col[s].G; bl += q * ch.Col[s].B;
+                    }
+                    if (tot > 0.01f) c = c.Lerp(new Rgb(r / tot, g / tot, bl / tot), 0.4f * tot / (tot + 12f));
+                    if (w.Snow[i] > 0.01f) c = c.Lerp(new Rgb(0.95f, 0.97f, 1f), Math.Min(1f, w.Snow[i] * 4));
+                    break;
                 }
-                b[o + 12] = c.R; b[o + 13] = c.G; b[o + 14] = c.B; b[o + 15] = lit;
-            }
-        terrain.Buffer = tBuf;
+            case 1:
+                {
+                    // −25 °C deep blue · 0 °C white · +40 °C red
+                    float tc = w.Temp[i];
+                    c = tc < 0 ? new Rgb(0.95f, 0.95f, 0.97f).Lerp(new Rgb(0.12f, 0.25f, 0.8f), Math.Min(1, -tc / 25f))
+                               : new Rgb(0.95f, 0.95f, 0.97f).Lerp(new Rgb(0.95f, 0.2f, 0.08f), Math.Min(1, tc / 40f));
+                    lit = 1;
+                    break;
+                }
+            case 2:
+                c = new Rgb(0.08f, 0.08f, 0.14f).Lerp(new Rgb(1f, 0.92f, 0.55f), MathF.Min(1, w.Light[i]));
+                lit = 1;
+                break;
+            case 3:
+                {
+                    float tot = 0;
+                    for (int s = 0; s < Chemistry.S; s++) if (s != ch.Gas) tot += w.C[s][i];
+                    c = new Rgb(0.07f, 0.06f, 0.05f).Lerp(new Rgb(0.6f, 0.95f, 0.35f), tot / (tot + 15f));
+                    break;
+                }
+            case 4:
+                c = new Rgb(0.05f, 0.05f, 0.08f).Lerp(new Rgb(1f, 0.35f, 0.9f), Math.Min(1f, w.Count[i] / 8f));
+                lit = 1;
+                break;
+            case 5:
+                c = new Rgb(0.05f, 0.05f, 0.06f).Lerp(new Rgb(1f, 0.15f, 0.1f), w.DeathMap[i] / (w.DeathMap[i] + 2f));
+                lit = 1;
+                break;
+            case 6:
+                c = new Rgb(0.05f, 0.05f, 0.06f).Lerp(new Rgb(1f, 0.6f, 0.1f), w.BodyHeat[i] / (w.BodyHeat[i] + 0.6f));
+                lit = 1;
+                break;
+            case 7:
+                // Pressure against strength, taken on the simulation thread (SimRunner.Stress).
+                c = new Rgb(0.15f, 0.6f, 0.35f).Lerp(new Rgb(1f, 0.15f, 0.04f), Math.Min(1, Stress?[i] ?? 0));
+                lit = 1; break;
+            case 8:
+                c = new Rgb(0.28f, 0.22f, 0.16f).Lerp(new Rgb(0.6f, 0.85f, 1f), h > 0 ? w.Order[i * Z + h - 1] / 255f : 0);
+                lit = 1; break;
+            default:
+                {
+                    int s = Overlay - FirstSpecies;
+                    c = new Rgb(0.06f, 0.06f, 0.07f).Lerp(ch.Col[s], MathF.Min(1, w.C[s][i] / 3f));
+                    break;
+                }
+        }
+        buf[o + 12] = c.R; buf[o + 13] = c.G; buf[o + 14] = c.B; buf[o + 15] = lit;
     }
 
     // Draw each solid run separately: cave floors and ceilings are actual faces, not painted holes.
     void FillCaves()
     {
+        cavesChanged = false;
         int count = 0;
         foreach (var pair in caveRuns) if (Slice < 0 || pair.Key / W <= Slice) count += pair.Value.Count;
-        caveTerrain.InstanceCount = count;
-        if (count == 0) return;
-        var buffer = new float[count * 16]; int o = 0;
+        Ensure(caveTerrain, ref caveBuf, count);
+        int o = 0;
         foreach (var pair in caveRuns)
         {
             int c = pair.Key;
@@ -341,20 +454,22 @@ void fragment() {
             foreach (var run in pair.Value)
             {
                 var colour = World.Chem.MatCol[World.Mat[c * Z + run.top - 1]];
-                buffer[o] = 1; buffer[o + 3] = c % W + 0.5f;
-                buffer[o + 5] = (run.top - run.bottom) * BH;
-                buffer[o + 7] = (run.top + run.bottom) * BH * 0.5f;
-                buffer[o + 10] = 1; buffer[o + 11] = c / W + 0.5f;
-                buffer[o + 12] = colour.R; buffer[o + 13] = colour.G; buffer[o + 14] = colour.B; buffer[o + 15] = 0.6f;
+                Array.Clear(caveBuf, o, 16);
+                caveBuf[o] = 1; caveBuf[o + 3] = c % W + 0.5f;
+                caveBuf[o + 5] = (run.top - run.bottom) * BH;
+                caveBuf[o + 7] = (run.top + run.bottom) * BH * 0.5f;
+                caveBuf[o + 10] = 1; caveBuf[o + 11] = c / W + 0.5f;
+                caveBuf[o + 12] = colour.R; caveBuf[o + 13] = colour.G; caveBuf[o + 14] = colour.B; caveBuf[o + 15] = 0.6f;
                 o += 16;
             }
         }
-        caveTerrain.Buffer = buffer;
+        caveTerrain.Buffer = caveBuf;
+        caveTerrain.VisibleInstanceCount = count;
     }
 
     void UpdateVents()
     {
-        var vents = World.Vents;
+        var vents = Frame.Vents;
         while (ventMarks.Count < vents.Count)
         {
             var m = new MeshInstance3D { Mesh = new SphereMesh { Radius = 0.6f, Height = 1.2f }, MaterialOverride = ventMat, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
@@ -368,7 +483,7 @@ void fragment() {
             if (!on) continue;
             var v = vents[k];
             float pulse = 1 + 0.15f * MathF.Sin(frame * 0.15f + k);
-            ventMarks[k].Position = new Vector3(v.X + 0.5f, Ground(v.Y * W + v.X) + 1.2f, v.Y + 0.5f);
+            ventMarks[k].Position = new Vector3(v.X + 0.5f, groundTop[v.Y * W + v.X] + 1.2f, v.Y + 0.5f);
             ventMarks[k].Scale = Vector3.One * pulse;
         }
     }
@@ -435,10 +550,12 @@ void fragment() {
         zoom = Math.Min(zoom, 40);
     }
 
-    // Ray-march the heightfield under the cursor, then take the nearest agent.
+    // Ray-march the heightfield under the cursor, then take the nearest agent (of the published frame).
     public Agent Pick(Vector2 screen)
     {
         var w = World;
+        var f = Frame;
+        if (f == null) return null;
         Vector3 o = Cam.ProjectRayOrigin(screen), d = Cam.ProjectRayNormal(screen);
         if (d.Y >= -1e-4f) return null;
         float t0 = (Z * BH + 1 - o.Y) / d.Y, t1 = -o.Y / d.Y;
@@ -449,15 +566,18 @@ void fragment() {
             int x = (int)MathF.Floor(p.X), y = (int)MathF.Floor(p.Z);
             if (x < 0 || x >= W || y < 0 || y >= H) continue;
             if (Slice >= 0 && y > Slice) continue;
-            if (w.IsSolid(y * W + x, (int)MathF.Floor(p.Y / BH))) { hit = p; break; }
+            int z = (int)MathF.Floor(p.Y / BH);
+            if (z >= 0 && z < Z && w.Mat[(y * W + x) * Z + z] != Chemistry.Air) { hit = p; break; }
         }
         Agent best = null;
         float bd = 2.2f * 2.2f;
-        foreach (var a in w.Agents)
+        var snaps = f.Agents;
+        for (int k = 0; k < f.Count; k++)
         {
-            if (a.Dead) continue;
-            float dx = a.X + 0.5f - hit.X, dz = a.Y + 0.5f - hit.Z, dd = dx * dx + dz * dz;
-            if (dd < bd) { bd = dd; best = a; }
+            ref var s = ref snaps[k];
+            if (s.Ref == null) continue;
+            float dx = s.X + 0.5f - hit.X, dz = s.Y + 0.5f - hit.Z, dd = dx * dx + dz * dz;
+            if (dd < bd) { bd = dd; best = s.Ref; }
         }
         return best;
     }

@@ -122,11 +122,11 @@ public partial class View3D
     // A pillar of light from the sky and a ring sweeping over the struck area.
     void UpdateStrikes()
     {
-        foreach (var s in World.Strikes)
+        foreach (var s in Frame.Strikes)
         {
             bool known = false;
             foreach (var e in strikes) if (e.s == s) { known = true; break; }
-            if (known || World.Tick - s.T > 2000) continue;
+            if (known || Frame.Tick - s.T > 2000) continue;
             var beam = new MeshInstance3D { Mesh = new CylinderMesh { TopRadius = 1, BottomRadius = 1, Height = 1, RadialSegments = 16 }, MaterialOverride = strikeMat, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
             var ring = new MeshInstance3D { Mesh = new TorusMesh { InnerRadius = 0.92f, OuterRadius = 1f, Rings = 48, RingSegments = 6 }, MaterialOverride = strikeMat, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
             AddChild(beam);
@@ -137,7 +137,7 @@ public partial class View3D
         {
             var (s, t0, beam, ring) = strikes[k];
             float p = (float)((now - t0) / 3.0);
-            if (p >= 1 || World.Strikes.IndexOf(s) < 0)
+            if (p >= 1 || Frame.Strikes.IndexOf(s) < 0)
             {
                 beam.QueueFree();
                 ring.QueueFree();
