@@ -23,7 +23,7 @@ public sealed partial class World
     ushort[] TakeMixture(int v) { sparse[v] &= unchecked((byte)~HasMix); return mixtures.TryRemove(v, out var counts) ? counts : null; }
     public sealed class Burial
     {
-        public readonly float[] Matter = new float[Chemistry.S];
+        public readonly Qty[] Matter = new Qty[Chemistry.S];
         public float Order, Pressure;
         internal bool Dirty = true;
         internal float Mass, Units, Bonds;
@@ -69,9 +69,10 @@ public sealed partial class World
         b.Mass = b.Units = b.Bonds = 0;
         for (int s = 0; s < Chemistry.S; s++)
         {
-            b.Mass += b.Matter[s] * Chem.Mass[s];
-            b.Units += b.Matter[s];
-            b.Bonds += b.Matter[s] * Chem.Bond[s];
+            float m = b.Matter[s].F;
+            b.Mass += m * Chem.Mass[s];
+            b.Units += m;
+            b.Bonds += m * Chem.Bond[s];
         }
         b.Dirty = false;
     }
@@ -283,7 +284,7 @@ public sealed partial class World
     void SpillLoose(int c, int floorLevel, ushort[] add)
     {
         bool cave = floorLevel < Height[c];
-        float[] spill = null;
+        Qty[] spill = null;
         for (int s = 0; s < Chemistry.S; s++)
         {
             if (add[s] == 0) continue;
@@ -312,7 +313,7 @@ public sealed partial class World
         return s;
     }
 
-    void SpillVoxel(int v, float[] into = null)
+    void SpillVoxel(int v, Qty[] into = null)
     {
         for (int s = 0; s < Chemistry.S; s++)
         {
@@ -347,19 +348,19 @@ public sealed partial class World
     Burial FloorBurial(Agent a, int cell) => BurialOf(LooseVoxel(cell, a.Z), out var b) ? b : null;
     float Loose(Agent a, int cell, Burial b, int s)
     {
-        float lying = (a.Z >= Height[cell] ? C[s][cell] : 0) + (b != null ? b.Matter[s] : 0);
+        float lying = (float)((a.Z >= Height[cell] ? C[s][cell] : Qty.Zero) + (b != null ? b.Matter[s] : Qty.Zero));
         return lying > 0 && InWater(cell, a.Z) ? lying * Exposure(a, cell, s) : lying;   // in water: only what it reaches (World.Water)
     }
 
-    void ChangeLoose(Agent a, int cell, int s, float amount) => ChangeLooseAt(cell, a.Z, s, amount);
+    void ChangeLoose(Agent a, int cell, int s, Qty amount) => ChangeLooseAt(cell, a.Z, s, amount);
 
     // Loose matter on the floor at `level` of `cell` (the surface or a cave floor).
-    void ChangeLooseAt(int cell, int level, int s, float amount)
+    void ChangeLooseAt(int cell, int level, int s, Qty amount)
     {
         if (level >= Height[cell])
         {
             if (amount >= 0) { C[s][cell] += amount; return; }
-            float take = Math.Min(-amount, C[s][cell]);
+            Qty take = Qty.Min(-amount, C[s][cell]);
             C[s][cell] -= take; amount += take;
             if (amount == 0) return;
         }
@@ -371,31 +372,44 @@ public sealed partial class World
 
     // The budget counts atoms in every reservoir, including partial uptake and enzyme scaffolds.
     // Run only on demand: this diagnostic intentionally scans the whole crust.
+    // Summed in integers (whole molecules, and the fractional pools in Qty units), so the reading is
+    // exact up to the final conversion to double (~10⁻⁷ of an atom): a drift it shows is real.
     public double[] ElementBudget()
     {
-        var molecules = new double[Chemistry.S];
-        for (int s = 0; s < Chemistry.S; s++)
-            for (int c = 0; c < N; c++) molecules[s] += C[s][c];
-        for (int c = 0; c < N; c++)
-            for (int z = 2; z < Height[c]; z++)
+        var whole = new long[Chemistry.S];
+        var frac = new long[Chemistry.S];   // Qty.Raw: 2⁻³² molecule
+        checked
+        {
+            for (int s = 0; s < Chemistry.S; s++)
             {
-                int v = c * Z + z;
-                if (Mat[v] < 2) continue;
-                if (Mixed(v, out var counts)) { for (int s = 0; s < Chemistry.S; s++) molecules[s] += counts[s]; }
-                else molecules[Mat[v] - 2] += Units[v];
+                var cs = C[s];
+                for (int c = 0; c < N; c++) frac[s] += cs[c].Raw;
             }
-        foreach (int v in Buried.Keys.OrderBy(k => k))   // fixed order: the sum must not depend on history
-            for (int s = 0; s < Chemistry.S; s++) molecules[s] += Buried[v].Matter[s];
-        foreach (var a in Agents)
-            if (!a.Dead)
+            for (int c = 0; c < N; c++)
+                for (int z = 2; z < Height[c]; z++)
+                {
+                    int v = c * Z + z;
+                    if (Mat[v] < 2) continue;
+                    if (Mixed(v, out var counts)) { for (int s = 0; s < Chemistry.S; s++) whole[s] += counts[s]; }
+                    else whole[Mat[v] - 2] += Units[v];
+                }
+            foreach (var b in Buried.Values)
+                for (int s = 0; s < Chemistry.S; s++) frac[s] += b.Matter[s].Raw;
+            foreach (var a in Agents)
+                if (!a.Dead)
+                {
+                    for (int s = 0; s < Chemistry.S; s++) { whole[s] += a.Inv[s]; frac[s] += a.Pend[s].Raw; }
+                    for (int k = 0; k < a.EnzN; k++) frac[a.Enz[k].Material] += a.Enz[k].Matter.Raw;
+                }
+            var atoms = new double[Chemistry.ElementCount];
+            for (int e = 0; e < atoms.Length; e++)
             {
-                for (int s = 0; s < Chemistry.S; s++) molecules[s] += a.Inv[s] + a.Pend[s];
-                for (int k = 0; k < a.EnzN; k++) molecules[a.Enz[k].Material] += a.Enz[k].Matter;
+                long w = 0, f = 0;
+                for (int s = 0; s < Chemistry.S; s++) { w += whole[s] * Chem.Atoms[s, e]; f += frac[s] * Chem.Atoms[s, e]; }
+                atoms[e] = (w + (f >> Qty.Bits)) + (f & ((1L << Qty.Bits) - 1)) / Qty.One;
             }
-        var atoms = new double[Chemistry.ElementCount];
-        for (int s = 0; s < Chemistry.S; s++)
-            for (int e = 0; e < atoms.Length; e++) atoms[e] += molecules[s] * Chem.Atoms[s, e];
-        return atoms;
+            return atoms;
+        }
     }
 
     // Action/upkeep energy dissipates as heat; energy transfers and endothermic reactions do not.
@@ -415,19 +429,19 @@ public sealed partial class World
         ref var e = ref a.Enz[slot];
         float before = e.Amount;
         e.Amount *= Math.Clamp(factor, 0, 1);
-        float released = before > 0 ? e.Matter * (1 - e.Amount / before) : e.Matter;
+        Qty released = before > 0 ? e.Matter * (1 - e.Amount / before) : e.Matter;
         e.Matter -= released;
         ReturnProteinMatter(a, e.Material, released);
     }
 
-    void ReturnProteinMatter(Agent a, int s, float amount)
+    void ReturnProteinMatter(Agent a, int s, Qty amount)
     {
         // Use the membrane's fractional reservoir; its mass already includes this substrate.
         a.Pend[s] += amount;
-        a.Volume += amount * (Chem.BodyVolume[s] - Chem.Volume[s]);   // folded it was packed; free, a gas is a bubble again
-        while (a.Pend[s] >= 1f)
+        a.Volume += amount.F * (Chem.BodyVolume[s] - Chem.Volume[s]);   // folded it was packed; free, a gas is a bubble again
+        while (a.Pend[s] >= 1)
         {
-            a.Pend[s] -= 1f;
+            a.Pend[s] -= 1;
             a.Mass -= Chem.Mass[s];
             a.Volume -= Chem.BodyVolume[s];
             AddOrSpill(a, s, a.Y * W + a.X);
@@ -453,7 +467,7 @@ public sealed partial class World
             for (int s = 0; s < Chemistry.S; s++)
             {
                 if (s == Chem.Gas) continue;
-                float m = C[s][c] * f;
+                Qty m = C[s][c] * f;
                 C[s][c] -= m; C[s][low] += m;
             }
             LooseVolume[c] -= volume - limit; LooseVolume[low] += volume - limit;
@@ -466,9 +480,9 @@ public sealed partial class World
         for (int s = 0; s < Chemistry.S; s++)
         {
             if (s == Chem.Gas) continue;
-            int n = (int)(C[s][c] * share);
+            int n = Math.Min((int)(C[s][c] * share), ushort.MaxValue);   // what is not pressed in stays loose
             if (n <= 0) continue;
-            C[s][c] -= n; add[s] = (ushort)Math.Min(n, ushort.MaxValue); moved += n;
+            C[s][c] -= n; add[s] = (ushort)n; moved += n;
         }
         if (moved == 0) return;
         LooseVolume[c] = Math.Max(0, LooseVolume[c] - (volume - limit));

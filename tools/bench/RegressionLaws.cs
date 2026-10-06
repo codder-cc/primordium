@@ -96,7 +96,7 @@ public sealed partial class World
         void F(float x) => Mix((uint)BitConverter.SingleToInt32Bits(x));
         for (int v = 0; v < N * Z; v++) if (Pressure[v] != 0) { Mix((ulong)v); F(Pressure[v]); }
         for (int i = 0; i < N; i++) { F(Temp[i]); F(Water[i]); F(Ice[i]); F(Photon[i]); F(Bite[i]); }
-        foreach (var kv in Buried.OrderBy(kv => kv.Key)) { Mix((ulong)kv.Key); foreach (var m in kv.Value.Matter) F(m); F(kv.Value.Order); }
+        foreach (var kv in Buried.OrderBy(kv => kv.Key)) { Mix((ulong)kv.Key); foreach (var m in kv.Value.Matter) Mix((ulong)m.Raw); F(kv.Value.Order); }
         foreach (var a in Agents)
         {
             F(a.Mass); F(a.Volume); F(a.Tb); F(a.Lift); F(a.Vx); F(a.HeatHeld);
@@ -107,6 +107,18 @@ public sealed partial class World
         Mix((ulong)nextId); Mix((ulong)Tick); Mix(r0); Mix(r1); Mix(r2); Mix(r3);
         foreach (var c in ctxs) { var (t0, _, _, t3) = c.Rng.State; Mix(t0 ^ t3); Mix((ulong)c.IdCount); }
         return h;
+    }
+
+    // What a file of format 1 or 2 can hold: every amount of matter rounded to float.
+    void RoundAmountsToFloat()
+    {
+        foreach (var c in C) for (int i = 0; i < N; i++) c[i] = c[i].F;
+        foreach (var b in Buried.Values) for (int s = 0; s < Chemistry.S; s++) b.Matter[s] = b.Matter[s].F;
+        foreach (var x in Agents)
+        {
+            for (int s = 0; s < Chemistry.S; s++) x.Pend[s] = x.Pend[s].F;
+            for (int k = 0; k < x.EnzN; k++) x.Enz[k].Matter = x.Enz[k].Matter.F;
+        }
     }
 
     // Save at tick T, load, run both K more ticks: the loaded world must follow the original exactly
@@ -156,19 +168,33 @@ public sealed partial class World
             File.Delete(path);
             if (seed == 1)
             {
-                // A file of the previous format (no ledger) still loads: the same world, a ledger from zero that closes from there.
-                var old = new MemoryStream();
-                a.Save(old, "v1", System.IO.Compression.CompressionLevel.Fastest, 1);
-                old.Position = 0;
-                Require(ReadInfo(old).Version == 1, "old format header");
-                old.Position = 0;
-                var c = Load(old);
-                Require(c.DeepHash() == a.DeepHash() && c.EnergyFlows().All(x => x == 0) && !c.TrackHeat, "a version 1 file did not load as the same world with an empty ledger");
-                c.TrackHeat = true;
-                var c0 = c.AuditEnergy();
-                for (int t = 0; t < 100; t++) { a.Step(); c.Step(); }
-                Require(a.StateHash() == c.StateHash(), "a world loaded from a version 1 file diverged");
-                Console.WriteLine($"PASS save/load version 1 file: same continuation, ledger from the load: {EnergyWorldCheck(c, c0, "version 1 load")}");
+                // Files of the previous formats still load. They hold amounts of matter as floats, so
+                // the original is first rounded to what they can hold (the rounding the writer does);
+                // then the loaded world is the same world and goes on the same way. Version 2 keeps
+                // the ledger; version 1 has none: it starts from zero and closes from the load.
+                foreach (int version in new[] { 2, 1 })
+                {
+                    double[] exact = a.ElementBudget();
+                    a.RoundAmountsToFloat();
+                    double[] rounded = a.ElementBudget();
+                    for (int e = 0; e < exact.Length; e++)
+                        Require(Math.Abs(rounded[e] - exact[e]) < 0.05, $"rounding to float moved element {e} by {rounded[e] - exact[e]:R}");
+                    var old = new MemoryStream();
+                    a.Save(old, "old", System.IO.Compression.CompressionLevel.Fastest, version);
+                    old.Position = 0;
+                    Require(ReadInfo(old).Version == version, "old format header");
+                    old.Position = 0;
+                    var c = Load(old);
+                    Require(c.DeepHash() == a.DeepHash(), $"a version {version} file did not load as the same world");
+                    BudgetEqual(a.ElementBudget(), c.ElementBudget(), $"version {version} atoms", 0);
+                    if (version == 2) Require(c.TrackHeat && c.EnergyFlows().SequenceEqual(a.EnergyFlows()), "a version 2 file lost the ledger");
+                    else Require(c.EnergyFlows().All(x => x == 0) && !c.TrackHeat, "a version 1 file did not start an empty ledger");
+                    c.TrackHeat = true;
+                    var c0 = c.AuditEnergy();
+                    for (int t = 0; t < 100; t++) { a.Step(); c.Step(); }
+                    Require(a.StateHash() == c.StateHash(), $"a world loaded from a version {version} file diverged");
+                    Console.WriteLine($"PASS save/load version {version} file: same world and continuation, ledger {(version == 2 ? "kept" : "from the load")}: {EnergyWorldCheck(c, c0, $"version {version} load")}");
+                }
             }
             ParamRegistry.ResetDefaults();
         }

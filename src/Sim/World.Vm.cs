@@ -214,7 +214,7 @@ public sealed partial class World
         }
         slot = a.EnzN++;
         if (slot == a.Enz.Length) Array.Resize(ref a.Enz, a.Enz.Length * 2);   // no limit on kinds kept
-        spec.Amount = spec.Matter = 1; spec.Material = (byte)m; spec.Src = ip;
+        spec.Amount = 1; spec.Matter = 1; spec.Material = (byte)m; spec.Src = ip;
         a.Enz[slot] = spec;
     }
 
@@ -430,14 +430,14 @@ public sealed partial class World
         float packing = a.Packing;
         Dissipate(a, P.CostIntake * (1 + packing * packing));
         if (a.Cells > 1) cell = RichestFor(a, s);
-        float m = Math.Min(1f - a.Pend[s], LooseAmount(a, cell, s));
+        Qty m = Qty.Min(1 - a.Pend[s], LooseAmount(a, cell, s));   // the same amount leaves the floor and enters
         if (m <= 0) return;
         ChangeLoose(a, cell, s, -m);
         a.Pend[s] += m;
-        a.Mass += m * Chem.Mass[s];
-        a.Volume += m * Chem.BodyVolume[s];
-        if (a.Pend[s] < 1f) return;
-        a.Pend[s] -= 1f;
+        a.Mass += m.F * Chem.Mass[s];
+        a.Volume += m.F * Chem.BodyVolume[s];
+        if (a.Pend[s] < 1) return;
+        a.Pend[s] -= 1;
         a.Mass -= Chem.Mass[s];
         a.Volume -= Chem.BodyVolume[s];
         AddMol(a, s);

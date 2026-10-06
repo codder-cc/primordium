@@ -31,7 +31,10 @@ public sealed partial class World
 {
     // 2: the energy ledger (World.Energy) and WorldSettings.LifeSeed. Version 1 files still load:
     // their ledger starts at zero at the load (balances are differences, so they close from there).
-    public const int SaveVersion = 2, OldestSaveVersion = 1;
+    // 3: fractional amounts of matter (loose, burials, Pend, protein substrate) in fixed point (Qty)
+    // instead of float. Older files load: a float is converted exactly from 2⁻⁹ molecule up, smaller
+    // ones to the nearest 2⁻³². Writing an older version rounds the amounts back to float.
+    public const int SaveVersion = 3, OldestSaveVersion = 1;
     static readonly byte[] SaveMagic = Encoding.ASCII.GetBytes("PRIMSAVE");
     const int EndMarker = 0x21444E45;   // "END!"
 
@@ -50,6 +53,23 @@ public sealed partial class World
         public abstract void V(ref string x);
         public abstract void A<T>(Span<T> data) where T : unmanaged;
         public abstract void Rng(SimRng r);
+
+        // Amounts of matter: exact fixed point from version 3, floats before.
+        public void Q(Span<Qty> data)
+        {
+            if (Version >= 3) { A(data); return; }
+            var f = new float[data.Length];
+            if (!Reading) for (int i = 0; i < f.Length; i++) f[i] = data[i].F;
+            A<float>(f);
+            if (Reading) for (int i = 0; i < f.Length; i++) data[i] = f[i];
+        }
+        public void Q(ref Qty x)
+        {
+            if (Version >= 3) { long raw = x.Raw; V(ref raw); x = Qty.FromRaw(raw); return; }
+            float f = x.F;
+            V(ref f);
+            if (Reading) x = f;
+        }
     }
 
     sealed class Writer : Sync
@@ -280,7 +300,7 @@ public sealed partial class World
     void SyncCells(Sync s)
     {
         s.A<int>(Height);
-        for (int k = 0; k < Chemistry.S; k++) s.A<float>(C[k]);
+        for (int k = 0; k < Chemistry.S; k++) s.Q(C[k]);
         s.A<float>(Light); s.A<float>(Temp); s.A<float>(Ash); s.A<float>(Photon); s.A<float>(ventHeat);
         s.A<float>(Water); s.A<float>(Ice); s.A<float>(Snow); s.A<float>(Cloud); s.A<float>(Rain);
         s.A<float>(heatIn); s.A<float>(BodyHeat); s.A<float>(DeathMap); s.A<float>(LooseVolume);
@@ -337,7 +357,7 @@ public sealed partial class World
             int v = s.Reading ? 0 : burialKeys[k];
             s.V(ref v);
             var b = s.Reading ? new Burial() : Buried[v];
-            s.A<float>(b.Matter); s.V(ref b.Order); s.V(ref b.Pressure);
+            s.Q(b.Matter); s.V(ref b.Order); s.V(ref b.Pressure);
             if (s.Reading) { Buried[v] = b; sparse[v] |= HasBurial; }
         }
     }
@@ -476,7 +496,7 @@ public sealed partial class World
         s.V(ref a.Designed);
         s.V(ref a.X); s.V(ref a.Y); s.V(ref a.Z); s.V(ref a.Vx); s.V(ref a.Vy); s.V(ref a.Lift); s.V(ref a.Vz);
         s.V(ref a.Energy); s.V(ref a.Tb); s.V(ref a.Age); s.V(ref a.Dead); s.V(ref a.Cause);
-        s.A<int>(a.Inv); s.A<float>(a.Pend);
+        s.A<int>(a.Inv); s.Q(a.Pend);
         s.V(ref a.InvTotal); s.V(ref a.Unstable); s.V(ref a.Solids); s.V(ref a.Mass); s.V(ref a.Volume);
         int cap = a.Enz.Length;
         s.V(ref cap);
@@ -486,7 +506,7 @@ public sealed partial class World
         {
             ref var e = ref a.Enz[k];
             s.V(ref e.Kind); s.V(ref e.A); s.V(ref e.B); s.V(ref e.Topt); s.V(ref e.Eff); s.V(ref e.Amount);
-            s.V(ref e.Material); s.V(ref e.Matter); s.V(ref e.Src);
+            s.V(ref e.Material); s.Q(ref e.Matter); s.V(ref e.Src);
         }
         s.V(ref a.Ip); s.V(ref a.Sp); s.V(ref a.Cp); s.V(ref a.Signal); s.V(ref a.LastCycles);
         s.A<int>(a.Stack); s.A<int>(a.Mem); s.A<int>(a.Calls);

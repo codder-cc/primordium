@@ -26,7 +26,7 @@ public sealed partial class World
         if (level >= Height[cell]) return LooseVolume[cell];
         if (!BurialOf(LooseVoxel(cell, level), out var b)) return 0;   // remains on a cave floor
         float v = 0;
-        for (int s = 0; s < Chemistry.S; s++) v += b.Matter[s] * Chem.Volume[s];
+        for (int s = 0; s < Chemistry.S; s++) v += b.Matter[s].F * Chem.Volume[s];
         return v * P.LooseBulk;
     }
 

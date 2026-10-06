@@ -70,8 +70,9 @@ public sealed partial class World
 
     // Loose matter lying on each cell, per species: remains of the dead and whatever bodies threw
     // out. It stays where it fell (it rots, and compacts into aggregates); only the gas spreads, as air.
-    public readonly float[][] C = new float[Chemistry.S][];
-    float[] back = new float[N];
+    // In fixed point (Qty): moving matter between cells and pools conserves atoms exactly.
+    public readonly Qty[][] C = new Qty[Chemistry.S][];
+    Qty[] back = new Qty[N];
     public readonly float[] Light = new float[N], Temp = new float[N], Ash = new float[N];
     public readonly float[] Photon = new float[N];               // light caught in a cell, shared by all bodies there
     readonly float[] ventHeat = new float[N], tmp = new float[N];
@@ -170,7 +171,7 @@ public sealed partial class World
         }
 
         Firsts = new Discovery[Chem.MatCount];
-        for (int s = 0; s < Chemistry.S; s++) C[s] = new float[N];
+        for (int s = 0; s < Chemistry.S; s++) C[s] = new Qty[N];
         if (!generate) return;
 
         Array.Fill(topologySeen, -1);
@@ -447,10 +448,17 @@ public sealed partial class World
         {
             for (int i = chunk * 8 * W, end = i + 8 * W; i < end; i++)
             {
+                // Per edge, in fixed point: the flow i→j is computed from the same difference and
+                // weight as j→i with the opposite sign, and truncated toward zero (symmetric), so
+                // what one cell gives the other receives exactly.
                 int b = i * 4;
-                float ci = c[i];
-                next[i] = ci + d * (diffW[b] * (c[nb[b]] - ci) + diffW[b + 1] * (c[nb[b + 1]] - ci)
-                                  + diffW[b + 2] * (c[nb[b + 2]] - ci) + diffW[b + 3] * (c[nb[b + 3]] - ci));
+                long ci = c[i].Raw, sum = ci;
+                for (int k = 0; k < 4; k++)
+                {
+                    float w = diffW[b + k];
+                    if (w != 0) sum += (long)((c[nb[b + k]].Raw - ci) * (double)(d * w));
+                }
+                next[i] = Qty.FromRaw(sum);
             }
         });
         C[Chem.Gas] = back; back = c; // swap buffers instead of copying a planet every tick
@@ -475,8 +483,8 @@ public sealed partial class World
             // Precipitation adsorbs existing atmospheric molecules onto the exposed aggregate.
             if (Tick % P.MetamorphEvery == 0 && Rain[i] > 0 && Height[i] > 2 && RainSum > 0)
             {
-                float captured = C[Chem.Gas][i] * Math.Min(0.05f, Rain[i] * Moisture * P.RainShare / RainSum * (P.MetamorphEvery / P.EnvEvery));
-                if (captured > 0.00001f)
+                Qty captured = C[Chem.Gas][i] * Math.Min(0.05f, Rain[i] * Moisture * P.RainShare / RainSum * (P.MetamorphEvery / P.EnvEvery));
+                if (captured > Qty.Of(0.00001))
                 {
                     int v = i * Z + Height[i] - 1;
                     C[Chem.Gas][i] -= captured; BurialAt(v).Matter[Chem.Gas] += captured; MassChanged(v);
@@ -499,15 +507,15 @@ public sealed partial class World
         int gas = Chem.Gas;
         for (int s = 0; s < Chemistry.S; s++)
         {
-            float amount = C[s][i];
+            float amount = C[s][i].F;
             if (amount <= 0) continue;
             if (s != gas) total += amount * Chem.Volume[s];
             if (Chem.SplitExo[s])
             {
-                float m = amount * 0.0005f * f;
+                Qty m = amount * 0.0005f * f;   // one molecule s → A + B, exactly the same amount each
                 C[s][i] -= m; C[Chem.SplitA[s]][i] += m;
                 if (Chem.SplitB[s] >= 0) C[Chem.SplitB[s]][i] += m;
-                heatIn[i] += m * Chem.SplitEnergy(s);
+                heatIn[i] += (float)(m * Chem.SplitEnergy(s));
                 rowLooseDecay[i / W] += m * Chem.SplitEnergy(s);   // rows are owned by one worker
             }
         }
