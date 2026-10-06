@@ -177,6 +177,7 @@ public sealed partial class World
         a.EmaNet += (a.Energy - e0 - a.EmaNet) * 0.01f;
         a.TickGot = 0;
         a.Age++;
+        if ((a.Age & 7) == 0) ChronLive(a);   // the chronicle looks: depth, caves, water (observation only)
 
         // Wear: unstable molecules fall apart (faster when warm), sunlight damages the genome.
         float pDecay = a.Unstable * P.DecayK * TempFactor(a.Tb);
@@ -332,6 +333,7 @@ public sealed partial class World
         ReleaseFoot(a); a.Cells = cells;
         Unplace(a, cell);
         a.Dead = true; a.Cause = cause;
+        if (a.Tracked) ChronDeath(a);
         DeathMap[cell] += 1;
         switch (cause)
         {
@@ -404,7 +406,7 @@ public sealed partial class World
         Act(a, ActDivide, to == cell ? -1 : Neighbour4(cell, to));
     }
 
-    void Born(Agent parent, Agent child, int cell)
+    void Born(Agent parent, Agent child, int cell, Agent mate = null)
     {
         child.LifeStart = child.Energy;
         child.Z = WalkLevel(cell, parent.Z);
@@ -412,6 +414,7 @@ public sealed partial class World
         Place(child, cell);
         (cur?.Newborn ?? newborn).Add(child);
         parent.NChildren++;
+        ChronBorn(parent, child, mate);
         Interlocked.Increment(ref Births);
         Note(EvKind.Divide);
         for (int m = MaxGen; child.Gen > m; m = MaxGen)
@@ -454,7 +457,7 @@ public sealed partial class World
         a.MateTick = t.MateTick = -100;
         a.NMates++; t.NMates++;
         Note(EvKind.Mate);
-        Born(a, child, cell);
+        Born(a, child, cell, t);
         Act(a, ActDivide, -1);
     }
 
@@ -535,6 +538,7 @@ public sealed partial class World
         a.Energy = a.LifeStart = energy;
         a.Z = Height[i];
         Place(a, i); Agents.Add(a); Spawns++;
+        TrackNew(a, Chronicle.WhyFounder);   // a founder of a lineage keeps a biography
         return true;
     }
 

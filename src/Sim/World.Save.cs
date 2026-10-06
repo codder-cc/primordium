@@ -29,9 +29,10 @@ public sealed class SaveInfo
 // Call between ticks only (on the thread that steps the world).
 public sealed partial class World
 {
-    // 2: the energy ledger (World.Energy) and WorldSettings.LifeSeed. Version 1 files still load:
-    // their ledger starts at zero at the load (balances are differences, so they close from there).
-    public const int SaveVersion = 2, OldestSaveVersion = 1;
+    // 2: the energy ledger (World.Energy) and WorldSettings.LifeSeed. 3: the chronicle block (SyncChronicle)
+    // at the end of the body. Older files still load: a version 1 ledger starts at zero at the load (balances
+    // are differences, so they close from there); before version 3 the chronicle starts empty.
+    public const int SaveVersion = 3, OldestSaveVersion = 1;
     static readonly byte[] SaveMagic = Encoding.ASCII.GetBytes("PRIMSAVE");
     const int EndMarker = 0x21444E45;   // "END!"
 
@@ -221,6 +222,7 @@ public sealed partial class World
         SyncLists(s);
         SyncAgents(s);
         if (s.Version >= 2) SyncEnergy(s);
+        if (s.Version >= 3) SyncChronicle(s);   // keep last: a separate block (see the comment there)
     }
 
     // The energy ledger: every accumulator as it is (per tile and per row, so the sums read after the
@@ -482,12 +484,7 @@ public sealed partial class World
         s.V(ref cap);
         if (s.Reading) a.Enz = new Enzyme[Math.Max(1, cap)];
         s.V(ref a.EnzN);
-        for (int k = 0; k < a.EnzN; k++)
-        {
-            ref var e = ref a.Enz[k];
-            s.V(ref e.Kind); s.V(ref e.A); s.V(ref e.B); s.V(ref e.Topt); s.V(ref e.Eff); s.V(ref e.Amount);
-            s.V(ref e.Material); s.V(ref e.Matter); s.V(ref e.Src);
-        }
+        for (int k = 0; k < a.EnzN; k++) SyncEnzyme(s, ref a.Enz[k]);
         s.V(ref a.Ip); s.V(ref a.Sp); s.V(ref a.Cp); s.V(ref a.Signal); s.V(ref a.LastCycles);
         s.A<int>(a.Stack); s.A<int>(a.Mem); s.A<int>(a.Calls);
         s.V(ref a.MateTick); s.V(ref a.LinkTick);
@@ -507,5 +504,144 @@ public sealed partial class World
         s.V(ref a.LifeSpill); s.V(ref a.LifeUphill); s.V(ref a.LifeMineCost);
         s.A<int>(a.NMinedTier); s.V(ref a.NCatMined); s.V(ref a.LastMeal);
         s.V(ref a.Cells); s.A<int>(a.Foot);
+    }
+
+    // ---- the chronicle (save version 2) ----
+    // A block of its own after the bodies: events, fossils, ancestry, what the surveys remember and the
+    // chronicle's fields of every body (in the order of Agents). None of it changes the trajectory, but
+    // a loaded world continues its chronicle exactly as the original would.
+
+    void SyncChronicle(Sync s)
+    {
+        var c = Chronicle;
+        s.V(ref c.NextSeq);
+        s.A<long>(c.Counts);
+        s.A<bool>(c.Seen);
+        s.V(ref c.DepthBest); s.V(ref c.DepthShown); s.V(ref c.DominantLineage); s.V(ref c.DominantCount);
+        s.A<float>(c.RecordBest);
+        SyncEvents(s, c.Important);
+        SyncEvents(s, c.Recent);
+        int n = c.Fossils.Count;
+        s.V(ref n);
+        if (s.Reading) { c.Fossils.Clear(); c.FossilByAgent.Clear(); }
+        for (int k = 0; k < n; k++)
+        {
+            var f = s.Reading ? new Fossil() : c.Fossils[k];
+            SyncFossil(s, f);
+            if (s.Reading) { c.Fossils.Add(f); c.FossilByAgent[f.AgentId] = f; }
+        }
+        var nodes = s.Reading ? null : c.Ancestry.Values.OrderBy(x => x.Id).ToArray();
+        n = nodes?.Length ?? 0;
+        s.V(ref n);
+        if (s.Reading) c.Ancestry.Clear();
+        for (int k = 0; k < n; k++)
+        {
+            var x = s.Reading ? new AncestryNode() : nodes[k];
+            s.V(ref x.Id); s.V(ref x.ParentId); s.V(ref x.TrackedParent); s.V(ref x.Lineage); s.V(ref x.Gen);
+            s.V(ref x.Born); s.V(ref x.Died); s.V(ref x.Cause); s.V(ref x.Why);
+            if (s.Reading) c.Ancestry[x.Id] = x;
+        }
+        var infos = s.Reading ? null : c.Lineages.Values.OrderBy(x => x.Id).ToArray();
+        n = infos?.Length ?? 0;
+        s.V(ref n);
+        if (s.Reading) c.Lineages.Clear();
+        for (int k = 0; k < n; k++)
+        {
+            var x = s.Reading ? new LineageInfo() : infos[k];
+            s.V(ref x.Id); s.V(ref x.Peak); s.V(ref x.Last); s.V(ref x.FirstTick); s.V(ref x.PeakTick);
+            byte diet = (byte)x.Diet, pending = (byte)x.PendingDiet;
+            s.V(ref diet); s.V(ref pending); s.V(ref x.PendingN); s.V(ref x.WasDominant);
+            x.Diet = (sbyte)diet; x.PendingDiet = (sbyte)pending;
+            int centers = x.Centers.Count;
+            s.V(ref centers);
+            for (int j = 0; j < centers; j++)
+            {
+                long v = s.Reading ? 0 : (long)x.Centers[j];
+                s.V(ref v);
+                if (s.Reading) x.Centers.Add((ulong)v);
+            }
+            bool rep = x.Rep != null;
+            s.V(ref rep);
+            if (rep) { if (s.Reading) x.Rep = new Fossil(); SyncFossil(s, x.Rep); }
+            if (s.Reading) c.Lineages[x.Id] = x;
+        }
+        // Every body's chronicle fields.
+        foreach (var a in Agents)
+        {
+            s.V(ref a.ParentId); s.V(ref a.TrackedAncestor); s.V(ref a.InfectedBy); s.V(ref a.CaveAge);
+            s.V(ref a.Tracked); s.V(ref a.TrackWhy); s.V(ref a.BioSeen); s.V(ref a.BioN);
+            bool bio = a.Bio != null;
+            s.V(ref bio);
+            if (!bio) continue;
+            if (s.Reading) a.Bio = new BioEntry[Chronicle.BioCap];
+            SyncBio(s, a.Bio);
+        }
+        if (s.Reading) { MarkEstablished(); c.Version++; }
+    }
+
+    static void SyncEvents(Sync s, List<ChronicleEvent> list)
+    {
+        int n = list.Count;
+        s.V(ref n);
+        if (s.Reading) list.Clear();
+        for (int k = 0; k < n; k++)
+        {
+            var e = s.Reading ? new ChronicleEvent() : list[k];
+            s.V(ref e.Seq); s.V(ref e.Tick);
+            byte type = (byte)e.Type;
+            s.V(ref type);
+            e.Type = (EvType)type;
+            s.V(ref e.AgentId); s.V(ref e.Lineage); s.V(ref e.X); s.V(ref e.Y); s.V(ref e.Z);
+            s.V(ref e.Text); s.V(ref e.Value); s.V(ref e.Important);
+            e.Genome = SyncBytes(s, e.Genome);
+            if (s.Reading) list.Add(e);
+        }
+    }
+
+    static byte[] SyncBytes(Sync s, byte[] data)
+    {
+        int len = data?.Length ?? -1;
+        s.V(ref len);
+        if (len < 0) return null;
+        if (s.Reading) data = new byte[len];
+        s.A<byte>(data);
+        return data;
+    }
+
+    // Structs go field by field, never as raw memory: their padding bytes hold garbage, and a save must be
+    // the same bytes for the same world.
+    static void SyncEnzyme(Sync s, ref Enzyme e)
+    {
+        s.V(ref e.Kind); s.V(ref e.A); s.V(ref e.B); s.V(ref e.Topt); s.V(ref e.Eff); s.V(ref e.Amount);
+        s.V(ref e.Material); s.V(ref e.Matter); s.V(ref e.Src);
+    }
+
+    static void SyncBio(Sync s, BioEntry[] bio)
+    {
+        for (int k = 0; k < bio.Length; k++)
+        {
+            ref var b = ref bio[k];
+            byte kind = (byte)b.Kind;
+            s.V(ref b.Tick); s.V(ref b.Other); s.V(ref b.Value); s.V(ref kind); s.V(ref b.Arg);
+            b.Kind = (BioKind)kind;
+        }
+    }
+
+    static void SyncFossil(Sync s, Fossil f)
+    {
+        s.V(ref f.AgentId); s.V(ref f.Lineage); s.V(ref f.ParentId); s.V(ref f.Gen);
+        s.V(ref f.BornTick); s.V(ref f.DiedTick); s.V(ref f.Cause); s.V(ref f.EventSeq);
+        f.Genome = SyncBytes(s, f.Genome);
+        s.A<int>(f.Body);
+        int n = f.Proteins.Length;
+        s.V(ref n);
+        if (s.Reading) f.Proteins = new Enzyme[n];
+        for (int k = 0; k < n; k++) SyncEnzyme(s, ref f.Proteins[k]);
+        n = f.Bio.Length;
+        s.V(ref n);
+        if (s.Reading) f.Bio = new BioEntry[n];
+        SyncBio(s, f.Bio);
+        s.V(ref f.Hue); s.V(ref f.Sat); s.V(ref f.Val); s.V(ref f.Energy); s.V(ref f.Mass);
+        s.V(ref f.Shape); s.V(ref f.Children); s.V(ref f.Age); s.V(ref f.Designed); s.V(ref f.Why); s.V(ref f.Importance);
     }
 }

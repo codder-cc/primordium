@@ -34,6 +34,8 @@ public partial class UiManager : Control
     public NewWorldWindow NewWorld;
     public SavesWindow Saves;
     public CreatorWindow Creator;
+    public ChronicleWindow Chronicle;
+    public FossilWindow Fossil;
 
     readonly ConcurrentQueue<Action> posted = new();
     VBoxContainer toastBox;
@@ -62,6 +64,7 @@ public partial class UiManager : Control
             ("Новый мир  F4", "seed, население, самозарождение, удары, набор законов", () => NewWorld.Toggle()),
             ("Сохранения  F6", "слоты, загрузка, автосохранение (F5 — быстро сохранить, F9 — загрузить)", () => Saves.Toggle()),
             ("Конструктор  F7", "свои существа: геном, тело, посадка кистью 5", () => Creator.Toggle()),
+            ("Хроника  F8", "события мира, окаменелости; биография выбранного — вкладка в карточке существа", () => Chronicle.Toggle()),
         })
         {
             var b = UiKit.Button(text, act, tip);
@@ -75,6 +78,8 @@ public partial class UiManager : Control
         Add(NewWorld = new NewWorldWindow());
         Add(Saves = new SavesWindow());
         Add(Creator = new CreatorWindow());
+        Add(Chronicle = new ChronicleWindow());
+        Add(Fossil = new FossilWindow());
 
         toastBox = UiKit.Col(4);
         toastBox.MouseFilter = MouseFilterEnum.Ignore;
