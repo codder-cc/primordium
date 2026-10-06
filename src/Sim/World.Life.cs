@@ -101,6 +101,7 @@ public sealed partial class World
         a.Tb += (FootTemp(a) - a.Tb) * relax;
         float shed = a.HeatHeld * relax;
         a.HeatHeld -= shed; a.TickHeat += shed;
+        Flows[FShed] += shed;
 
         // Poisons lying around seep in (from any of its cells); inside they wreck proteins.
         int pc = FootCell(a, Rng.Next(a.Cells));
@@ -193,6 +194,7 @@ public sealed partial class World
             AddOrSpill(a, Chem.SplitA[s], cell);
             if (Chem.SplitB[s] >= 0) AddOrSpill(a, Chem.SplitB[s], cell);
             heatIn[cell] += Chem.SplitEnergy(s);
+            Flows[FBodyDecay] += Chem.SplitEnergy(s);
         }
         else if (u < pDecay + pUv)
         {
@@ -317,7 +319,11 @@ public sealed partial class World
             var e = a.Enz[k];
             if (buried == null) C[e.Material][cell] += e.Matter; else buried[e.Material] += e.Matter;
         }
-        heatIn[cell] += Math.Max(0, a.Energy) + a.HeatHeld;
+        float heat = Math.Max(0, a.Energy) + a.HeatHeld;
+        heatIn[cell] += heat;
+        var flows = Flows;
+        flows[FDeath] += heat;
+        if (a.Energy < 0) flows[FWriteOff] -= a.Energy;   // its debt leaves the stock (see World.Energy)
         a.HeatHeld = 0;
         foreach (var b in a.Links) Unlink(b, a);
         a.Links.Clear();
@@ -442,6 +448,7 @@ public sealed partial class World
             // Not enough matter for a body: what was given spills on the ground.
             for (int s = 0; s < Chemistry.S; s++) if (child.Inv[s] > 0) ChangeLoose(a, cell, s, child.Inv[s]);
             heatIn[cell] += child.Energy;
+            Flows[FStillborn] += child.Energy;
             return;
         }
         a.MateTick = t.MateTick = -100;
@@ -516,11 +523,13 @@ public sealed partial class World
             C[Chem.SplitA[best]][i] += take;
             if (Chem.SplitB[best] >= 0) C[Chem.SplitB[best]][i] += take;
             energy += take * Chem.SplitEnergy(best);
+            Flows[FAbio] += take * Chem.SplitEnergy(best);
         }
         if (a.InvTotal < P.MinBody || energy <= 0)
         {
             for (int s = 0; s < Chemistry.S; s++) C[s][i] += a.Inv[s];
             heatIn[i] += energy;
+            Flows[FStillborn] += energy;
             return false;
         }
         a.Energy = a.LifeStart = energy;

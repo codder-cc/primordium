@@ -401,8 +401,12 @@ public sealed partial class World
     // Action/upkeep energy dissipates as heat; energy transfers and endothermic reactions do not.
     void Dissipate(Agent a, float cost)
     {
-        heatIn[a.Y * W + a.X] += Math.Min(Math.Max(0, a.Energy), Math.Max(0, cost));
+        float heat = Math.Min(Math.Max(0, a.Energy), Math.Max(0, cost)), before = a.Energy;
+        heatIn[a.Y * W + a.X] += heat;
         a.Energy -= cost;
+        var f = Flows;
+        f[FDissipate] += heat; f[FUnpaid] += cost - heat;   // a cost beyond what it has reaches no cell (see World.Energy)
+        f[FRounding] += (double)before - a.Energy - cost;
     }
 
     // Folded proteins keep their substrate; loss of catalytic activity returns the same substrate.
@@ -531,6 +535,7 @@ public sealed partial class World
                     if (de < 0 || load < P.CompactionPressure * (0.2f + Chem.Bond[product])) continue;
                     b.Matter[a]--; b.Matter[s]--; b.Matter[product]++;
                     heatIn[v / Z] += de;
+                    pressureHeat += de;
                     Metamorphoses++; MatterChanged(v);
                     break;
                 }

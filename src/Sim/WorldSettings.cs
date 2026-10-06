@@ -14,6 +14,9 @@ public sealed class WorldSettings
     // toggled at runtime (World.Abiogenesis, World.AutoStrikes; SimRunner.SetAbiogenesis/SetStrikes).
     public bool Abiogenesis { get; set; } = false;   // now and then a random newcomer from local matter
     public bool Strikes { get; set; } = false;       // mutagenic strikes from space now and then
+    // ≠ 0: the same planet (terrain, chemistry, vents, water, litter of Seed) with other first bodies and
+    // other random streams for the agents — repeats of one seed that differ only by chance (World).
+    public int LifeSeed { get; set; } = 0;
     // Laws to start with: null keeps the current values of P; otherwise every law takes the value
     // named here or its default (a ParamPreset's Values).
     public Dictionary<string, double> Params { get; set; }
@@ -21,7 +24,7 @@ public sealed class WorldSettings
 
     public WorldSettings Clone() => new()
     {
-        Seed = Seed, InitialPop = InitialPop, Abiogenesis = Abiogenesis, Strikes = Strikes,
+        Seed = Seed, InitialPop = InitialPop, Abiogenesis = Abiogenesis, Strikes = Strikes, LifeSeed = LifeSeed,
         Params = Params == null ? null : new Dictionary<string, double>(Params), PresetName = PresetName,
     };
 

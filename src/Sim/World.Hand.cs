@@ -56,6 +56,7 @@ public sealed partial class World
             var add = new ushort[Chemistry.S];
             add[s] = (ushort)n;
             for (int e = 0; e < Chemistry.ElementCount; e++) HandInput[e] += (double)n * Chem.Atoms[s, e];
+            Flows[FHand] += (double)n * Chem.E[s];
             Deposit(c, Height[c], add, 12);
         }
     }
@@ -82,6 +83,7 @@ public sealed partial class World
             {
                 int n = VoxelCount(v, s);
                 if (n > 0) for (int e = 0; e < Chemistry.ElementCount; e++) HandInput[e] -= (double)n * Chem.Atoms[s, e];
+                Flows[FHand] -= (double)n * Chem.E[s];
             }
             RemoveVoxel(c, z);
         }

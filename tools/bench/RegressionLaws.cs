@@ -20,7 +20,9 @@ public sealed partial class World
     {
         ParamRegistry.ResetDefaults();
         LawsRegression();
+        LawsEnergyRegression();
         SaveLoadRegression();
+        LifeSeedRegression();
         AsmRegression();
         DesignRegression();
         ParamRegistry.ResetDefaults();
@@ -114,7 +116,8 @@ public sealed partial class World
     {
         foreach (int seed in new[] { 1, 3 })
         {
-            var a = new World(seed, 800, true);
+            var a = new World(seed, 800, true) { TrackHeat = true };
+            var e0 = a.AuditEnergy();
             for (int t = 0; t < 250; t++) a.Step();
             a.SetParam("FaceWork", 7.5);
             for (int t = 0; t < 50; t++) a.Step();
@@ -134,6 +137,7 @@ public sealed partial class World
             double loadMs = watch.Elapsed.TotalMilliseconds;
             Require(P.FaceWork == 7.5f && b.ParamLog.Count == 1 && b.ParamLog[0].Value == 7.5, "laws not restored by the load");
             Require(b.DeepHash() == a.DeepHash(), $"seed {seed}: loaded state differs at tick {a.Tick}");
+            Require(b.TrackHeat && b.EnergyFlows().SequenceEqual(a.EnergyFlows()) && b.AuditEnergy().HeatSeen == a.AuditEnergy().HeatSeen, $"seed {seed}: energy ledger not restored by the load");
             BudgetEqual(a.ElementBudget(), b.ElementBudget(), "loaded atoms", 0);
             b.CheckCellLists();
             for (int t = 0; t < 300; t++)
@@ -142,12 +146,30 @@ public sealed partial class World
                 if (t % 100 == 99) Require(a.DeepHash() == b.DeepHash(), $"seed {seed}: loaded world diverged at tick {a.Tick}");
             }
             Require(a.StateHash() == b.StateHash(), "state hash after the run");
+            Require(b.EnergyFlows().SequenceEqual(a.EnergyFlows()), $"seed {seed}: energy flows of the loaded world differ after the run");
+            string energyNote = EnergyWorldCheck(b, e0, $"save/load seed {seed}: loaded world against the original's start");
             var atomsA = a.ElementBudget(); var atomsB = b.ElementBudget();
             BudgetEqual(atomsA, atomsB, "atoms after the run", 0);
             for (int e = 0; e < atomsA.Length; e++) Require(a.HandInput[e] == b.HandInput[e] && a.InteriorInput[e] == b.InteriorInput[e], "inputs differ");
             Require(a.Agents.Select(x => (x.Id, x.X, x.Y, x.Z, x.Energy, x.Mass, x.Hash)).SequenceEqual(b.Agents.Select(x => (x.Id, x.X, x.Y, x.Z, x.Energy, x.Mass, x.Hash))), "bodies differ after the run");
-            Console.WriteLine($"PASS save/load seed {seed}: tick {a.Tick - 300} → +300 identical ({a.Agents.Count} bodies, hash {a.StateHash():x16}); file {size / 1024} KB, save {saveMs:F0} ms, load {loadMs:F0} ms");
+            Console.WriteLine($"PASS save/load seed {seed}: tick {a.Tick - 300} → +300 identical ({a.Agents.Count} bodies, hash {a.StateHash():x16}), ledger continues ({energyNote}); file {size / 1024} KB, save {saveMs:F0} ms, load {loadMs:F0} ms");
             File.Delete(path);
+            if (seed == 1)
+            {
+                // A file of the previous format (no ledger) still loads: the same world, a ledger from zero that closes from there.
+                var old = new MemoryStream();
+                a.Save(old, "v1", System.IO.Compression.CompressionLevel.Fastest, 1);
+                old.Position = 0;
+                Require(ReadInfo(old).Version == 1, "old format header");
+                old.Position = 0;
+                var c = Load(old);
+                Require(c.DeepHash() == a.DeepHash() && c.EnergyFlows().All(x => x == 0) && !c.TrackHeat, "a version 1 file did not load as the same world with an empty ledger");
+                c.TrackHeat = true;
+                var c0 = c.AuditEnergy();
+                for (int t = 0; t < 100; t++) { a.Step(); c.Step(); }
+                Require(a.StateHash() == c.StateHash(), "a world loaded from a version 1 file diverged");
+                Console.WriteLine($"PASS save/load version 1 file: same continuation, ledger from the load: {EnergyWorldCheck(c, c0, "version 1 load")}");
+            }
             ParamRegistry.ResetDefaults();
         }
     }
@@ -189,6 +211,7 @@ public sealed partial class World
     {
         var w = new World(new WorldSettings { Seed = 1, InitialPop = 0, Abiogenesis = false, Strikes = false });
         var before = w.ElementBudget();
+        string designNote = "";
         int Find(Func<int, bool> ok)
         {
             for (int k = 0; k < N; k++)
@@ -202,6 +225,7 @@ public sealed partial class World
         int land = Find(c => Mild(c) && !w.Submerged(c) && w.Count[c] == 0);
         int lake = Find(c => Mild(c) && w.Water[c] > 2 && w.Count[c] == 0);
         var import = new SpawnOptions { Matter = MatterSource.Import, Energy = EnergySource.Import, Count = 3, Radius = 2 };
+        var designStart = w.EnergyStart();
         var planted = new System.Collections.Generic.List<(CreatureDesign d, SpawnResult r)>();
         double energy = 0;
         foreach (var d in CreatureExamples.All)
@@ -217,6 +241,36 @@ public sealed partial class World
         var after = w.ElementBudget();
         for (int e = 0; e < after.Length; e++) after[e] -= w.HandInput[e];
         BudgetEqual(before, after, "designs brought from outside", 1e-6);
+        // The ledger: molecules and energy brought from outside are its Design input.
+        w.EnergyBalanced(designStart, "designs brought from outside", FDesign);
+        {
+            var probe = w.AuditEnergy();
+            double designIn = probe.Flows[FDesign] - designStart.Flows[FDesign], bodies = probe.Bodies - designStart.Bodies;
+            Require(Math.Abs(bodies - w.HandEnergy) < 1e-3, $"imported free energy {w.HandEnergy} vs bodies' energy {bodies}");
+            Require(designIn > w.HandEnergy, "imported molecules brought no bond energy into the ledger");
+            // Matter from outside with energy from the place, and the other way round.
+            var small = new CreatureDesign { Name = "смешанный", Genome = "label 0\npush 0\nphoto\ndigest\nyield\njmp 0\nnop\nnop", Body = new() { ["any"] = 8 }, Energy = 3 };
+            int spot = Find(c => Mild(c) && !w.Submerged(c) && w.Count[c] == 0 && c != land);
+            foreach (int s in w.Chem.Unstable.Take(2)) w.C[s][spot] += 6;
+            w.C[w.Chem.Low[0]][spot] += 10;
+            var before1 = w.AuditEnergy();
+            var r1 = w.SpawnDesign(small, spot % W, spot / W, new SpawnOptions { Matter = MatterSource.Import, Energy = EnergySource.Local, Radius = 0 });
+            Require(r1.Made == 1, $"matter brought, energy local: {r1}");
+            w.EnergyBalanced(before1, "design: matter brought, energy local");
+            {
+                var body = r1.Agents[0];
+                double bonds = 0;
+                for (int s = 0; s < Chemistry.S; s++) bonds += ((double)body.Inv[s] + body.Pend[s]) * w.Chem.E[s];
+                Require(Math.Abs(w.AuditEnergy().Flows[FDesign] - before1.Flows[FDesign] - bonds) < 1e-6, "imported molecules' bond energy not booked as the design input");
+            }
+            var before2 = w.AuditEnergy();
+            double hand0 = w.HandEnergy;
+            var r2 = w.SpawnDesign(small, spot % W, spot / W, new SpawnOptions { Matter = MatterSource.Local, Energy = EnergySource.Import, Radius = 0 });
+            Require(r2.Made == 1, $"matter local, energy brought: {r2}");
+            w.EnergyBalanced(before2, "design: matter local, energy brought", FDesign);
+            Require(Math.Abs(w.AuditEnergy().Flows[FDesign] - before2.Flows[FDesign] - (w.HandEnergy - hand0)) < 1e-4, "local matter booked bond energy as an input");
+            designNote = $"brought in {designIn:F0} (free energy {w.HandEnergy - hand0 + energy:F0}), matter only and energy only balanced";
+        }
 
         // From the place: an empty spot gives nothing and changes nothing.
         var local = new CreatureDesign { Name = "местный", Genome = "label 0\npush 0\nphoto\ndigest\nyield\njmp 0\nnop\nnop", Body = new() { ["any"] = 8 }, Energy = 3 };
@@ -233,7 +287,10 @@ public sealed partial class World
         w.C[w.Chem.Low[0]][rich] += 10;
         budget = w.ElementBudget();
         double[] hand = (double[])w.HandInput.Clone();
+        var localStart = w.AuditEnergy();
         var ok = w.SpawnDesign(local, rich % W, rich / W, new SpawnOptions { Radius = 0 });
+        w.EnergyBalanced(localStart, "design from local matter and local splits");
+        Require(w.AuditEnergy().Flows[FDesign] == localStart.Flows[FDesign], "a design planted from the place booked an outside input");
         Require(ok.Made == 1 && ok.EnergyLocal >= 2.99 && ok.Agents[0].InvTotal == 8, $"local planting: {ok}");
         Require(w.HandInput.SequenceEqual(hand), "local planting booked an import");
         BudgetEqual(budget, w.ElementBudget(), "planted from local matter", 1e-3);
@@ -242,13 +299,16 @@ public sealed partial class World
         var ms = new MemoryStream();
         w.Save(ms); ms.Position = 0;
         var copy = Load(ms);
+        Require(copy.EnergyFlows().SequenceEqual(w.EnergyFlows()), "design ledger lost in save/load");
         Require(copy.HandEnergy == w.HandEnergy && copy.DesignedLineages.Count == w.DesignedLineages.Count && copy.Agents.Count(a => a.Designed) == w.Agents.Count(a => a.Designed), "designs lost in save/load");
 
         // The examples live (and the atoms add up) for a while.
         before = w.ElementBudget();
         for (int e = 0; e < before.Length; e++) before[e] -= w.HandInput[e] + w.InteriorInput[e];
         const int ticks = 600;
+        var livingStart = w.AuditEnergy();   // the fixture swept and strewed matter by hand since designStart
         for (int t = 0; t < ticks; t++) w.Step();
+        designNote += "; living " + EnergyWorldCheck(w, livingStart, "designs living");
         after = w.ElementBudget();
         for (int e = 0; e < after.Length; e++) after[e] -= w.HandInput[e] + w.InteriorInput[e];
         BudgetEqual(before, after, "designs living", 0.01);
@@ -271,5 +331,68 @@ public sealed partial class World
         var listed = CreatureLibrary.List(dir);
         Require(listed.Count == 4 && listed.All(x => x.Design != null) && listed.Any(x => x.Design.Genome == CreatureExamples.Leaf.Genome), "library listing");
         Console.WriteLine($"PASS designs: brought in and from the place with exact atoms, nothing taken where nothing lies; after {ticks} ticks " + string.Join(", ", lives));
+        Console.WriteLine($"PASS design energy probes: {designNote}");
+    }
+
+    // Laws changed in a running world (World.SetParam) keep the energy ledger and the atoms closed:
+    // block size (MatCap: vents then build fuller or emptier blocks), gas bubbles (body volumes),
+    // gravity (support re-solved, falls), heat share, upkeep, decay, and EnergyK ≠ 1, whose created or
+    // destroyed energy is the ledger's own EnergyK flow.
+    static void LawsEnergyRegression()
+    {
+        ParamRegistry.ResetDefaults();
+        var w = new World(2, 800, true) { TrackHeat = true };
+        var atoms0 = w.ElementBudget();
+        var e0 = w.AuditEnergy();
+        var plan = new (int tick, string name, double factor)[]
+        {
+            (150, "VoxelSpace", 1.5), (250, "GasExpand", 2), (350, "Gravity", 1.6), (450, "HeatShare", 0.5), (500, "CostBase", 2),
+            (550, "EnergyK", 1.25), (650, "DecayK", 3), (700, "VoxelSpace", 0.6), (800, "EnergyK", 0.8 / 1.25),
+        };
+        string notes = "";
+        for (int t = 1; t <= 1000; t++)
+        {
+            foreach (var (tick, name, factor) in plan)
+                if (tick == t) Require(w.SetParam(name, ParamRegistry.Get(name) * factor), $"law {name}");
+            w.Step();
+            if (t % 250 != 0) continue;
+            var atoms = w.ElementBudget();
+            for (int e = 0; e < atoms.Length; e++)
+            {
+                double d = atoms[e] - w.InteriorInput[e] - w.HandInput[e] - atoms0[e];
+                Require(Math.Abs(d) <= 0.5, $"laws changed mid-run, tick {t}: element {e} drifted by {d}");
+            }
+            notes = EnergyWorldCheck(w, e0, $"laws changed mid-run, tick {t}");
+        }
+        var flows = w.AuditEnergy().Flows;
+        Require(w.ParamLog.Count == plan.Length, $"law log {w.ParamLog.Count} of {plan.Length}");
+        Require(flows[FScale] != 0, "EnergyK ≠ 1 made no EnergyK flow");
+        w.CheckCellLists();
+        Console.WriteLine($"PASS laws changed mid-run ({string.Join(", ", plan.Select(p => p.name).Distinct())}): atoms close, {notes}, EnergyK flow {flows[FScale]:F1}; population {w.Agents.Count}");
+        ParamRegistry.ResetDefaults();
+    }
+
+    // A life seed changes only life: the same planet (terrain, chemistry, litter), other first bodies;
+    // it is reproducible and survives save/load (in the settings).
+    static void LifeSeedRegression()
+    {
+        WorldSettings S(int life) => new() { Seed = 3, InitialPop = 300, Abiogenesis = true, Strikes = true, LifeSeed = life };
+        var a = new World(S(0)); var b = new World(S(2)); var b2 = new World(S(2));
+        int firstA = a.Agents.Count, firstB = b.Agents.Count;
+        Require(a.Mat.SequenceEqual(b.Mat) && a.Height.SequenceEqual(b.Height) && a.Water.SequenceEqual(b.Water), "a life seed changed the planet");
+        // The first bodies are made of the litter where they start; without them it is the same.
+        var bare0 = new World(new WorldSettings { Seed = 3, InitialPop = 0 }); var bare2 = new World(new WorldSettings { Seed = 3, InitialPop = 0, LifeSeed = 2 });
+        for (int s = 0; s < Chemistry.S; s++) Require(bare0.C[s].SequenceEqual(bare2.C[s]), "a life seed changed the primordial litter");
+        Require(!a.Agents.Select(x => (x.X, x.Y, x.Hash)).SequenceEqual(b.Agents.Select(x => (x.X, x.Y, x.Hash))), "a life seed did not change the first bodies");
+        Require(b.StateHash() == b2.StateHash() && b.LifeSeed == 2, "a life seed is not reproducible");
+        for (int t = 0; t < 100; t++) { b.Step(); b2.Step(); }
+        Require(b.StateHash() == b2.StateHash(), "two runs of one life seed diverged");
+        var ms = new MemoryStream();
+        b.Save(ms); ms.Position = 0;
+        var c = Load(ms);
+        Require(c.LifeSeed == 2 && c.Settings.LifeSeed == 2, "the life seed was lost in save/load");
+        for (int t = 0; t < 100; t++) { b.Step(); c.Step(); }
+        Require(b.StateHash() == c.StateHash(), "a loaded life-seeded world diverged");
+        Console.WriteLine($"PASS life seed: same planet and litter, other first bodies ({firstA} and {firstB}), reproducible, kept by save/load");
     }
 }

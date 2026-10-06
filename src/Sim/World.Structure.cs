@@ -459,6 +459,7 @@ public sealed partial class World
             if (big != null && !big.Dead && big.Z >= targetZ && big.Z <= Math.Max(fromZ, targetZ))
                 Die(big, big.Y * W + big.X, CauseBuried, to);
             heatIn[c] += impactLoad;
+            Flows[FImpact] += impactLoad;
             Interlocked.Increment(ref CollapsedBlocks);
         }
         compressionCache[from] = compressionCache[to] = 0;
