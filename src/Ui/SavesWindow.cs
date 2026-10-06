@@ -39,7 +39,8 @@ public partial class SavesWindow : UiWindow
         slots = UiKit.Spin(1, 10, 1, 3, 70);
         slots.ValueChanged += v => { Ui.State.AutosaveSlots = (int)v; Ui.ConfigureRunner(Main.Sim); Ui.SaveSoon(); };
         Body.AddChild(UiKit.Row(8, UiKit.Text("Автосохранение каждые", 13, UiKit.Dim), minutes, UiKit.Text("мин (0 — выкл.), по кругу в", 13, UiKit.Dim), slots,
-            UiKit.Text("слота", 13, UiKit.Dim), UiKit.Spacer(), UiKit.Button("Папка", () => OS.ShellOpen(UiManager.SavesDir), "открыть папку сохранений")));
+            UiKit.Text("слота", 13, UiKit.Dim), UiKit.Spacer(), UiKit.Button("Импорт…", Import, "добавить файл .sav откуда угодно в список сохранений"),
+            UiKit.Button("Папка", () => OS.ShellOpen(UiManager.SavesDir), "открыть папку сохранений")));
         autoInfo = UiKit.Text("", 12, UiKit.Dim, null, true);
         Body.AddChild(autoInfo);
     }
@@ -117,6 +118,9 @@ public partial class SavesWindow : UiWindow
         load.Disabled = info == null;
         buttons.AddChild(load);
         buttons.AddChild(new ConfirmButton("Перезаписать", () => SaveTo(path, info?.Note is { Length: > 0 } n2 && n2 != "autosave" ? n2 : note.Text.Trim()), "записать текущий мир в этот слот"));
+        var export = UiKit.Button("Экспорт…", () => Export(path), "скопировать файл сохранения (и картинку) в выбранное место");
+        export.Disabled = info == null;
+        buttons.AddChild(export);
         buttons.AddChild(new ConfirmButton("Удалить", () => Delete(path), "удалить файл сохранения"));
         row.AddChild(buttons);
         return panel;
@@ -183,6 +187,53 @@ public partial class SavesWindow : UiWindow
         catch (Exception e) { Ui.Toast("не удалить: " + e.Message, true); }
         Rebuild();
     }
+
+    // ---- files from and to elsewhere ----
+
+    // A system file dialog; the picked path comes back on the main thread. Godot uses the native one where it can.
+    void PickFile(FileDialog.FileModeEnum mode, string title, string suggested, Action<string> picked)
+    {
+        var dlg = new FileDialog
+        {
+            FileMode = mode, Access = FileDialog.AccessEnum.Filesystem, Title = title, UseNativeDialog = true,
+            Filters = new[] { "*.sav ; Сохранение Primordium" }, CurrentDir = System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile),
+        };
+        if (suggested != null) dlg.CurrentFile = suggested;
+        dlg.FileSelected += f => { picked(f); dlg.QueueFree(); };
+        dlg.Canceled += () => dlg.QueueFree();
+        AddChild(dlg);
+        dlg.PopupCentered(new Vector2I(760, 480));
+    }
+
+    void Export(string path) =>
+        PickFile(FileDialog.FileModeEnum.SaveFile, "Экспорт сохранения", Path.GetFileName(path), dest =>
+        {
+            try
+            {
+                if (!dest.EndsWith(".sav", StringComparison.OrdinalIgnoreCase)) dest += ".sav";
+                File.Copy(path, dest, true);
+                if (File.Exists(Thumb(path))) File.Copy(Thumb(path), Thumb(dest), true);
+                Ui.Toast("экспортировано: " + dest);
+            }
+            catch (Exception e) { Ui.Toast("не экспортировать: " + e.Message, true); }
+        });
+
+    void Import() =>
+        PickFile(FileDialog.FileModeEnum.OpenFile, "Импорт сохранения", null, src =>
+        {
+            try
+            {
+                SimRunner.ReadSaveInfo(src);   // refuse files that aren't saves before copying anything
+                Directory.CreateDirectory(UiManager.SavesDir);
+                string name = Path.GetFileNameWithoutExtension(src), dest = Path.Combine(UiManager.SavesDir, name + ".sav");
+                for (int k = 2; File.Exists(dest); k++) dest = Path.Combine(UiManager.SavesDir, $"{name}_{k}.sav");
+                File.Copy(src, dest);
+                if (File.Exists(Thumb(src))) File.Copy(Thumb(src), Thumb(dest), true);
+                Ui.Toast("импортировано: " + Path.GetFileName(dest));
+                Rebuild();
+            }
+            catch (Exception e) { Ui.Toast("не сохранение Primordium: " + e.Message, true); }
+        });
 
     // A small picture of the world: the panels are hidden for one frame, the view is read back, cropped
     // to the map (left of the info panel) and scaled down.
