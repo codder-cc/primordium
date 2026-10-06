@@ -21,7 +21,7 @@ public partial class View3D : Node3D
     public SimFrame Frame;           // set by Main every frame
     public float[] Stress;           // per column, for the load overlay (filled by the simulation thread)
     public Camera3D Cam { get; private set; }
-    public int Overlay;              // 0 surface, 1 temperature, 2 light, 3 remains, 4 density, 5 deaths, 6 body heat, 7+s one species
+    public int Overlay;              // 0 surface, 1 temperature, 2 light, 3 remains, 4 density, 5 deaths, 6 body heat, 7 load, 8 lattice, 9 temperature at depth, FirstSpecies+s one species
     public int ColorMode;            // see ColorModeNames
     public bool Lighting = true;
     public int Slice = -1;           // cut-away: rows south of this are hidden
@@ -30,7 +30,8 @@ public partial class View3D : Node3D
     public float PanelWidth = 440;   // logical px covered by the HUD panel on the right
 
     public int OverlayCount => FirstSpecies + Chemistry.S;
-    public const int FirstSpecies = 9;   // overlays before the per-molecule ones
+    public const int FirstSpecies = 10;  // overlays before the per-molecule ones
+    public const int DepthTempOverlay = 9;
 
     // Timings of the steps of Refresh, ms summed since Main last cleared them (perf overlay).
     public const int ProfSlots = 10;
@@ -89,6 +90,8 @@ uniform int hmax;
 uniform int ytiles;
 uniform float bh;
 uniform float side_lit;
+uniform int cut_row = -1;
+uniform sampler2D cut_temp : filter_nearest;
 varying vec3 wpos;
 varying vec3 nrm;
 varying vec4 cust;
@@ -117,6 +120,8 @@ void fragment() {
         float f = fract(wpos.y / bh);
         col *= 0.84 + 0.16 * smoothstep(0.0, 0.1, f);
         col *= abs(nrm.x) > 0.5 ? 0.78 : 0.6;
+        // The cut with the temperature-at-depth overlay: every level in its own colour, unshaded.
+        if (y == cut_row) col = texelFetch(cut_temp, ivec2(x, z), 0).rgb * (0.92 + 0.08 * smoothstep(0.0, 0.1, f));
     }
     // cust.a is sunlight: day shows true colours, night fades into a dim blue.
     vec3 night = col * vec3(0.6, 0.66, 0.85);
@@ -167,6 +172,7 @@ void fragment() {
         Array.Fill(shapedVer, int.MinValue);
         shapedSlice = -2;
         colouredOverlay = -1;
+        cutShownRow = -2;
         caveRuns.Clear();
         foreach (var t in voxTile) Array.Clear(t);
         RebuildVoxels(true);
@@ -259,6 +265,7 @@ void fragment() {
         if (World.TerrainVersion != seenTerrain && frame % 4 == 0) RebuildVoxels();
         Lap(1);
         terrainMat.SetShaderParameter("side_lit", Slice >= 0 || !Lighting ? 1f : 0.55f);
+        FillCutTemperature();
         FillTerrain();
         Lap(2);
         FillWater();
@@ -391,14 +398,15 @@ void fragment() {
                     break;
                 }
             case 1:
-                {
-                    // −25 °C deep blue · 0 °C white · +40 °C red
-                    float tc = w.Temp[i];
-                    c = tc < 0 ? new Rgb(0.95f, 0.95f, 0.97f).Lerp(new Rgb(0.12f, 0.25f, 0.8f), Math.Min(1, -tc / 25f))
-                               : new Rgb(0.95f, 0.95f, 0.97f).Lerp(new Rgb(0.95f, 0.2f, 0.08f), Math.Min(1, tc / 40f));
-                    lit = 1;
-                    break;
-                }
+                c = TempColour(w.Temp[i]);
+                lit = 1;
+                break;
+            case DepthTempOverlay:
+                // On top: the year-round mean that the climate deep under a roof starts from (World.Cave);
+                // the cut (C) shows every level.
+                c = TempColour(w.Tmean[i]);
+                lit = 1;
+                break;
             case 2:
                 c = new Rgb(0.08f, 0.08f, 0.14f).Lerp(new Rgb(1f, 0.92f, 0.55f), MathF.Min(1, w.Light[i]));
                 lit = 1;
@@ -437,6 +445,62 @@ void fragment() {
                 }
         }
         buf[o + 12] = c.R; buf[o + 13] = c.G; buf[o + 14] = c.B; buf[o + 15] = lit;
+    }
+
+    // −25 °C deep blue · 0 °C white · +40 °C red
+    public static Rgb TempColour(float tc) =>
+        tc < 0 ? new Rgb(0.95f, 0.95f, 0.97f).Lerp(new Rgb(0.12f, 0.25f, 0.8f), Math.Min(1, -tc / 25f))
+               : new Rgb(0.95f, 0.95f, 0.97f).Lerp(new Rgb(0.95f, 0.2f, 0.08f), Math.Min(1, tc / 40f));
+
+    // "Temperature at depth" in the cut: the face of the cut row shows, level by level, what a body there
+    // would feel (World.LocalTemp: the surface's, or under a roof the cave climate by its cover). Read
+    // only; refreshed a few times a second.
+    Image cutImg;
+    ImageTexture cutTex;
+    readonly byte[] cutBytes = new byte[W * Z * 3];
+    int cutShownRow = -2;
+    double cutAt;
+    void FillCutTemperature()
+    {
+        bool on = Overlay == DepthTempOverlay && Slice >= 0;
+        int row = on ? Slice : -1;
+        double now = Time.GetTicksMsec() / 1000.0;
+        if (row == cutShownRow && (!on || now - cutAt < 0.25)) return;
+        if (row != cutShownRow) terrainMat.SetShaderParameter("cut_row", row);
+        cutShownRow = row;
+        if (!on) return;
+        cutAt = now;
+        var w = World;
+        bool law = World.CaveLaw;
+        for (int x = 0; x < W; x++)
+        {
+            int c = row * W + x, h = Math.Clamp(w.Height[c], 0, Z), roof = 0;
+            float surf = w.Temp[c], mean = w.Tmean[c], warm = w.CaveWarm[c];
+            for (int z = Z - 1; z >= 0; z--)
+            {
+                float t = surf;
+                if (law && z < h && roof > 0)
+                {
+                    float f = 1 - MathF.Exp(-roof / P.CaveDepthK);
+                    t = surf + (mean + P.GeoGrad * (h - 1 - z) + warm - surf) * f;
+                }
+                if (z < h && w.Mat[c * Z + z] != Chemistry.Air) roof++;
+                var col = TempColour(t);
+                int o = (z * W + x) * 3;
+                cutBytes[o] = (byte)(col.R * 255); cutBytes[o + 1] = (byte)(col.G * 255); cutBytes[o + 2] = (byte)(col.B * 255);
+            }
+        }
+        if (cutImg == null)
+        {
+            cutImg = Image.CreateFromData(W, Z, false, Image.Format.Rgb8, cutBytes);
+            cutTex = ImageTexture.CreateFromImage(cutImg);
+            terrainMat.SetShaderParameter("cut_temp", cutTex);
+        }
+        else
+        {
+            cutImg.SetData(W, Z, false, Image.Format.Rgb8, cutBytes);
+            cutTex.Update(cutImg);
+        }
     }
 
     // Draw each solid run separately: cave floors and ceilings are actual faces, not painted holes.

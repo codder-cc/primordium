@@ -35,7 +35,8 @@ public sealed partial class World
     // load (balances are differences, so they close from there); before version 3 the chronicle starts
     // empty; before version 4 a float is converted exactly from 2⁻⁹ molecule up, smaller ones to the
     // nearest 2⁻³². Writing an older version rounds the amounts back to float.
-    public const int SaveVersion = 4, OldestSaveVersion = 1;
+    // 5: the cave climate block (SyncCaveClimate) after the chronicle.
+    public const int SaveVersion = 5, OldestSaveVersion = 1;
     static readonly byte[] SaveMagic = Encoding.ASCII.GetBytes("PRIMSAVE");
     const int EndMarker = 0x21444E45;   // "END!"
 
@@ -242,7 +243,23 @@ public sealed partial class World
         SyncLists(s);
         SyncAgents(s);
         if (s.Version >= 2) SyncEnergy(s);
-        if (s.Version >= 3) SyncChronicle(s);   // keep last: a separate block (see the comment there)
+        if (s.Version >= 3) SyncChronicle(s);   // a separate block (see the comment there)
+        SyncCaveClimate(s);                       // version 5: its own block after the chronicle
+    }
+
+    // ---- cave climate (save version 5, World.Cave) ----
+    // A block of its own after the chronicle: the slow mean temperature, the warmth of cave air and
+    // what bodies under a roof shed since the last env step. Before version 5 the mean starts as the
+    // climate's year-round normal, as in a new world (InitCaveClimate), and the caves start without
+    // bodies' warmth.
+    void SyncCaveClimate(Sync s)
+    {
+        if (s.Version < 5)
+        {
+            if (s.Reading) InitCaveClimate();
+            return;
+        }
+        s.A<float>(Tmean); s.A<float>(CaveWarm); s.A<float>(caveHeatIn);
     }
 
     // The energy ledger: every accumulator as it is (per tile and per row, so the sums read after the

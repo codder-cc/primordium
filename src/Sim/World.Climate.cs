@@ -88,7 +88,8 @@ public sealed partial class World
                 int i = y * W + x;
                 bool wet = Water[i] > 0.5f;
                 float k = wet ? P.TRelaxWater : P.TRelax;   // water keeps its warmth
-                Temp[i] += heatIn[i] * P.HeatToTemp * (wet ? 0.25f : 1f) + (TempEq(i) - Temp[i]) * k;
+                // What bodies under a roof shed warms the cave air instead (World.Cave; 0 with the law off).
+                Temp[i] += (heatIn[i] - caveHeatIn[i]) * P.HeatToTemp * (wet ? 0.25f : 1f) + (TempEq(i) - Temp[i]) * k;
                 BodyHeat[i] += (heatIn[i] - BodyHeat[i]) * 0.2f;
                 DeathMap[i] *= 0.985f;
                 heatIn[i] = 0;
@@ -103,6 +104,7 @@ public sealed partial class World
             }
         });
         Array.Copy(tmp, Temp, N);
+        UpdateCaveClimate();
         Hydro();
     }
 
@@ -207,7 +209,12 @@ public sealed partial class World
                     if (product >= 0) Flows[FStrike] += (double)m * (Chem.E[product] - Chem.E[s]);
                 }
                 for (var a = Head[i]; a != null; a = a.NextInCell)
-                    if (rng.NextDouble() < 0.3 + 0.7 * k) { Irradiate(a, k, rng); struck++; }
+                {
+                    // Rock above stops the beam as it shelters from the climate (World.Cave).
+                    double hit = 0.3 + 0.7 * k;
+                    if (CaveLaw) hit *= 1 - Cover(i, a.Z);
+                    if (rng.NextDouble() < hit) { Irradiate(a, k, rng); struck++; }
+                }
                 int h = Height[i];
                 if (d <= r / 3f && h > 2 && Mat[i * Z + h - 1] != Chemistry.Bedrock)
                 {

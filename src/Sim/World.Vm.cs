@@ -90,7 +90,7 @@ public sealed partial class World
                 case Genome.Have: Push(a, a.Inv[Chemistry.Spec(Pop(a))]); break;
                 case Genome.EnzymeOp: Express(a, ip, g, n); a.Ip = ip + 4; break;
                 case Genome.MassOp: Push(a, a.InvTotal); break;
-                case Genome.Temp: Push(a, imm >= 2 ? (int)a.Tb : (int)Temp[cell]); break;
+                case Genome.Temp: Push(a, imm >= 2 ? (int)a.Tb : (int)(CaveLaw ? LocalTemp(cell, a.Z) : Temp[cell])); break;
                 case Genome.LightOp: Push(a, imm >= 2 ? (InCave(a) ? 0 : (int)(Photon[cell] * 100)) : (int)(AgentLight(a) * 100)); break;
                 case Genome.Sense: Push(a, Conc(a, Chemistry.Spec(Pop(a)), cell)); break;
                 case Genome.Sensed: x = Pop(a); y = Pop(a); Push(a, Conc(a, Chemistry.Spec(y), nb[cell * 4 + (x & 3)])); break;

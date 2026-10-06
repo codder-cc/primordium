@@ -133,6 +133,15 @@ public static class P
     // Climate (°C): latitude/season climate + daily swing − altitude
     public static float TEquator = 29f, TPole = -16f, TDay = 12f, TLapse = 0.6f;
     public static float TRelax = 0.008f, TRelaxWater = 0.002f;   // per env step
+    // Caves and depth (World.Cave): rock above a body shelters it. With `roof` solid blocks over it in
+    // its column, a body feels lerp(surface, Tcave, 1 − e^(−roof/CaveDepthK)), where Tcave is the
+    // column's slow mean temperature (an EMA of Temp over TmeanTau ticks, about a year) plus GeoGrad
+    // per level below the column's top, plus the warmth bodies under that roof shed into it. The same
+    // cover shields from the orbital beam; light (and with it UV) is already stopped by any roof.
+    // CaveClimate 0 switches the law off: the surface temperature everywhere, as before.
+    public static int CaveClimate = 1;
+    public static float GeoGrad = 0.15f, CaveDepthK = 3f;
+    public static int TmeanTau = 12000;
 
     // Water
     public static float SeaShare = 0.22f;       // the lowest share of the land starts under water
