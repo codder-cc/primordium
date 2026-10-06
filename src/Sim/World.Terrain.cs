@@ -47,20 +47,31 @@ public sealed partial class World
         Interlocked.Increment(ref DirtBy[0]);
     }
 
+    // The height a column is made with (the relief from the seed): valleys, ridges, mountains.
+    int GenHeight(int x, int y)
+    {
+        int ns = unchecked(Seed * 31 + 7);
+        float asp = H / (float)W, u = x / (float)W, v = y / (float)H;
+        float bas = Math.Clamp((Noise.Fbm(ns, u, v, 5, 3, asp) - 0.28f) / 0.44f, 0, 1);
+        float rdg = 1 - MathF.Abs(Noise.Fbm(ns + 1, u, v, 4, 5, asp) * 2 - 1);
+        float mnt = Smooth(0.35f, 0.7f, Noise.Fbm(ns + 2, u, v, 2, 2, asp));
+        return Math.Clamp((int)MathF.Round(3 + 13 * bas + 15 * rdg * rdg * rdg * mnt) + Crust, 2 + Crust, Z - 14);
+    }
+
     void GenerateTerrain()
     {
         int ns = unchecked(Seed * 31 + 7);
         float asp = H / (float)W;
         var species = Enumerable.Range(0, Chemistry.S).OrderBy(s => Chem.Bond[s]).ToArray();
-        for (int y = 0; y < H; y++)
+        geoTables = GeoOn ? BuildGeoTables(species, ns) : null;   // the depth profile (World.Geochem)
+        // Columns are independent: rows in parallel (pure functions of the seed), the solver's list after.
+        Parallel.For(0, H, () => new float[Chemistry.S], (y, _, weights) =>
+        {
             for (int x = 0; x < W; x++)
             {
                 int i = y * W + x;
                 float u = x / (float)W, v = y / (float)H;
-                float bas = Math.Clamp((Noise.Fbm(ns, u, v, 5, 3, asp) - 0.28f) / 0.44f, 0, 1);
-                float rdg = 1 - MathF.Abs(Noise.Fbm(ns + 1, u, v, 4, 5, asp) * 2 - 1);
-                float mnt = Smooth(0.35f, 0.7f, Noise.Fbm(ns + 2, u, v, 2, 2, asp));
-                int h = Math.Clamp((int)MathF.Round(3 + 13 * bas + 15 * rdg * rdg * rdg * mnt) + Crust, 2 + Crust, Z - 14);
+                int h = Height0[i];
                 float domain = Noise.Fbm(ns + 3, u, v, 3, 4, asp);
                 for (int z = 0; z < h; z++)
                 {
@@ -70,13 +81,15 @@ public sealed partial class World
                     float vein = Noise.Value3(ns + 5, x / 10f, y / 10f, z / 4f, W / 10);
                     // Pressure selects denser, more cohesive aggregates; correlated domains make seams.
                     float rank = Math.Clamp(depth * 0.65f + domain * 0.35f + (vein - 0.5f) * 0.5f, 0, 0.999f);
-                    int molecule = species[(int)(rank * species.Length)];
+                    int molecule = GeoOn ? GeoPick(x, y, z, h - z - 1, rank, weights) : species[(int)(rank * species.Length)];
                     Mat[q] = Chem.BuiltMat[molecule]; Units[q] = (ushort)Chem.MatCap[Chem.BuiltMat[molecule]];
                     Order[q] = (byte)(255 * Math.Clamp(0.12f + depth * 0.75f + Chem.Packing[molecule] * 0.15f, 0, 1));
                 }
                 Height[i] = h;
-                structuralDirty.Add(i);
             }
+            return weights;
+        }, _ => { });
+        for (int i = 0; i < N; i++) structuralDirty.Add(i);
     }
 
     // Ground under the lowest surface (above the two levels of bedrock). The relief on top of it is
@@ -221,7 +234,7 @@ public sealed partial class World
         }
         if (Height[best] >= Z - 3) return;
         int w = best * Z + Height[best];
-        int molecule = Chem.VentHigh[Rng.Next(Chem.VentHigh.Length)];
+        int molecule = GeoOn ? VentMolecule(Rng.NextDouble()) : Chem.VentHigh[Rng.Next(Chem.VentHigh.Length)];   // the interior's makeup (World.Geochem)
         byte m = Chem.BuiltMat[molecule];
         // The interior delivers matter at a steady rate: a block of many small molecules takes longer.
         if (Rng.NextDouble() >= 300.0 / Chem.MatCap[m]) return;

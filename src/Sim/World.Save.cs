@@ -38,7 +38,9 @@ public sealed partial class World
     // 5: the cave climate block (SyncCaveClimate) after the chronicle. 6: the course of evolution
     // (SyncEvolution, World.Evolution.cs) after the cave climate; before it the progress history starts
     // empty and every living body joins the shadows and the family tree as a founder.
-    public const int SaveVersion = 6, OldestSaveVersion = 1;
+    // 7: the geochemistry block (SyncGeochem, World.Geochem) after the course of evolution; before it
+    // the depth profile is off (those worlds were made without it).
+    public const int SaveVersion = 7, OldestSaveVersion = 1;
     static readonly byte[] SaveMagic = Encoding.ASCII.GetBytes("PRIMSAVE");
     const int EndMarker = 0x21444E45;   // "END!"
 
@@ -249,6 +251,7 @@ public sealed partial class World
         SyncCaveClimate(s);                       // version 5: its own block after the chronicle
         if (s.Version >= 6) SyncEvolution(s);   // version 6: its own block, last (World.Evolution.cs)
         else if (s.Reading) EvoRegisterAll();
+        SyncGeochem(s);                           // version 7: its own block after the course of evolution
     }
 
     // ---- cave climate (save version 5, World.Cave) ----

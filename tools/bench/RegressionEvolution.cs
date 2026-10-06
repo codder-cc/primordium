@@ -117,6 +117,7 @@ public sealed partial class World
         Require(c.StateHash() == a.StateHash(), "loaded world diverged");
         Require(c.EvolutionBlock().AsSpan().SequenceEqual(a.EvolutionBlock()), "the loaded course of evolution diverged");
         var old = new MemoryStream();
+        a.GeoOn = false;   // a version 5 file holds no geochemistry (version 7): it loads with the profile off
         a.Save(old, "v5", System.IO.Compression.CompressionLevel.Fastest, 5); old.Position = 0;
         var o = Load(old);
         Require(o.Progress.Samples.Count == 0 && o.Shadow.Ref.Pop.Count == o.Agents.Count && o.Agents.All(x => x.EvoComp != null), "a version 5 save did not start an empty course of evolution");

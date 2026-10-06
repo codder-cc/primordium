@@ -367,6 +367,8 @@ public partial class Hud : Control
         8 => "порядок решётки (тёмный → светлый)",
         View3D.DepthTempOverlay => P.CaveClimate == 0 ? "температура на глубине (закон выключен: везде как на поверхности)"
                                   : "температура на глубине: сверху — средняя за год, в разрезе (C) — что чувствует тело на каждом уровне",
+        View3D.DeepOverlay => $"глубинный элемент {w.Chem.ElementName[w.DeepElement]} (смещение {w.DepthBias[w.DeepElement]:+0.00;-0.00}): доля в атомах верхнего блока, в разрезе (C) — по уровням, жилы светлее"
+                              + (w.GeoOn ? "" : " (мир создан без профиля глубины)"),
         _ when o - View3D.FirstSpecies == w.Chem.Gas => $"газ {w.Chem.Name[w.Chem.Gas]} в воздухе (E{w.Chem.E[w.Chem.Gas]})",
         _ => $"молекула {w.Chem.Name[o - View3D.FirstSpecies]} на земле (E{w.Chem.E[o - View3D.FirstSpecies]}" +
              $"{(w.Chem.Poison[o - View3D.FirstSpecies] ? ", яд" : w.Chem.Solid[o - View3D.FirstSpecies] ? ", твёрдая" : "")})",

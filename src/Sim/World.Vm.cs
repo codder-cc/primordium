@@ -481,6 +481,7 @@ public sealed partial class World
         if (barrier > 0.5f || !TakeBite(v, barrier, P.CostIntake)) return;   // a gentle soak: little work into the face
         int s = TakeVoxelMolecule(v);
         AddMol(a, s);
+        NoteMined(s, Height0[cell] - h);
         a.TickMine += Chem.E[s];
         a.GainMine += Chem.E[s];
         a.NMines++;
@@ -745,6 +746,7 @@ public sealed partial class World
         if (!TakeBite(v, VoxelBarrier(v) * (1 - cat), effort)) return;
         int s = TakeVoxelMolecule(v);
         AddMol(a, s);
+        NoteMined(s, Height0[c] - 1 - z);
         a.TickMine += Chem.E[s];
         a.GainMine += Chem.E[s];
         a.NMines++;
