@@ -7,6 +7,12 @@ using Primordium;
 //   [--log path.csv]: one row per --every interval with population, births, deaths, every stage's ms/tick,
 //   allocation and GC counts, for looking at performance over time.
 if (Array.IndexOf(args, "--self-test") >= 0) { World.RunRegression(); return; }
+if (Array.IndexOf(args, "--list-params") >= 0)
+{
+    foreach (var p in ParamRegistry.All)
+        Console.WriteLine($"{p.Group,-12} {p.Name,-20} {p.Value,10:G6}  [{p.Min:G6} … {p.Max:G6}, step {p.Step:G6}]{(p.Live ? "" : " (new world)")}  {p.Description}");
+    return;
+}
 if (Array.IndexOf(args, "--bites") >= 0) { foreach (int s in new[] { 1, 2, 3, 5, 7 }) World.BiteReport(s); return; }
 if (Array.IndexOf(args, "--strength") >= 0) { foreach (int s in new[] { 1, 2, 3, 7 }) { Console.WriteLine($"seed {s}"); World.StrengthReport(s); } return; }
 
@@ -22,6 +28,31 @@ for (int i = 0; i < args.Length - 1; i++)
     if (args[i] == "--log") logPath = args[i + 1];
     if (args[i] == "--tile") World.TileSize = int.Parse(args[i + 1]);
 }
+
+// Laws of the world (P): --preset path.json, then --param Name=value (repeatable) before the world is made;
+// --param-at TICK:Name=value changes a law between ticks during the run (the trajectory is the seed plus
+// this timeline).
+var inv0 = System.Globalization.CultureInfo.InvariantCulture;
+var paramAt = new System.Collections.Generic.List<(long tick, string name, double value)>();
+for (int i = 0; i < args.Length - 1; i++)
+    if (args[i] == "--preset") ParamRegistry.Restore(ParamRegistry.LoadPreset(args[i + 1]).Values);
+for (int i = 0; i < args.Length - 1; i++)
+{
+    if (args[i] == "--param")
+    {
+        var kv = args[i + 1].Split('=');
+        if (!ParamRegistry.Set(kv[0], double.Parse(kv[1], inv0))) throw new ArgumentException($"unknown parameter {kv[0]}");
+    }
+    if (args[i] == "--param-at")
+    {
+        var at = args[i + 1].Split(':', 2);
+        var kv = at[1].Split('=');
+        if (ParamRegistry.Find(kv[0]) == null) throw new ArgumentException($"unknown parameter {kv[0]}");
+        paramAt.Add((long.Parse(at[0]), kv[0], double.Parse(kv[1], inv0)));
+    }
+}
+var changedLaws = ParamRegistry.Changes();
+if (changedLaws.Count > 0) Console.WriteLine("laws: " + string.Join(", ", changedLaws.Select(kv => $"{kv.Key}={kv.Value.ToString(inv0)}")));
 
 World.ProfileOps = Array.IndexOf(args, "--ops") >= 0;
 var w = new World(seed, pop, abio);
@@ -56,6 +87,7 @@ int prevGen0 = GC.CollectionCount(0), prevGen1 = GC.CollectionCount(1), prevGen2
 double prevWall = 0;
 for (int t = 1; t <= ticks; t++)
 {
+    foreach (var (at, name, value) in paramAt) if (at == w.Tick) { w.SetParam(name, value); Console.WriteLine($"   tick {w.Tick}: {name} = {ParamRegistry.Get(name).ToString(inv0)}"); }
     w.Step();
     if (t % every != 0) continue;
     if (audit)

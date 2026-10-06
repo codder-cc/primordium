@@ -102,8 +102,9 @@ public sealed partial class World
     int phaseNext;
     readonly List<Agent> newborn = new();
 
-    public World(int seed, int initialPop = P.InitialPop, bool abiogenesis = true)
+    public World(int seed, int initialPop = -1, bool abiogenesis = true)   // initialPop < 0: P.InitialPop
     {
+        if (initialPop < 0) initialPop = P.InitialPop;
         Seed = seed;
         Abiogenesis = abiogenesis;
         mainRng = new Random(seed);
@@ -127,6 +128,7 @@ public sealed partial class World
         phaseOrder = new int[Tiles];
         ctxs = new Ctx[Tiles];
         for (int k = 0; k < Tiles; k++) ctxs[k] = new Ctx { Rng = new Random(seed * 1009 + k), Slot = k };
+        paramsSeen = ParamRegistry.Version;   // the tables built below use the laws as they are now
         Chem = new Chemistry(seed);
         tiles = new List<Agent>[Tiles];
         for (int k = 0; k < Tiles; k++) tiles[k] = new List<Agent>();
@@ -196,6 +198,7 @@ public sealed partial class World
 
     public void Step()
     {
+        ApplyParamChanges();   // a law changed between ticks: refresh what was derived from it
         prof.Restart();
         LapStart();
         Tick++;

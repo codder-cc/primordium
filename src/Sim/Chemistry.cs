@@ -117,7 +117,6 @@ public sealed class Chemistry
         Unstable = Where(s => SplitExo[s]); Toxic = Where(s => Poison[s]); Solids = Where(s => Solid[s]);
         // The most volatile species has an atmospheric reservoir. It is never destroyed by water.
         Gas = Enumerable.Range(0, S).OrderBy(s => Mass[s] * (0.1f + Bond[s])).First();
-        for (int s = 0; s < S; s++) BodyVolume[s] = s == Gas ? Volume[s] * P.GasExpand : Volume[s];
         VentHigh = Enumerable.Range(0, S).OrderByDescending(s => E[s]).Take(8).ToArray();
         VentMid = Low;
         Array.Fill(MatKey, -1);
@@ -130,7 +129,6 @@ public sealed class Chemistry
             int m = s + 2;
             BuiltMat[s] = (byte)m;
             MatName[m] = $"агрегат {Name[s]}";
-            MatCap[m] = Math.Clamp((int)MathF.Round(P.VoxelSpace / Volume[s]), 1, ushort.MaxValue);
             MatCol[m] = Col[s]; MatKey[m] = s;
             MatCohesion[m] = Bond[s];
             MatBarrier[m] = 0.2f + Bond[s] * Bond[s];
@@ -147,6 +145,19 @@ public sealed class Chemistry
                 // Unlike aggregates still interlock (0.2), similar ones more; a monolith is 2.5–5× stronger.
                 Contact[a, b] = a == b ? 1f : 0.2f + 0.18f * similarity * similarity;
             }
+        ApplyParams();
+    }
+
+    // What depends on the world's laws (P) rather than on the seed: a full block's count of each kind
+    // (P.VoxelSpace) and the room the gas takes held in a body (P.GasExpand). World calls it again when
+    // those laws change (World.ApplyParamChanges).
+    public void ApplyParams()
+    {
+        for (int s = 0; s < S; s++)
+        {
+            BodyVolume[s] = s == Gas ? Volume[s] * P.GasExpand : Volume[s];
+            MatCap[s + 2] = Math.Clamp((int)MathF.Round(P.VoxelSpace / Volume[s]), 1, ushort.MaxValue);
+        }
     }
 
     public int AtomCount(int s) { int n = 0; for (int e = 0; e < ElementCount; e++) n += Atoms[s, e]; return n; }
