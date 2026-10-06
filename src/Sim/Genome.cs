@@ -57,7 +57,7 @@ public static class Genome
 
     public static bool HasImm(int op) => op is Push or Label or Jmp or Jz or Jnz or Call;
 
-    public static byte[] Random(Random r)
+    public static byte[] Random(SimRng r)
     {
         var g = new byte[r.Next(12, 41)];
         r.NextBytes(g);
@@ -84,7 +84,7 @@ public static class Genome
     // Works in two per-thread scratch buffers (the same random draws, in the same order, as the list
     // edits it replaced): only the child's two arrays are allocated.
     [ThreadStatic] static byte[] scratchG, scratchP;
-    public static (byte[] g, byte[] p) Mutate(byte[] src, byte[] prot, Random r)
+    public static (byte[] g, byte[] p) Mutate(byte[] src, byte[] prot, SimRng r)
     {
         int n = src.Length;
         var g = scratchG ??= new byte[MaxLen + 32];
@@ -124,7 +124,7 @@ public static class Genome
     }
 
     // The list-based original, kept as the reference for the regression test.
-    public static (byte[] g, byte[] p) MutateReference(byte[] src, byte[] prot, Random r)
+    public static (byte[] g, byte[] p) MutateReference(byte[] src, byte[] prot, SimRng r)
     {
         int n = src.Length;
         var g = new List<byte>(src);
@@ -156,7 +156,7 @@ public static class Genome
 
     // Sexual recombination: the start of one parent's genome joined to the end of the other's,
     // cut at the same relative position.
-    public static (byte[] g, byte[] p) Cross(Agent a, Agent b, Random r)
+    public static (byte[] g, byte[] p) Cross(Agent a, Agent b, SimRng r)
     {
         float f = 0.2f + 0.6f * (float)r.NextDouble();
         int ca = (int)(a.G.Length * f), cb = (int)(b.G.Length * f);
@@ -340,9 +340,9 @@ public static class Looks
         a.Sz = 0.75f + 0.5f * Sig((p6 - p7) / 7f);
     }
 
-    static float Gauss(Random r) => MathF.Sqrt(-2f * MathF.Log(1f - (float)r.NextDouble())) * MathF.Cos(2f * MathF.PI * (float)r.NextDouble());
+    static float Gauss(SimRng r) => MathF.Sqrt(-2f * MathF.Log(1f - (float)r.NextDouble())) * MathF.Cos(2f * MathF.PI * (float)r.NextDouble());
 
-    public static void Inherit(Agent child, Agent parent, Random r)
+    public static void Inherit(Agent child, Agent parent, SimRng r)
     {
         child.Hue = ((parent.Hue + 0.012f * Gauss(r)) % 1f + 1f) % 1f;
         child.Sat = Math.Clamp(parent.Sat + 0.01f * Gauss(r), 0.45f, 1f);

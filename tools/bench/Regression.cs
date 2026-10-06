@@ -123,8 +123,8 @@ public sealed partial class World
             var p = new byte[g.Length];
             rng.NextBytes(g); rng.NextBytes(p);
             int seed = rng.Next();
-            var (g1, p1) = Genome.Mutate(g, p, new Random(seed));
-            var (g2, p2) = Genome.MutateReference(g, p, new Random(seed));
+            var (g1, p1) = Genome.Mutate(g, p, new SimRng(seed));
+            var (g2, p2) = Genome.MutateReference(g, p, new SimRng(seed));
             Require(g1.AsSpan().SequenceEqual(g2) && p1.AsSpan().SequenceEqual(p2), "mutation changed");
         }
         Console.WriteLine("PASS mutation: buffer version equals the list version on 20000 genomes");

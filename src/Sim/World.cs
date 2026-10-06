@@ -41,7 +41,7 @@ public sealed partial class World
     // discoveries, ids) — the result does not depend on thread timing.
     sealed class Ctx
     {
-        public Random Rng;
+        public SimRng Rng;
         public int Slot;
         public long IdCount;
         public readonly long[] Ev = new long[(int)EvKind.Count];
@@ -63,8 +63,8 @@ public sealed partial class World
     public double AgentBusy, AgentLongest;   // diagnostics: summed tile work, and the slowest tile per colour, ms
     [ThreadStatic] static Ctx cur;
     readonly Ctx[] ctxs;
-    readonly Random mainRng;
-    public Random Rng => cur?.Rng ?? mainRng;
+    readonly SimRng mainRng;
+    public SimRng Rng => cur?.Rng ?? mainRng;
 
     // Loose matter lying on each cell, per species: remains of the dead and whatever bodies threw
     // out. It stays where it fell (it rots, and compacts into aggregates); only the gas spreads, as air.
@@ -107,7 +107,7 @@ public sealed partial class World
         if (initialPop < 0) initialPop = P.InitialPop;
         Seed = seed;
         Abiogenesis = abiogenesis;
-        mainRng = new Random(seed);
+        mainRng = new SimRng(seed);
         // Same-colour tiles must be SafeGap cells apart: Period − 1 tiles of at least the nominal size
         // between them. x wraps, so the number of tile columns is a multiple of the period; the widths
         // are spread evenly (some a cell wider).
@@ -127,7 +127,7 @@ public sealed partial class World
             colour[q] = Enumerable.Range(0, Tiles).Where(t => (t % TilesX) % PeriodX == q % PeriodX && (t / TilesX) % PeriodY == q / PeriodX).ToArray();
         phaseOrder = new int[Tiles];
         ctxs = new Ctx[Tiles];
-        for (int k = 0; k < Tiles; k++) ctxs[k] = new Ctx { Rng = new Random(seed * 1009 + k), Slot = k };
+        for (int k = 0; k < Tiles; k++) ctxs[k] = new Ctx { Rng = new SimRng(seed, 1 + k), Slot = k };
         paramsSeen = ParamRegistry.Version;   // the tables built below use the laws as they are now
         Chem = new Chemistry(seed);
         tiles = new List<Agent>[Tiles];

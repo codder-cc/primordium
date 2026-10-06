@@ -479,6 +479,8 @@ public sealed partial class World
     readonly bool[] annealable = InitAnnealable();
     static bool[] InitAnnealable() { var a = new bool[N]; Array.Fill(a, true); return a; }
 
+    readonly List<int> burialOrder = new();
+
     void Metamorphose()
     {
         // Slow lattice annealing has a fixed cadence, independent of whether a body woke a column.
@@ -504,10 +506,14 @@ public sealed partial class World
         });
         Lap(DMetamorph);
         // Burial remains at depth. Pressure changes lattice order and promotes only legal reactions.
-        foreach (var entry in Buried)
+        // In voxel order: the concurrent dictionary's own order depends on the history of its table
+        // (and on which tile added first), and the heat released adds up per cell.
+        burialOrder.Clear();
+        foreach (var entry in Buried) burialOrder.Add(entry.Key);
+        burialOrder.Sort();
+        foreach (int v in burialOrder)
         {
-            int v = entry.Key;
-            var b = entry.Value;
+            var b = Buried[v];
             float load = Pressure[v];
             b.Pressure = load;
             float target = load / (load + P.CompactionPressure);

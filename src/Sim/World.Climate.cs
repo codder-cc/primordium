@@ -216,7 +216,7 @@ public sealed partial class World
         // SpillVoxel already invalidated each affected column.
     }
 
-    void Irradiate(Agent a, float k, Random rng)
+    void Irradiate(Agent a, float k, SimRng rng)
     {
         var g = new List<byte>(a.G);
         var p = new List<byte>(a.Prot);
