@@ -383,7 +383,7 @@ void fragment() {
                     for (int s = 0; s < Chemistry.S; s++)
                     {
                         if (s == ch.Gas) continue;
-                        float q = w.C[s][i];
+                        float q = w.C[s][i].F;
                         tot += q; r += q * ch.Col[s].R; g += q * ch.Col[s].G; bl += q * ch.Col[s].B;
                     }
                     if (tot > 0.01f) c = c.Lerp(new Rgb(r / tot, g / tot, bl / tot), 0.4f * tot / (tot + 12f));
@@ -406,7 +406,7 @@ void fragment() {
             case 3:
                 {
                     float tot = 0;
-                    for (int s = 0; s < Chemistry.S; s++) if (s != ch.Gas) tot += w.C[s][i];
+                    for (int s = 0; s < Chemistry.S; s++) if (s != ch.Gas) tot += w.C[s][i].F;
                     c = new Rgb(0.07f, 0.06f, 0.05f).Lerp(new Rgb(0.6f, 0.95f, 0.35f), tot / (tot + 15f));
                     break;
                 }
@@ -432,7 +432,7 @@ void fragment() {
             default:
                 {
                     int s = Overlay - FirstSpecies;
-                    c = new Rgb(0.06f, 0.06f, 0.07f).Lerp(ch.Col[s], MathF.Min(1, w.C[s][i] / 3f));
+                    c = new Rgb(0.06f, 0.06f, 0.07f).Lerp(ch.Col[s], MathF.Min(1, w.C[s][i].F / 3f));
                     break;
                 }
         }

@@ -11,7 +11,7 @@ public struct Enzyme
     public byte Kind, A, B;
     public float Topt, Eff, Amount;
     public byte Material;
-    public float Matter; // actual substrate, independent of catalytic activity
+    public Qty Matter; // actual substrate, independent of catalytic activity (fixed point: exact)
     public int Src;   // genome position of its gene (the bytes get protected while it is useful)
 }
 
@@ -39,7 +39,7 @@ public sealed class Agent
 
     // The body is the molecules it holds.
     public readonly int[] Inv = new int[Chemistry.S];
-    public readonly float[] Pend = new float[Chemistry.S];   // partly absorbed molecules
+    public readonly Qty[] Pend = new Qty[Chemistry.S];   // partly absorbed molecules (fixed point: exact)
     public int InvTotal, Unstable, Solids;
     public float Mass, Volume;   // Volume: room the body takes (its molecules' Chemistry.BodyVolume, its proteins' Volume)
     public float Density => Mass / Math.Max(1e-3f, Volume);   // against P.WaterDensity: floats or sinks

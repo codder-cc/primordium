@@ -109,7 +109,7 @@ public sealed partial class World
         {
             double sum = 0;
             var c = C[s];
-            for (int i = 0; i < N; i++) sum += c[i];
+            for (int i = 0; i < N; i++) sum += c[i].D;
             e.Loose += sum * E[s];
         }
         var rock = new long[Chemistry.S];
@@ -125,15 +125,15 @@ public sealed partial class World
         foreach (int v in Buried.Keys.OrderBy(k => k))
         {
             var m = Buried[v].Matter;
-            for (int s = 0; s < Chemistry.S; s++) e.Burial += (double)m[s] * E[s];
+            for (int s = 0; s < Chemistry.S; s++) e.Burial += m[s].D * E[s];
         }
         foreach (var a in Agents)
         {
             if (a.Dead) continue;
             e.Bodies += a.Energy;
             e.Held += a.HeatHeld;
-            for (int s = 0; s < Chemistry.S; s++) e.BodyMatter += ((double)a.Inv[s] + a.Pend[s]) * E[s];
-            for (int k = 0; k < a.EnzN; k++) e.Protein += (double)a.Enz[k].Matter * E[a.Enz[k].Material];
+            for (int s = 0; s < Chemistry.S; s++) e.BodyMatter += (a.Inv[s] + a.Pend[s].D) * E[s];
+            for (int k = 0; k < a.EnzN; k++) e.Protein += a.Enz[k].Matter.D * E[a.Enz[k].Material];
         }
         double pending = 0;
         for (int i = 0; i < N; i++) pending += heatIn[i];

@@ -309,10 +309,10 @@ public sealed partial class World
         if (a.Dead) return;
         cell = a.Y * W + a.X;   // where it actually is: its own deeds may have pushed it elsewhere this tick
         if (burialVoxel < 0 && InCave(a)) burialVoxel = cell * Z + Math.Max(1, a.Z - 1);
-        float[] buried = burialVoxel >= 0 ? BurialAt(burialVoxel).Matter : null;
+        Qty[] buried = burialVoxel >= 0 ? BurialAt(burialVoxel).Matter : null;
         for (int s = 0; s < Chemistry.S; s++)
         {
-            float amount = a.Inv[s] + a.Pend[s];
+            Qty amount = a.Inv[s] + a.Pend[s];
             if (buried == null) C[s][cell] += amount; else buried[s] += amount;
         }
         for (int k = 0; k < a.EnzN; k++)
@@ -489,7 +489,7 @@ public sealed partial class World
         int top = i * Z + Height[i] - 1;
         bool soft = top >= 0 && VoxelBarrier(top) < 2;
         int available = soft ? Units[top] : 0;
-        for (int s = 0; s < Chemistry.S; s++) if (s != Chem.Gas) available += (int)C[s][i];
+        for (int s = 0; s < Chemistry.S; s++) if (s != Chem.Gas) available += (int)C[s][i].F;
         if (available < P.SpawnBody) return false;
         long id = NewId();
         var a = new Agent(id, id, 0, Genome.Random(Rng)) { Tb = Temp[i], Z = Height[i] };
@@ -497,7 +497,7 @@ public sealed partial class World
         for (int k = 0; k < P.SpawnBody; k++)
         {
             int total = 0;
-            for (int s = 0; s < Chemistry.S; s++) if (s != Chem.Gas) total += (int)C[s][i];
+            for (int s = 0; s < Chemistry.S; s++) if (s != Chem.Gas) total += (int)C[s][i].F;
             int q = -1;
             if (total > 0)
             {
@@ -505,7 +505,7 @@ public sealed partial class World
                 for (int s = 0; s < Chemistry.S; s++)
                 {
                     if (s == Chem.Gas) continue;
-                    choice -= (int)C[s][i];
+                    choice -= (int)C[s][i].F;
                     if (choice < 0) { q = s; C[s][i] -= 1; break; }
                 }
             }
@@ -521,11 +521,11 @@ public sealed partial class World
             for (int s = 0; s < Chemistry.S; s++)
                 if (Chem.SplitExo[s] && C[s][i] >= 0.1f && (best < 0 || Chem.SplitEnergy(s) > Chem.SplitEnergy(best))) best = s;
             if (best < 0) break;
-            float take = Math.Min(C[best][i], (P.SpawnEnergy - energy) / Chem.SplitEnergy(best));
+            Qty take = Qty.Min(C[best][i], (P.SpawnEnergy - energy) / Chem.SplitEnergy(best));
             C[best][i] -= take;
             C[Chem.SplitA[best]][i] += take;
             if (Chem.SplitB[best] >= 0) C[Chem.SplitB[best]][i] += take;
-            energy += take * Chem.SplitEnergy(best);
+            energy += (float)(take * Chem.SplitEnergy(best));
             Flows[FAbio] += take * Chem.SplitEnergy(best);
         }
         if (a.InvTotal < P.MinBody || energy <= 0)

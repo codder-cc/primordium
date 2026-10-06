@@ -532,7 +532,7 @@ public partial class CreatorWindow : UiWindow
         if (cell < 0) { availability.Text = "Наведите курсор на карту — здесь появится, сколько нужного вещества рядом."; return; }
         lastCell = cell;
         var cells = new[] { cell, w.Nb(cell, 0), w.Nb(cell, 1), w.Nb(cell, 2), w.Nb(cell, 3) }.Distinct().ToArray();
-        float Loose(int s) => cells.Sum(c => w.C[s][c]);
+        float Loose(int s) => cells.Sum(c => w.C[s][c].F);
         var ch = w.Chem;
         var parts = new List<string>();
         var errs = new List<string>();

@@ -92,7 +92,7 @@ if (Array.IndexOf(args, "--probe") >= 0)
     Console.WriteLine($"probe planted: {w.Probe(probe, 300)}");
     var ch = w.Chem;
     for (int s = 0; s < 8; s++)
-        Console.WriteLine($"  species {s}: E{ch.E[s]} split→{ch.SplitA[s]}+{ch.SplitB[s]} dE={ch.E[s] - ch.E[ch.SplitA[s]] - ch.E[ch.SplitB[s]]} litter {w.C[s].Average():F2}");
+        Console.WriteLine($"  species {s}: E{ch.E[s]} split→{ch.SplitA[s]}+{ch.SplitB[s]} dE={ch.E[s] - ch.E[ch.SplitA[s]] - ch.E[ch.SplitB[s]]} litter {w.C[s].Average(q => q.D):F2}");
 }
 Console.WriteLine($"start: {w.Agents.Count} agents, spawns {w.Spawns}");
 var sw = Stopwatch.StartNew();
@@ -203,7 +203,7 @@ for (int t = 1; t <= ticks; t++)
     Console.WriteLine($"t={t} day={w.Day} pop={c.Pop} born={w.Births} died={w.DeathsStarve}/{w.DeathsKilled}/{w.DeathsBroken}/{w.DeathsClimate}/{w.DeathsBuried} spawn={w.Spawns} " +
                       $"gen={w.MaxGen} len={c.AvgLen:F0} E={c.AvgEnergy:F0} age={c.AvgAge:F0} old={c.OldestAge} " +
                       $"| plant={c.Plants} eat={c.Eaters} mine={c.Miners} hunt={c.Hunters} idle={c.Idle} " +
-                      $"| litter={w.MeanLitter():F1} gas={w.C[w.Chem.Gas].Average():F2} h={w.MeanHeight():F2} | {ev} | {t / sw.Elapsed.TotalSeconds:F0} t/s | hash {w.StateHash():x16}");
+                      $"| litter={w.MeanLitter():F1} gas={w.C[w.Chem.Gas].Average(q => q.D):F2} h={w.MeanHeight():F2} | {ev} | {t / sw.Elapsed.TotalSeconds:F0} t/s | hash {w.StateHash():x16}");
     Console.WriteLine("   mined by grade (with protein): " + string.Join(" ", Enumerable.Range(0, 5).Select(k => $"{k}:{w.Mined[k] - prevMined[k]}({w.MinedCat[k] - prevCat[k]})")) +
                       " | firsts: " + string.Join(", ", w.Firsts.Where(f => f != null).Select(f => $"{w.Chem.MatName[f.Mat]} day {f.Tick / P.DayLen} #{f.Lineage}")));
     Console.WriteLine($"   divide tries {w.DivFail[0]}: no energy {w.DivFail[1]}, small body {w.DivFail[2]}, no room {w.DivFail[3]}, uneven {w.DivFail[4]}");

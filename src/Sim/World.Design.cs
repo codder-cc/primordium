@@ -126,7 +126,7 @@ public sealed partial class World
         {
             var left = new float[sources.Count, Chemistry.S];
             for (int k = 0; k < sources.Count; k++)
-                for (int s = 0; s < Chemistry.S; s++) left[k, s] = C[s][sources[k]] - looseTake[k, s];
+                for (int s = 0; s < Chemistry.S; s++) left[k, s] = (float)(C[s][sources[k]] - looseTake[k, s]);
             for (int step = 0; step < 4 * Chemistry.S * sources.Count && energy < d.Energy; step++)
             {
                 int bk = -1, bs = -1;

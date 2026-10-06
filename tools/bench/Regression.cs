@@ -34,7 +34,7 @@ public sealed partial class World
         for (int i = 0; i < N; i++) Mix((ulong)Height[i]);
         for (int v = 0; v < N * Z; v++)
             if (Mat[v] != 0) Mix((ulong)v << 32 ^ (ulong)Mat[v] << 24 ^ (ulong)Units[v] << 8 ^ Order[v]);
-        foreach (var c in C) for (int i = 0; i < N; i++) Mix((uint)BitConverter.SingleToInt32Bits(c[i]));
+        foreach (var c in C) for (int i = 0; i < N; i++) Mix((ulong)c[i].Raw);
         foreach (var a in Agents)
             Mix((ulong)a.Id ^ (ulong)a.X << 40 ^ (ulong)a.Y << 50 ^ (ulong)a.Z << 20 ^ (uint)BitConverter.SingleToInt32Bits(a.Energy) ^ a.Hash);
         return h;
@@ -169,7 +169,7 @@ public sealed partial class World
                 Require(Math.Abs(a.Volume - volume) < 0.005, $"body volume drift #{a.Id}: {a.Volume} vs {volume}");
                 Require(a.Inv.All(n => n >= 0), "negative body inventory");
             }
-            Require(w.C.All(c => c.All(x => x >= 0 && float.IsFinite(x))), "invalid environmental amount");
+            Require(w.C.All(c => c.All(x => x >= 0)), "invalid environmental amount");
             w.CheckCellLists();
             string energyNote = EnergyWorldCheck(w, energy, $"world seed {seed}");
             Console.WriteLine($"PASS 1200 ticks seed {seed}: population {w.Agents.Count}, max atom drift {before.Zip(after, (a, b) => Math.Abs(a - b)).Max():F6}, {energyNote}, falls {w.CollapsedBlocks}, buried {w.DeathsBuried}");
@@ -297,6 +297,48 @@ public sealed partial class World
         Require(b.Order > 0 && b.Pressure > 0, "burial did not respond to pressure");
         BudgetEqual(before, w.ElementBudget(), "pressure chemistry");
         Console.WriteLine("PASS matter: proteins, death, sediment, radiation, building, uptake, pressure");
+        ExactPoolsRegression();
+    }
+
+    // Fractional pools are fixed point (Qty): small amounts moved into, out of and between big pools
+    // must not round atoms into or out of existence. In float each of these lost or made ~10⁻³ of a
+    // molecule per step next to a pile of 10⁴–10⁵ (the long test's atom drift in boomed worlds).
+    static void ExactPoolsRegression()
+    {
+        var w = Fixture(); var ch = w.Chem;
+        int c = 60 * W + 40;
+        int s = Enumerable.Range(0, Chemistry.S).First(k => ch.SplitExo[k] && ch.SplitB[k] >= 0);
+        int pa = ch.SplitA[s], pb = ch.SplitB[s];
+        // Loose decay of a small pile into two big ones of its products.
+        w.C[s][c] = 50.37f; w.C[pa][c] += 60000.3f; w.C[pb][c] += 30000.7f;
+        var before = w.ElementBudget();
+        for (int t = 0; t < 3000; t++) { w.Temp[c] = -20 + t % 60; w.CellChem(c, t); }
+        Require(w.C[s][c] < 20, "the loose pile did not decay");
+        BudgetEqual(before, w.ElementBudget(), "loose decay beside big piles", 0);
+        // Uptake of fractions from a big pile (and back out through worn proteins).
+        int food = Enumerable.Range(0, Chemistry.S).First(k => k != ch.Gas && k != s && k != pa && k != pb);
+        w.C[food][c] = 41234.567f;
+        var a = w.TestAgent(c, w.Height[c], food, 30);
+        w.Express(a, 0, new byte[] { 0, 1, 2, 3 }, 4);
+        before = w.ElementBudget();
+        for (int k = 0; k < 2000; k++)
+        {
+            w.C[food][c] += 0.0123f;   // a little more to take each time: the intake is fractional
+            w.Intake(a, c, food);
+            if (k % 7 == 0) w.WearProtein(a, 0, 0.93f);
+        }
+        var after = w.ElementBudget();
+        for (int e = 0; e < Chemistry.ElementCount; e++) after[e] -= 2000 * Qty.Of(0.0123f).D * ch.Atoms[food, e];
+        BudgetEqual(before, after, "fractional uptake from a big pile", 1e-9);
+        // Gas spreading over uneven ground: what one cell gives, the other receives.
+        w = Fixture();
+        var rng = new SimRng(5);
+        for (int i = 0; i < N; i++) { w.Height[i] = 2 + rng.Next(3); w.C[ch.Gas][i] = (float)(rng.NextDouble() * 2000); }
+        w.RecomputeFlow();
+        before = w.ElementBudget();
+        for (int t = 0; t < 200; t++) w.Diffuse();
+        BudgetEqual(before, w.ElementBudget(), "gas diffusion", 0);
+        Console.WriteLine("PASS exact pools: loose decay beside big piles, fractional uptake, gas diffusion: atoms exact");
     }
 
     static void StructureRegression()

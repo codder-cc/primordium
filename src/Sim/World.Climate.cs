@@ -198,7 +198,7 @@ public sealed partial class World
                 float k = 1 - d / r;
                 for (int s = 0; s < Chemistry.S; s++)
                 {
-                    float m = C[s][i] * 0.2f * k;
+                    Qty m = C[s][i] * (0.2f * k);
                     if (m <= 0) continue;
                     C[s][i] -= m;
                     // Irradiation excites the same formula; it cannot transmute elements.

@@ -62,8 +62,8 @@ public sealed partial class World
             {
                 if (a.Dead) continue;
                 float volume = 0;
-                for (int s = 0; s < Chemistry.S; s++) volume += (a.Inv[s] + a.Pend[s]) * Chem.BodyVolume[s];
-                for (int k = 0; k < a.EnzN; k++) volume += a.Enz[k].Matter * Chem.Volume[a.Enz[k].Material];
+                for (int s = 0; s < Chemistry.S; s++) volume += (a.Inv[s] + a.Pend[s].F) * Chem.BodyVolume[s];
+                for (int k = 0; k < a.EnzN; k++) volume += a.Enz[k].Matter.F * Chem.Volume[a.Enz[k].Material];
                 a.Volume = volume;
             }
         if ((effect & ParamEffect.Strength) != 0)
