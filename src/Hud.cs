@@ -169,7 +169,7 @@ public partial class Hud : Control
     void DrawRecords(Vector2 vs)
     {
         var rec = Main.Records;
-        float w = 440, h = 34 + rec.Count * 20, x = 16, y = vs.Y - 66 - h;
+        float w = 440, h = 34 + rec.Count * 20, x = 16, y = vs.Y - 82 - h;
         DrawRect(new Rect2(x, y, w, h), new Color(0.04f, 0.045f, 0.06f, 0.94f));
         T(x + 12, y + 20, "Рекорды · клик — показать (B — скрыть, O — старейший)", Fg, 13, bold);
         var m = GetViewport().GetMousePosition();
@@ -211,7 +211,7 @@ public partial class Hud : Control
             (new(0.58f, 0.45f, 0.3f), "тонкий верхний блок — его уже объели; съеденный до конца блок исчезает"),
             (new(0.45f, 0.4f, 0.6f), "большое тело и тонированный пол под ним — существо, занявшее несколько клеток"),
         };
-        float w = 520, h = 34 + rows.Length * 18, x = 16, y = vs.Y - 66 - h;
+        float w = 520, h = 34 + rows.Length * 18, x = 16, y = vs.Y - 82 - h;
         DrawRect(new Rect2(x, y, w, h), new Color(0.04f, 0.045f, 0.06f, 0.94f));
         T(x + 12, y + 20, "Легенда (H — скрыть)", Fg, 13, bold);
         for (int k = 0; k < rows.Length; k++)
@@ -341,7 +341,7 @@ public partial class Hud : Control
 
     void Hints(Vector2 vs, float px)
     {
-        DrawRect(new Rect2(0, vs.Y - 58, px, 58), BarBg);
+        DrawRect(new Rect2(0, vs.Y - 74, px, 74), BarBg);
         var m = Main;
         if (m.Tool > 0)
         {
@@ -351,23 +351,27 @@ public partial class Hud : Control
                 1 => $"насыпать: {m.World.Chem.MatName[m.PourSpecies + 2]} (каждый мазок — новый случайный материал, свежая рыхлая насыпь)",
                 2 => "залить водой (дальше она течёт, испаряется и выпадает дождём как обычная)",
                 3 => "убить всех в круге (останки остаются на месте)",
+                5 => m.Ui.Creator.BrushText,
                 _ => "копнуть: снять верхние блоки (вещество уходит из мира с рукой)",
             };
             string l1 = $"кисть — {what}";
-            string l2 = $"радиус {m.BrushR:0} · ЛКМ — рисовать · [ ] — размер · 1–4 — другой инструмент · та же цифра, 0 или Esc — убрать";
+            string l2 = m.Tool == 5
+                ? $"клик — посадить в эту клетку · разброс {m.BrushR:0} ([ ]) · F7 — конструктор · 5, 0 или Esc — убрать"
+                : $"радиус {m.BrushR:0} · ЛКМ — рисовать · [ ] — размер · 1–5 — другой инструмент · та же цифра, 0 или Esc — убрать";
             float tw = Math.Min(px - 20, Math.Max(TW(l1, 13), TW(l2, 12)) + 40);
-            DrawRect(new Rect2(10, vs.Y - 104, tw, 42), new Color(0.08f, 0.09f, 0.12f, 0.92f));
+            DrawRect(new Rect2(10, vs.Y - 120, tw, 42), new Color(0.08f, 0.09f, 0.12f, 0.92f));
             float tx = 22;
             if (m.Tool == 1)
             {
                 var col = m.World.Chem.MatCol[m.PourSpecies + 2];
-                DrawRect(new Rect2(18, vs.Y - 96, 12, 12), new Color(col.R, col.G, col.B));
+                DrawRect(new Rect2(18, vs.Y - 112, 12, 12), new Color(col.R, col.G, col.B));
                 tx = 36;
             }
-            T(tx, vs.Y - 85, l1, Fg, 13);
-            T(22, vs.Y - 69, l2, Dim, 12);
+            T(tx, vs.Y - 101, l1, Fg, 13);
+            T(22, vs.Y - 85, l2, Dim, 12);
         }
-        T(16, vs.Y - 40, "Space пауза · . шаг · +/− скорость · T промотка на N суток, ⇧T на 10 · R новый мир, ⇧R тот же · P снимок · 1–4 кисть · F3 замер", Dim, 12);
+        T(16, vs.Y - 56, "Space пауза · . шаг · +/− скорость · T промотка на N суток, ⇧T на 10 · R новый мир, ⇧R тот же · P снимок · 1–4 кисть · F3 замер", Dim, 12);
+        T(16, vs.Y - 40, "F2 законы мира · F4 новый мир · F5 быстро сохранить, F9 загрузить · F6 сохранения · F7 конструктор существ · 5 посадить дизайн", Dim, 12);
         T(16, vs.Y - 24, "ЛКМ / WASD / два пальца — сдвиг · ПКМ / Q E — поворот · колесо / щипок — зум · G вся карта · C разрез, [ ] сдвиг", Dim, 12);
         T(16, vs.Y - 8, "клик — агент · H легенда · B рекорды · O старейший · K родня · F следить · V окраска · M поверхность · L свет · N жизнь · A абиогенез · X удар", Dim, 12);
     }
@@ -570,6 +574,15 @@ public partial class Hud : Control
         R(new Rect2(tx, y + 38, (cw - 76) * Math.Clamp(e / cap, 0, 1), 7), new Color(0.4f, 0.9f, 0.5f));
         T(tx, y + 59, $"энергия {e:F1} (удобный запас {cap:F0}, сверх — утекает быстрее) · {a.LastCycles} тактов/тик", Dim, 12);
         y += 74;
+        // The player's creatures: planted from a design, or descended from one.
+        string design = Main.Sim.DesignedLineages.TryGetValue(a.Lineage, out var dn) ? dn : null;
+        if (a.Designed || design != null)
+        {
+            string mark = a.Designed ? $"от игрока: посажен из дизайна «{design ?? "?"}»" : $"от игрока: потомок дизайна «{design}» в {a.Gen}-м поколении";
+            R(new Rect2(x, y + 1, cw, 18), new Color(1f, 0.82f, 0.4f, 0.1f));
+            T(x + 6, y + 14, mark, Acc, 12, bold);
+            y += 24;
+        }
 
         // How it lives, in words.
         y = Section(x, y, "Как живёт");

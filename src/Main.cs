@@ -35,6 +35,10 @@ public partial class Main : Node
     int worldGeneration;
 
     Hud hud;
+    public UiManager Ui { get; private set; }
+    public int InitialPop => initialPop;
+    string[] openAtStart;
+    int uiTest = -1;
     PerfOverlay perf;
     int perfEvery, perfQuit = -1, perfDone, pauseAfter = -1, startTpf = 8;
     double hudWait;
@@ -49,7 +53,7 @@ public partial class Main : Node
     Vector2 pressPos;
 
     // The hand: a brush that pours matter (a new random kind every stroke) or water, kills or digs.
-    public static readonly string[] ToolNames = { "", "насыпать", "вода", "убить", "копнуть" };
+    public static readonly string[] ToolNames = { "", "насыпать", "вода", "убить", "копнуть", "посадить" };
     public int Tool;
     public volatile int PourSpecies = -1;   // chosen on the simulation thread (it draws from the world's random numbers)
     public float BrushR = 3;
@@ -84,6 +88,7 @@ public partial class Main : Node
             if (args[i] == "--pauseafter") pauseAfter = int.Parse(args[i + 1]);
             if (args[i] == "--tpf") startTpf = int.Parse(args[i + 1]);
             if (args[i] == "--viewthreads") View3D.ViewWorkers = int.Parse(args[i + 1]);
+            if (args[i] == "--open") openAtStart = args[i + 1].Split(',');
         }
 
         View = new View3D();
@@ -98,6 +103,20 @@ public partial class Main : Node
         if (Array.IndexOf(args, "--perfshow") >= 0) perf.Visible = true;
 
         NewWorld(seed, warm);
+        // The windows (laws, new world, saves, creature editor) and toasts, above the panel.
+        Ui = new UiManager { Main = this, RestoreWindows = openAtStart == null };
+        layer.AddChild(Ui);
+        Ui.ConfigureRunner(Sim);
+        if (openAtStart != null)
+            foreach (var item in openAtStart)
+            {
+                // "window" or "window:view" (newworld:more, creator:looks, creator:help) — for screenshots.
+                var part = item.Split(':');
+                var win = Ui.ById(part[0] == "params" ? "laws" : part[0]) ?? throw new ArgumentException("--open: laws|params, newworld[:more], saves, creator[:looks|:help]");
+                win.Open();
+                if (part.Length > 1) win.ShowView(part[1]);
+            }
+        if (Array.IndexOf(args, "--uitest") >= 0) uiTest = 0;
         View.Slice = slice;
         View.Overlay = startOverlay;
         if (zoom > 0) View.ZoomAt(zoom);
@@ -120,7 +139,7 @@ public partial class Main : Node
         }
         if (Array.IndexOf(args, "--fastform") >= 0) OpenFastForm();   // for screenshots of the form
         if (startTool > 0) SetTool(startTool);
-        if (shotPath != null) shotFrames = 60;
+        if (shotPath != null) shotFrames = uiTest >= 0 ? 128 : 60;   // with --uitest: after the planting, with its toasts and a planted body selected
     }
 
     int startOverlay;
@@ -145,9 +164,20 @@ public partial class Main : Node
         View.SetWorld(sim.World);
         worldGeneration = sim.WorldGeneration;
         Sim = sim;
+        Ui?.ConfigureRunner(sim);
         sim.Start();
         Frame = sim.Acquire();
         perf?.Reset(sim);
+    }
+
+    // A new world from the "Новый мир" window: made on the simulation thread and swapped in between ticks.
+    public void CreateWorld(WorldSettings settings)
+    {
+        initialPop = settings.InitialPop;
+        abiogenesis = settings.Abiogenesis;
+        strikes = settings.Strikes;
+        Ui.Toast($"создаю мир: seed {settings.Seed}, население {settings.InitialPop}…");
+        Sim.NewWorld(settings);
     }
 
     public override void _Notification(int what)
@@ -184,6 +214,11 @@ public partial class Main : Node
             return;
         }
         var mouse = GetViewport().GetMousePosition();
+        // A press that started on the map but was let go over a window never reaches _UnhandledInput.
+        if (!Input.IsMouseButtonPressed(MouseButton.Left)) { lDown = false; painting = false; }
+        if (!Input.IsMouseButtonPressed(MouseButton.Right)) rDown = false;
+        if (!Input.IsMouseButtonPressed(MouseButton.Middle)) mDown = false;
+        if (uiTest >= 0) UiTest();
         View.BrushCell = Tool > 0 && !OverPanel(mouse) ? View.PickCell(mouse) : -1;
         View.BrushR = BrushR;
         View.BrushTool = Tool;
@@ -205,7 +240,7 @@ public partial class Main : Node
         if (Input.IsPhysicalKeyPressed(Key.S)) pan.Y -= sp;
         if (Input.IsPhysicalKeyPressed(Key.A)) pan.X += sp;
         if (Input.IsPhysicalKeyPressed(Key.D)) pan.X -= sp;
-        if (pan != Vector2.Zero && !fastPanel.Visible) View.Pan(pan);
+        if (pan != Vector2.Zero && !fastPanel.Visible && !Ui.Typing) View.Pan(pan);
         if (fastPanel.Visible)
         {
             var vs = GetViewport().GetVisibleRect().Size;
@@ -358,7 +393,7 @@ public partial class Main : Node
         View.LookAt(a);
     }
 
-    bool OverPanel(Vector2 p) => p.X > GetViewport().GetVisibleRect().Size.X - Hud.PanelW;
+    bool OverPanel(Vector2 p) => p.X > GetViewport().GetVisibleRect().Size.X - Hud.PanelW || (Ui?.IsOver(p) ?? false);
 
     // One dab of the brush at a column (15 a second while the button is held). Applied by the
     // simulation thread between ticks.
@@ -378,7 +413,7 @@ public partial class Main : Node
     // A new random kind of matter for pouring (drawn from the world's random numbers, so on its thread).
     void NewPourSpecies() => Sim.Do(w => PourSpecies = w.RandomPourable());
 
-    void SetTool(int t)
+    public void SetTool(int t)
     {
         Tool = Tool == t ? 0 : t;   // the same key again puts the brush away
         painting = false;
@@ -414,6 +449,7 @@ public partial class Main : Node
     void OnKey(InputEventKey k)
     {
         var v = View;
+        if (Ui.Typing && k.PhysicalKeycode is < Key.F1 or > Key.F12) return;   // keys go to the text field
         hudWait = 0;   // show the change right away
         switch (k.PhysicalKeycode)
         {
@@ -434,6 +470,12 @@ public partial class Main : Node
                 if (v.Follow) v.LookAt(v.Selected);
                 break;
             case Key.F3: perf.Visible = !perf.Visible; perf.Reset(Sim); break;
+            case Key.F2: Ui.Laws.Toggle(); break;
+            case Key.F4: Ui.NewWorld.Toggle(); break;
+            case Key.F5: Ui.Saves.QuickSave(); break;
+            case Key.F6: Ui.Saves.Toggle(); break;
+            case Key.F7: Ui.Creator.Toggle(); break;
+            case Key.F9: Ui.Saves.QuickLoad(); break;
             case Key.K: v.KinFocus = !v.KinFocus; break;
             case Key.B: ShowRecords = !ShowRecords; break;
             case Key.O:
@@ -456,6 +498,7 @@ public partial class Main : Node
             case Key.Key2: case Key.Kp2: SetTool(2); break;
             case Key.Key3: case Key.Kp3: SetTool(3); break;
             case Key.Key4: case Key.Kp4: SetTool(4); break;
+            case Key.Key5: case Key.Kp5: SetTool(5); break;
             case Key.Key0: case Key.Kp0: Tool = 0; painting = false; break;
             case Key.N:
                 {
@@ -508,6 +551,13 @@ public partial class Main : Node
                     var hit = hud.HitTest(mb.Position);
                     if (hit != null) { Focus(hit); return; }
                     if (OverPanel(mb.Position)) return;
+                    if (Tool == 5)
+                    {
+                        // Plant the creature editor's design in the column under the cursor.
+                        int c = View.PickCell(mb.Position);
+                        if (c >= 0) Ui.Creator.Spawn(c);
+                        return;
+                    }
                     if (Tool > 0)
                     {
                         // A stroke: pouring takes a new random kind of matter each time.
@@ -531,5 +581,35 @@ public partial class Main : Node
             case MouseButton.Right: rDown = mb.Pressed; break;
             case MouseButton.Middle: mDown = mb.Pressed; break;
         }
+    }
+
+    // --uitest: change a law, quick-save, plant every example design (brought in and from local
+    // matter), quick-load, and report — the toasts are printed as "notice:" lines.
+    void UiTest()
+    {
+        int f = uiTest++;
+        int centre = View.PickCell(GetViewport().GetVisibleRect().Size / 2 - new Vector2(Hud.PanelW / 2, 0));
+        if (centre < 0) centre = World.H / 2 * World.W + World.W / 2;
+        if (f == 20) { GD.Print($"uitest: FaceWork was {SimRunner.ParamValues[ParamRegistry.Find("FaceWork").Index]}"); Sim.SetParam("FaceWork", 6); }
+        if (f == 30) Ui.Saves.QuickSave();
+        if (f == 90)
+        {
+            int k = 0;
+            foreach (var d in CreatureExamples.All)
+            {
+                int cx = (centre % World.W + 12 * k++) % World.W, cy = centre / World.W;
+                Sim.SpawnDesign(d, cx, cy, new SpawnOptions { Matter = MatterSource.Import, Energy = EnergySource.Import, Count = 3, Radius = 3 });
+                Sim.SpawnDesign(d, cx, cy, new SpawnOptions { Matter = MatterSource.Local, Energy = EnergySource.Local, Count = 2, Radius = 3 });
+            }
+        }
+        if (f == 110) Sim.Do(w => GD.Print($"uitest: tick {w.Tick}, designed bodies {w.Agents.Count(a => a.Designed && !a.Dead)}, lineages {w.DesignedLineages.Count}, FaceWork {P.FaceWork}"));
+        if (f == 112) Sim.Do(w =>
+        {
+            var a = w.Agents.FirstOrDefault(a => a.Designed && !a.Dead);
+            if (a != null) Ui.Post(() => { View.Selected = a; View.LookAt(a); View.ZoomAt(30); });
+        });
+        if (f == 130) Ui.Saves.QuickLoad();
+        if (f == 200) Sim.Do(w => GD.Print($"uitest: after load tick {w.Tick}, designed bodies {w.Agents.Count(a => a.Designed && !a.Dead)}, FaceWork {P.FaceWork}"));
+        if (f == 230 && shotPath == null) { Sim.Stop(); GetTree().Quit(); }
     }
 }
