@@ -309,7 +309,7 @@ public partial class Hud : Control
         DrawCircle(new Vector2(cx + tod * 100, cy), 5, new Color(1f, 0.85f, 0.35f));
 
         var c = Main.Census;
-        string tail = $" · самозарождений {w.Spawns:N0} · поколений {w.MaxGen} · старейший {c.OldestAge:N0} т.";
+        string tail = $" · без родителей {w.Spawns:N0} (первые и самозарождённые) · поколений {w.MaxGen} · старейший {c.OldestAge:N0} т.";
         string line = $"особей {c.Pop:N0} · рождено {w.Births:N0} · умерло {w.Deaths:N0} (голод {w.DeathsStarve:N0}, убиты {w.DeathsKilled:N0}, распад {w.DeathsBroken:N0}, климат {w.DeathsClimate:N0}{(w.DeathsHand > 0 ? $", рукой {w.DeathsHand:N0}" : "")})" + tail;
         if (TW(line) > px - 32) line = $"особей {c.Pop:N0} · рождено {w.Births:N0} · умерло {w.Deaths:N0} (убиты {w.DeathsKilled:N0})" + tail;
         if (TW(line) > px - 32) line = $"особей {c.Pop:N0} · рождено {w.Births:N0} · умерло {w.Deaths:N0}" + tail;
