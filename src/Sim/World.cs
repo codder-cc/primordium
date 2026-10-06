@@ -407,14 +407,18 @@ public sealed partial class World
     void Diffuse()
     {
         var c = C[Chem.Gas];
+        var next = back;
         float d = Chem.Diff[Chem.Gas];
-        for (int i = 0; i < N; i++)
+        Parallel.For(0, H / 8, chunk =>   // each cell reads the old buffer only: rows are independent
         {
-            int b = i * 4;
-            float ci = c[i];
-            back[i] = ci + d * (diffW[b] * (c[nb[b]] - ci) + diffW[b + 1] * (c[nb[b + 1]] - ci)
-                              + diffW[b + 2] * (c[nb[b + 2]] - ci) + diffW[b + 3] * (c[nb[b + 3]] - ci));
-        }
+            for (int i = chunk * 8 * W, end = i + 8 * W; i < end; i++)
+            {
+                int b = i * 4;
+                float ci = c[i];
+                next[i] = ci + d * (diffW[b] * (c[nb[b]] - ci) + diffW[b + 1] * (c[nb[b + 1]] - ci)
+                                  + diffW[b + 2] * (c[nb[b + 2]] - ci) + diffW[b + 3] * (c[nb[b + 3]] - ci));
+            }
+        });
         C[Chem.Gas] = back; back = c; // swap buffers instead of copying a planet every tick
     }
 
