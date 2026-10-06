@@ -19,6 +19,8 @@ dotnet run -c Release --project tools/bench -- --self-test
 dotnet run -c Release --project tools/bench -- --seed 1 --ticks 10000 --every 1000 --audit
 ```
 
+Одиночный долгий прогон быстрее с серверным сборщиком мусора: `DOTNET_gcServer=1 dotnet run -c Release --project tools/bench -- ...` (траектория та же, памяти больше). В батчах и в игре его не включать: много процессов × крупная куча, в игре — паузы до 100+ мс. Динамическая PGO включена в обоих проектах (`TieredPGO`).
+
 Законы мира, сохранения и свои существа в bench:
 
 ```sh

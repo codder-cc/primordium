@@ -7,6 +7,8 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <RootNamespace>Primordium</RootNamespace>
     <Optimize>true</Optimize>
+    <!-- dynamic profile-guided optimisation (default in .NET 8); same trajectory, checked by state hash -->
+    <TieredPGO>true</TieredPGO>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../src/Sim/**/*.cs" />

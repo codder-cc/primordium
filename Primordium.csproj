@@ -6,6 +6,8 @@
     <RootNamespace>Primordium</RootNamespace>
     <!-- the simulation is heavy; optimise even when run from the editor -->
     <Optimize>true</Optimize>
+    <!-- dynamic profile-guided optimisation (default in .NET 8); same trajectory, checked by state hash -->
+    <TieredPGO>true</TieredPGO>
   </PropertyGroup>
   <ItemGroup>
     <!-- tools/bench is a separate headless runner that compiles src/Sim on its own -->
