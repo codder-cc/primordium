@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 
 namespace Primordium;
@@ -103,6 +104,7 @@ public sealed class SimRunner
     {
         this.world = world;
         Array.Copy(world.Ev, evPrev, evPrev.Length);
+        PublishDesigned(world);
     }
 
     public long Tick => Interlocked.Read(ref World.Tick);
@@ -406,8 +408,15 @@ public sealed class SimRunner
     // Results come back through the optional callback (called on the simulation thread: marshal to the
     // main thread before touching Godot) and as a line in Notices.
 
-    public readonly ConcurrentQueue<string> Notices = new();   // human-readable outcomes, for a status line
+    // Human-readable outcomes, for toasts. A failure starts with BadNotice (the UI strips it and shows it in red).
+    public readonly ConcurrentQueue<string> Notices = new();
+    public const string BadNotice = "!";
     void Notice(string text) { Notices.Enqueue(text); while (Notices.Count > 50) Notices.TryDequeue(out _); }
+    void Fail(string text) => Notice(BadNotice + text);
+
+    // Lineages of player designs (World.DesignedLineages) as an immutable copy the panel may read on any thread.
+    public volatile IReadOnlyDictionary<long, string> DesignedLineages = new Dictionary<long, string>();
+    void PublishDesigned(World w) => DesignedLineages = new Dictionary<long, string>(w.DesignedLineages);
 
     // Laws (P). Read access from any thread: ParamRegistry.All (fixed metadata) and ParamValues (a fresh
     // array after every change, never mutated); ParamVersion changes with every change.
@@ -419,7 +428,7 @@ public sealed class SimRunner
     public void SetParam(string name, double value, Action<bool> done = null) => Do(w =>
     {
         bool ok = w.SetParam(name, value);
-        Notice(ok ? $"закон {name} = {ParamRegistry.Get(name).ToString(System.Globalization.CultureInfo.InvariantCulture)}" : $"нет закона {name}");
+        if (ok) Notice($"закон {name} = {ParamRegistry.Get(name).ToString(System.Globalization.CultureInfo.InvariantCulture)}"); else Fail($"нет закона {name}");
         done?.Invoke(ok);
     });
 
@@ -434,14 +443,14 @@ public sealed class SimRunner
     public void LoadPreset(string path, Action<ParamPreset, string> done = null) => Do(w =>
     {
         try { var p = ParamRegistry.LoadPreset(path); w.ApplyParams(p.Values); Notice($"законы из {path}"); done?.Invoke(p, null); }
-        catch (Exception e) { Notice($"не прочитать {path}: {e.Message}"); done?.Invoke(null, e.Message); }
+        catch (Exception e) { Fail($"не прочитать {path}: {e.Message}"); done?.Invoke(null, e.Message); }
     });
 
     // Saves the current laws as a preset (only those that differ from the defaults unless full).
     public void SavePreset(string path, string name, string description = "", bool full = false) => Do(_ =>
     {
         try { ParamRegistry.SavePreset(path, ParamRegistry.Capture(name, description, full)); Notice($"законы сохранены: {path}"); }
-        catch (Exception e) { Notice($"не сохранить {path}: {e.Message}"); }
+        catch (Exception e) { Fail($"не сохранить {path}: {e.Message}"); }
     });
 
     public void SetAbiogenesis(bool on) => Do(w => w.Abiogenesis = on);
@@ -475,7 +484,8 @@ public sealed class SimRunner
         try { w.Save(path, note); o.Bytes = new System.IO.FileInfo(path).Length; }
         catch (Exception e) { o.Error = e.Message; }
         o.Ms = (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency;
-        Notice(o.Ok ? $"сохранено: {path} (тик {o.Tick}, {o.Bytes / 1048576.0:F1} МБ, {o.Ms:F0} мс)" : $"не сохранить {path}: {o.Error}");
+        string file = System.IO.Path.GetFileName(path);
+        if (o.Ok) Notice($"сохранено: {file} (тик {o.Tick:N0}, {o.Bytes / 1048576.0:F1} МБ, {o.Ms:F0} мс)"); else Fail($"не сохранить {file}: {o.Error}");
         return o;
     }
 
@@ -486,10 +496,10 @@ public sealed class SimRunner
         {
             var w = World.Load(path);
             ReplaceWorld(w);
-            Notice($"загружено: {path} (seed {w.Seed}, тик {w.Tick})");
+            Notice($"загружено: {System.IO.Path.GetFileName(path)} (seed {w.Seed}, тик {w.Tick:N0}, особей {w.Agents.Count:N0})");
             done?.Invoke(w, null);
         }
-        catch (Exception e) { Notice($"не загрузить {path}: {e.Message}"); done?.Invoke(null, e.Message); }
+        catch (Exception e) { Fail($"не загрузить {System.IO.Path.GetFileName(path)}: {e.Message}"); done?.Invoke(null, e.Message); }
     });
 
     public static SaveInfo ReadSaveInfo(string path) => World.ReadInfo(path);
@@ -501,9 +511,22 @@ public sealed class SimRunner
         Do(w =>
         {
             var r = w.SpawnDesign(d, x, y, options);
-            Notice($"«{d.Name}»: {r}");
+            if (r.Made > 0) PublishDesigned(w);
+            if (r.Ok) Notice(SpawnText(w, d, r, options)); else Fail(SpawnText(w, d, r, options));
             done?.Invoke(r);
         });
+    }
+
+    static string SpawnText(World w, CreatureDesign d, SpawnResult r, SpawnOptions o)
+    {
+        if (r.Made == 0) return $"«{d.Name}» не посажен: {r.Error ?? "нет места"}";
+        string matter = o.Matter == MatterSource.Import
+            ? $"атомы принесены извне ({string.Join(", ", Enumerable.Range(0, Chemistry.ElementCount).Where(e => r.AtomsImported[e] > 0).Select(e => $"{w.Chem.ElementName[e]} {r.AtomsImported[e]:0}"))})"
+            : "вещество местное";
+        string energy = o.Energy == EnergySource.Import ? $"энергия извне {r.EnergyImported:0.#}" : $"энергия местных реакций {r.EnergyLocal:0.#}";
+        string s = $"«{d.Name}»: посажено {r.Made} из {r.Requested} · {matter} · {energy} · линия #{r.Lineage}";
+        if (r.Error != null) s += $" (остальным: {r.Error})";
+        return s;
     }
 
     // Autosave: every AutosaveMinutes of wall time (0 = off) into AutosaveDir/autosave_K.sav, K
@@ -543,6 +566,7 @@ public sealed class SimRunner
         Array.Clear(Stress);
         FastTo = -1;
         autosavedTick = -1;
+        PublishDesigned(w);
         WorldGeneration++;
         RefreshStats();
         Publish();
