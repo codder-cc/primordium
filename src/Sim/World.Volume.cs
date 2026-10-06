@@ -134,6 +134,11 @@ public sealed partial class World
             var head = Head[c];
             if (head == null) continue;
             if (head.NextInCell == null && Big[c] == null && Share(head) + LooseAt(c, head.Z) <= Space(c, head.Z)) continue;
+            // Fast path: everybody on one floor that is not overfull (the same sum the sweep below
+            // would make, so the outcome is identical) — no list, no sort.
+            bool oneFloor = true;
+            for (var a = head.NextInCell; a != null && oneFloor; a = a.NextInCell) oneFloor = a.Z == head.Z;
+            if (oneFloor && FloorVolume(c, head.Z) <= Space(c, head.Z)) continue;
             crowd.Clear();
             for (var a = head; a != null; a = a.NextInCell) crowd.Add(a);
             // By floor, then smallest first (ties by id: the result never depends on list order).
