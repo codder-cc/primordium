@@ -642,9 +642,6 @@ public sealed partial class World
 
     // The player's brush: what it pours or digs out is exactly what HandInput books; killing leaves
     // remains and sound cell lists; water adds up.
-    // A heavy pile crushes the rock under it into rubble, but matter never takes less room than it fills:
-    // the column under the pile keeps its blocks, nothing is packed into burials (once crushed blocks
-    // became burials — mass without volume — and a big pile sucked its whole column into the bottom).
     // Confinement (Mohr–Coulomb, World.Strength): the same block under the same load is strongest inside a
     // stratum of its own rock, weaker between unlike seams, weakest as a free pillar or at a cliff edge.
     static void ConfinementRegression()
@@ -675,26 +672,34 @@ public sealed partial class World
         Console.WriteLine($"PASS confinement: strength under {p:F2} of load — stratum {stratum:F2}, unlike seams {seams:F2}, free pillar / cliff edge {pillar:F2} (uniaxial)");
     }
 
+    // A heavy pile slumps like a granular heap, but matter never takes less room than it fills: the
+    // molecules stay in blocks (the heap spreads out), nothing is packed into burials, and the rock under
+    // the pile keeps its blocks. (Once crushed blocks became burials — mass without volume — and a big
+    // pile sucked its whole column into the bottom.)
     static void RubbleRegression()
     {
         var w = new World(new WorldSettings { Seed = 1, InitialPop = 0, Abiogenesis = false, Strikes = false });
-        int cx = 128, cy = 80, s = w.RandomPourable(), c0 = cy * W + cx;
+        int cx = 128, cy = 80, s = w.RandomPourable(), c0 = cy * W + cx, ground = w.Height[c0];
         double[] a0 = w.ElementBudget();
         double Buried() { double t = 0; foreach (var kv in w.Buried) foreach (var q in kv.Value.Matter) t += q; return t; }
-        int Solid() { int n = 0; for (int dy = -3; dy <= 3; dy++) for (int dx = -3; dx <= 3; dx++) { int c = (cy + dy) * W + cx + dx; for (int z = 0; z < Z; z++) if (w.Mat[c * Z + z] >= 2) n++; } return n; }
+        long InBlocks() { long n = 0; for (int dy = -30; dy <= 30; dy++) for (int dx = -30; dx <= 30; dx++) { int c = (cy + dy) * W + cx + dx; for (int z = 2; z < Z; z++) if (w.Mat[c * Z + z] >= 2) n += w.Units[c * Z + z]; } return n; }
+        int Under() { int n = 0; for (int dy = -3; dy <= 3; dy++) for (int dx = -3; dx <= 3; dx++) { int c = (cy + dy) * W + cx + dx; for (int z = 2; z < ground - 3; z++) if (w.Mat[c * Z + z] >= 2) n++; } return n; }
         for (int k = 0; k < 300; k++) { w.Pour(cx, cy, 6, s, 1f); if (k % 20 == 0) w.Step(); }
-        int solid0 = Solid();
+        int top0 = w.Height[c0], under0 = Under();
+        long blocks0 = InBlocks();
         double buried0 = Buried();
         for (int t = 0; t < 1500; t++) w.Step();
-        int solid1 = Solid();
+        long blocks1 = InBlocks();
+        int under1 = Under();
         double buried1 = Buried();
         double[] a1 = w.ElementBudget();
         for (int e = 0; e < a1.Length; e++)
             Require(Math.Abs(a1[e] - a0[e] - w.HandInput[e] - w.InteriorInput[e]) < 1e-6, $"rubble: element {e} drifted");
-        Require(w.CrushedBlocks > 0, "the pile crushed nothing — the test does not test");
-        Require(solid1 >= 0.8 * solid0, $"the pile's columns lost blocks: {solid0} → {solid1}");
-        Require(buried1 - buried0 < 0.02 * solid0 * Chem0Cap(w, s), $"crushed rock went into burials: {buried0:F0} → {buried1:F0} molecules");
-        Console.WriteLine($"PASS rubble: a {w.Height[c0]}-level pile crushed {w.CrushedBlocks} blocks into rubble; blocks under it {solid0} → {solid1}, burials {buried0:F0} → {buried1:F0} molecules, atoms exact");
+        Require(w.CrushedBlocks > 0 && w.Height[c0] < top0, "the pile did not slump — the test does not test");
+        Require(under1 >= 0.98 * under0, $"the rock under the pile lost blocks: {under0} → {under1}");
+        Require(blocks1 >= 0.97 * blocks0, $"the heap's molecules left the blocks: {blocks0} → {blocks1}");
+        Require(buried1 - buried0 < 0.01 * blocks0, $"crushed rock went into burials: {buried0:F0} → {buried1:F0} molecules");
+        Console.WriteLine($"PASS rubble: a {top0 - ground}-level pile slumped to {w.Height[c0] - ground} ({w.CrushedBlocks} crushes); molecules in blocks {blocks0} → {blocks1}, rock under it {under0} → {under1} blocks, burials {buried0:F0} → {buried1:F0}, atoms exact");
     }
 
     static int Chem0Cap(World w, int s) => w.Chem.MatCap[s + 2];

@@ -125,7 +125,11 @@ public sealed partial class World
         if (Mat[v] == Chemistry.Bedrock) return 1e9f;
         if (compressionCache[v] > 0) return compressionCache[v];
         float fill = Fill(v);
-        return compressionCache[v] = P.CompressionK * (0.3f + VoxelCohesion(v)) * (0.5f + Order[v] / 255f) * fill * fill;
+        // Uniaxial strength is cement between grains, and cement grows with the lattice's order: a disordered
+        // heap (fresh sediment, rubble, a poured pile) holds almost only by friction under confinement
+        // (Strength), an ordered rock by its bonds. LooseStrength is what is left at order 0.
+        float o = Order[v] / 255f;
+        return compressionCache[v] = P.CompressionK * (0.3f + VoxelCohesion(v)) * (P.LooseStrength + (1.5f - P.LooseStrength) * o * o) * fill * fill;
     }
 
     float BondCapacity(int from, int to)
@@ -378,8 +382,49 @@ public sealed partial class World
         float load = Pressure[v];
         if (v % Z + 1 < Z && Mat[v + 1] == Chemistry.Air) load -= OwnLoad(v);
         if (load <= CompressionCapacity(v) || load <= Strength(v)) return false;   // the neighbours only matter where it would not bear the load alone
-        // Rubble that fails can only flow somewhere with room (down, or out of an open side).
-        return Order[v] > 0 || RubbleCanFlow(v);
+        // Rubble that fails can only flow somewhere with room (down, or out of an open side). A lattice can
+        // only break if the broken mass can swell somewhere: confined on all sides it cannot dilate, so it
+        // does not fail (it stays as disordered as its room allows).
+        if (Order[v] == 0) return RubbleCanFlow(v);
+        return Order[v] > FitOrder(v) || CanSwell(v);
+    }
+
+    // The least order at which v's molecules still fit its voxel (0 if even a heap fits).
+    int FitOrder(int v)
+    {
+        float dense = 0, loose = 0;
+        int m = Mat[v] - 2;
+        if (Mixed(v, out var counts))
+        {
+            for (int s = 0; s < Chemistry.S; s++)
+                if (counts[s] > 0) { dense += counts[s] * Chem.Volume[s]; loose += counts[s] * Chem.Volume[s] * P.Bulking * Chem.Looseness[s]; }
+        }
+        else { dense = Units[v] * Chem.Volume[m]; loose = dense * P.Bulking * Chem.Looseness[m]; }
+        if (loose <= 0 || dense + loose <= P.VoxelSpace) return 0;
+        return Math.Clamp((int)MathF.Ceiling(255 * (1 - Math.Max(0, P.VoxelSpace - dense) / loose)), 0, 255);
+    }
+
+    // Whether there is room next to v for it to swell into (above, or out of a side level or one up).
+    bool CanSwell(int v)
+    {
+        if (SwellRoom(v + 1)) return true;
+        int c = v / Z, z = v % Z;
+        for (int d = 0; d < 4; d++)
+        {
+            int n = nb[c * 4 + d];
+            if (n != c && (SwellRoom(n * Z + z) || SwellRoom(n * Z + z + 1))) return true;
+        }
+        return false;
+    }
+
+    // A block has room if at least 2% of its voxel is free: more than any one molecule takes (a full block
+    // holds hundreds), so something can really move in — "not quite full" by a sliver is not room.
+    bool HasRoom(int u) => VoxelVolume(u) <= P.VoxelSpace * 0.98f;
+
+    bool SwellRoom(int u)
+    {
+        if (u % Z < 2 || u % Z >= Z - 1) return false;
+        return Mat[u] == Chemistry.Air ? Mat[u - 1] >= 2 : Mat[u] >= 2 && HasRoom(u);
     }
 
     // Strength against crushing under confinement (Mohr–Coulomb): what the block bears alone (its
@@ -472,9 +517,8 @@ public sealed partial class World
     // that is not full), as many as u has room for. Returns whether anything moved.
     bool SwellInto(int v, int u, ushort[] from)
     {
-        if (u % Z < 2 || u % Z >= Z - 1) return false;
         bool air = Mat[u] == Chemistry.Air;
-        if (air ? !(Mat[u - 1] >= 2) : !(Mat[u] >= 2 && VoxelVolume(u) < P.VoxelSpace * 0.999f)) return false;
+        if (!SwellRoom(u)) return false;
         float excess = VoxelVolume(v) - P.VoxelSpace;
         if (excess <= 0) return false;
         float room = air ? P.VoxelSpace : P.VoxelSpace - VoxelVolume(u);
@@ -536,13 +580,16 @@ public sealed partial class World
         return false;
     }
 
-    // Whether matter from `from` can go into voxel u: air with solid ground under it, or a solid block
-    // that is not full. Never the boundary, never below level 2.
+    // Whether rubble from `from` can go into voxel u (downhill only, see below). Never below level 2.
     bool Room(int u, int from)
     {
         if (u % Z < 2 || u == from) return false;
-        if (Mat[u] == Chemistry.Air) return u % Z > 2 && Mat[u - 1] >= 2 && u % Z <= from % Z;
-        return Mat[u] >= 2 && VoxelVolume(u) < P.VoxelSpace * 0.999f;
+        // Rubble only moves downhill: into air one level down (on ground or over a drop it then falls down),
+        // or level with it only over a free edge (air under the target: it falls). Sideways onto ground at the
+        // same level would lower nothing, and a heap would just pass back and forth.
+        if (Mat[u] == Chemistry.Air) return u % Z > 2 && (u % Z < from % Z || Mat[u - 1] == Chemistry.Air);
+        // Into the pores of a block only downhill: level with it, rubble would just pass back and forth.
+        return u % Z < from % Z && Mat[u] >= 2 && HasRoom(u);
     }
 
     void FlowRubble(int v)

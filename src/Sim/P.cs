@@ -49,6 +49,9 @@ public static class P
     // a block anneals (order +1) only above CompactionPressure × e^(DensifyK × order), so every step of
     // packing takes exponentially more pressure — a dense lattice hardly packs further.
     public static float Bulking = 0.4f, DensifyK = 3f;
+    // Uniaxial strength grows with order squared (cement between grains): LooseStrength at order 0, 1.5 at
+    // full order (World.CompressionCapacity). A disordered heap stands only by friction under confinement.
+    public static float LooseStrength = 0.001f;
     public static int StructureEvery = 4, MetamorphEvery = 64;
 
     // Virtual machine
