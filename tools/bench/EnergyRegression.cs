@@ -273,12 +273,12 @@ public sealed partial class World
                 EnergyWorldCheck(w, e0, $"seed {seed} t {t}");
                 w.CheckCellLists();
                 if (twin != null) Require(w.StateHash() == twin.StateHash(), $"seed {seed} t {t}: two runs of one seed diverged");
-                Console.WriteLine($"  seed {seed} t {t}: pop {w.Agents.Count}, energy drift {drift:F3} (tol {EnergyAudit.Tolerance(e0, now):F1}), atoms {worstAtom:F4}, falls {w.CollapsedBlocks} crushed {w.CrushedBlocks} buried {w.DeathsBuried} pressure {w.Metamorphoses} sediments {w.Sediments} ({clock.Elapsed.TotalSeconds:F0} s)");
+                Console.WriteLine($"  seed {seed} t {t}: pop {w.Agents.Count}, energy drift {drift:G3} (tol {EnergyAudit.Tolerance(e0, now):F1}), atoms {worstAtom:F4}, falls {w.CollapsedBlocks} crushed {w.CrushedBlocks} buried {w.DeathsBuried} pressure {w.Metamorphoses} sediments {w.Sediments} ({clock.Elapsed.TotalSeconds:F0} s)");
             }
             var end = w.AuditEnergy();
             for (int k = 0; k < FlowCount; k++) flows[k] += end.Flows[k] - e0.Flows[k];
             falls += w.CollapsedBlocks; crushed += w.CrushedBlocks; buried += w.DeathsBuried; pressure += w.Metamorphoses; sediments += w.Sediments; deaths += w.Deaths;
-            Console.WriteLine($"PASS seed {seed}, {ticks} ticks: population {w.Agents.Count}, worst atom drift {worstAtom:F4}, worst energy drift {worstEnergy:F3}" + (twin != null ? ", twin run identical" : ""));
+            Console.WriteLine($"PASS seed {seed}, {ticks} ticks: population {w.Agents.Count}, worst atom drift {worstAtom:F4}, worst energy drift {worstEnergy:G3}" + (twin != null ? ", twin run identical" : ""));
         }
         Require(falls > 0, "no block fell in any run: the collapse path was not exercised");
         Require(crushed + buried > 0, "nothing was crushed and nobody buried: the burial paths were not exercised");
