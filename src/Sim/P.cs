@@ -38,9 +38,11 @@ public static class P
     // it routine. Rock is eaten slowly.
     public static float RockBarrier = 4f;
     public static float CompactionPressure = 8f;
-    // A crushed block becomes rubble in place (order 0, same molecules, same room). Rubble at least this
-    // full bears any compression; a thinner skin of it is crushed down into the voxel below.
-    public static float RubbleFill = 0.5f;
+    // Strength under confinement (Mohr–Coulomb, World.Strength): a block bears its uniaxial strength plus
+    // FrictionQ × the least horizontal stress its neighbours press on it with; a neighbour presses with
+    // LateralK × its own vertical stress (as well as their contact passes it on). FrictionQ ≈ 4 is a
+    // friction angle of ~37°; LateralK ≈ 0.4 is the at-rest earth pressure of a rock with Poisson ~0.3.
+    public static float FrictionQ = 4f, LateralK = 0.4f;
     public static int StructureEvery = 4, MetamorphEvery = 64;
 
     // Virtual machine

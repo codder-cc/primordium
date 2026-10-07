@@ -149,6 +149,7 @@ public sealed partial class World
         WaterRegression();
         HandRegression();
         RubbleRegression();
+        ConfinementRegression();
         FatalActionRegression();
         RegionalStructureRegression();
         StackRegression();
@@ -642,6 +643,36 @@ public sealed partial class World
     // A heavy pile crushes the rock under it into rubble, but matter never takes less room than it fills:
     // the column under the pile keeps its blocks, nothing is packed into burials (once crushed blocks
     // became burials — mass without volume — and a big pile sucked its whole column into the bottom).
+    // Confinement (Mohr–Coulomb, World.Strength): the same block under the same load is strongest inside a
+    // stratum of its own rock, weaker between unlike seams, weakest as a free pillar or at a cliff edge.
+    static void ConfinementRegression()
+    {
+        var w = Fixture();
+        int s = Enumerable.Range(0, Chemistry.S).Where(x => x % 2 == 0).OrderByDescending(x => w.Chem.Bond[x]).First();
+        int u = Enumerable.Range(0, Chemistry.S).Where(x => x % 2 == 0 && w.Chem.Contact[x + 2, s + 2] < 0.5f).First();
+        float StrengthAt(int c, int[] sides)   // sides: species per direction (−1 air), a 12-block column each
+        {
+            for (int d = 0; d < 4; d++)
+                for (int z = 2; z < 14; z++) if (sides[d] >= 0) w.TestBlock(w.Nb(c, d), z, sides[d]);
+            for (int z = 2; z < 14; z++) w.TestBlock(c, z, s);
+            w.RefreshColumn(c);
+            for (int d = 0; d < 4; d++) w.RefreshColumn(w.Nb(c, d));
+            return w.Strength(c * Z + 3);
+        }
+        float ucs = 0;
+        float stratum = StrengthAt(40 * W + 40, new[] { s, s, s, s });
+        float seams = StrengthAt(40 * W + 80, new[] { u, u, u, u });
+        float pillar = StrengthAt(40 * W + 120, new[] { -1, -1, -1, -1 });
+        float edge = StrengthAt(40 * W + 160, new[] { s, s, -1, s });
+        ucs = w.CompressionCapacity((40 * W + 120) * Z + 3);
+        Require(Math.Abs(pillar - ucs) < 1e-3f * ucs, $"a free pillar is confined: {pillar} vs uniaxial {ucs}");
+        Require(Math.Abs(edge - ucs) < 1e-3f * ucs, $"a block at a cliff edge is confined along the open axis: {edge} vs {ucs}");
+        Require(stratum > seams && seams > pillar, $"confinement order wrong: stratum {stratum}, seams {seams}, pillar {pillar}");
+        float p = w.Pressure[(40 * W + 40) * Z + 3];
+        Require(stratum >= ucs + 0.99f * P.FrictionQ * P.LateralK * p, "a block inside its stratum does not get the full lateral push");
+        Console.WriteLine($"PASS confinement: strength under {p:F2} of load — stratum {stratum:F2}, unlike seams {seams:F2}, free pillar / cliff edge {pillar:F2} (uniaxial)");
+    }
+
     static void RubbleRegression()
     {
         var w = new World(new WorldSettings { Seed = 1, InitialPop = 0, Abiogenesis = false, Strikes = false });

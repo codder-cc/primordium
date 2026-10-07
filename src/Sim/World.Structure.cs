@@ -116,7 +116,7 @@ public sealed partial class World
     bool LoadMatters(int v, float delta)
     {
         return InSupportPath(v) || MathF.Abs(delta) > 0.05f * CompressionCapacity(v)
-            || Pressure[v] + Math.Max(0, delta) > 0.7f * CompressionCapacity(v);
+            || Pressure[v] + Math.Max(0, delta) > 0.7f * CompressionCapacity(v);   // waking is judged conservatively (without confinement); the solver decides with Strength
     }
 
     float OwnLoad(int v) => VoxelMass(v) * P.Gravity + bodyLoad.Get(v);
@@ -169,7 +169,7 @@ public sealed partial class World
     {
         if (Mat[from] == Chemistry.Air) return;
         bool root = from % Z < grounded[from / Z];
-        float available = root ? Math.Max(0, CompressionCapacity(from) - Pressure[from]) : hSupport[at];
+        float available = root ? Math.Max(0, Strength(from) - Pressure[from]) : hSupport[at];
         float capacity = BondCapacity(v, from);
         float score = Math.Min(available, capacity) - OwnLoad(v);
         if (score <= hSupport[iv]) return;
@@ -360,7 +360,7 @@ public sealed partial class World
             else if (Crushes(v))
             {
                 if (Order[v] > 0) CrushToRubble(v);   // the lattice breaks; the molecules keep their room
-                else CompactRubble(v);                // a thin skin of rubble packs into the block under it
+                else FlowRubble(v);                   // failed rubble flows where there is room
                 CrushedBlocks++;
             }
         }
@@ -375,13 +375,38 @@ public sealed partial class World
     // (Crushing such a skin only turned its last molecules into loose food without the face's work.)
     bool Crushes(int v)
     {
-        // Rubble that fills its voxel has nowhere to go under compression: crushing breaks a lattice, it
-        // does not make matter take less room. (Crushed blocks used to become burials — mass without
-        // volume — so a heavy pile sucked its whole column down into the bottom voxels.)
-        if (Order[v] == 0 && (Fill(v) >= P.RubbleFill || !RoomBelow(v))) return false;
         float load = Pressure[v];
         if (v % Z + 1 < Z && Mat[v + 1] == Chemistry.Air) load -= OwnLoad(v);
-        return load > CompressionCapacity(v);
+        if (load <= CompressionCapacity(v) || load <= Strength(v)) return false;   // the neighbours only matter where it would not bear the load alone
+        // Rubble that fails can only flow somewhere with room (down, or out of an open side).
+        return Order[v] > 0 || RubbleCanFlow(v);
+    }
+
+    // Strength against crushing under confinement (Mohr–Coulomb): what the block bears alone (its
+    // uniaxial strength, CompressionCapacity) plus FrictionQ × the least horizontal stress σ3 that its
+    // neighbours press on it with. A neighbour presses with LateralK × its own vertical stress, passed on
+    // as well as the contact allows: the same rock fully (1), a seam of unlike rock poorly (0.2–0.4), a
+    // partly emptied block by its fill, air not at all. Stress along an axis needs both sides, and the
+    // weaker axis decides. So deep rock inside a stratum bears its overburden; cliff edges, pillars,
+    // tunnel walls and a free pile fail at their uniaxial strength — rock of one stratum holds together
+    // better than a stack of unlike seams. Nothing here is a table: contact and strength come from the
+    // molecules (Chemistry), the two numbers are laws of mechanics.
+    public float Strength(int v)
+    {
+        float ucs = CompressionCapacity(v);
+        if (Mat[v] < 2) return ucs;
+        float sx = Math.Min(SidePush(v, 0), SidePush(v, 2)), sy = Math.Min(SidePush(v, 1), SidePush(v, 3));
+        return ucs + P.FrictionQ * Math.Min(sx, sy);
+    }
+
+    float SidePush(int v, int d)
+    {
+        int c = v / Z, z = v % Z, n = nb[c * 4 + d];
+        if (n == c) return P.LateralK * Pressure[v];   // the end of the map in y is a wall
+        int u = n * Z + z;
+        if (Mat[u] == Chemistry.Bedrock) return P.LateralK * Pressure[v];
+        if (Mat[u] < 2) return 0;
+        return P.LateralK * Pressure[u] * Chem.Contact[Mat[v], Mat[u]] * Fill(u);
     }
 
     // Compression failure: the block's lattice is crushed into rubble in place. Same molecules, same
@@ -399,50 +424,103 @@ public sealed partial class World
         MarkDirty(c);
     }
 
-    // Room left in the solid block right under v (0 if it is full, air or the boundary).
-    bool RoomBelow(int v) => v % Z > 2 && Mat[v - 1] >= 2 && VoxelVolume(v - 1) < P.VoxelSpace * 0.999f;
-
-    // Rubble too thin to bear its load packs into the block under it: molecules move down as far as
-    // that block has room by volume. The voxel empties only when all of it fits (the pore closes and
-    // whatever stands above settles), so matter never takes less room than it fills.
-    void CompactRubble(int v)
+    // Failed rubble (no lattice left to break) behaves as a granular mass: it flows into room — first the
+    // pores of the block under it, then out of an open side, one level down or level with it. Molecules
+    // move whole and only as many as the target has room for by volume; the voxel empties only when all
+    // of it went (the pore closes, whatever stands above settles). Matter never takes less room than it
+    // fills. A heap so spreads until its flanks are confined or bear their load: an angle of repose
+    // that comes out of strength and confinement, not a set slope.
+    bool RubbleCanFlow(int v)
     {
-        if (!RoomBelow(v)) return;
-        int b = v - 1, c = v / Z;
-        float room = P.VoxelSpace - VoxelVolume(b);
-        if (!Mixed(b, out var below))
+        if (Room(v - 1, v)) return true;
+        int c = v / Z, z = v % Z;
+        for (int d = 0; d < 4; d++)
         {
-            below = new ushort[Chemistry.S];
-            below[Mat[b] - 2] = Units[b];
-            SetMixture(b, below);
+            int n = nb[c * 4 + d];
+            if (n == c) continue;
+            if (Room(n * Z + z - 1, v) || Room(n * Z + z, v)) return true;
         }
+        return false;
+    }
+
+    // Whether matter from `from` can go into voxel u: air with solid ground under it, or a solid block
+    // that is not full. Never the boundary, never below level 2.
+    bool Room(int u, int from)
+    {
+        if (u % Z < 2 || u == from) return false;
+        if (Mat[u] == Chemistry.Air) return u % Z > 2 && Mat[u - 1] >= 2 && u % Z <= from % Z;
+        return Mat[u] >= 2 && VoxelVolume(u) < P.VoxelSpace * 0.999f;
+    }
+
+    void FlowRubble(int v)
+    {
+        int c = v / Z, z = v % Z;
         if (!Mixed(v, out var from))
         {
             from = new ushort[Chemistry.S];
             from[Mat[v] - 2] = Units[v];
             SetMixture(v, from);
         }
-        int moved = 0;
-        for (int sp = 0; sp < Chemistry.S && room > 0; sp++)
+        bool moved = PourInto(v, v - 1, from);
+        for (int d = 0; d < 4 && Units[v] > 0; d++)
         {
-            if (from[sp] == 0) continue;
-            int fit = Math.Min(from[sp], (int)(room / Chem.Volume[sp]));
-            fit = Math.Min(fit, ushort.MaxValue - Units[b]);
-            if (fit <= 0) continue;
-            from[sp] -= (ushort)fit; below[sp] += (ushort)fit;
-            Units[v] -= (ushort)fit; Units[b] += (ushort)fit; moved += fit;
-            room -= fit * Chem.Volume[sp];
+            int n = nb[c * 4 + d];
+            if (n == c) continue;
+            moved |= PourInto(v, n * Z + z - 1, from);
+            if (Units[v] > 0) moved |= PourInto(v, n * Z + z, from);
         }
-        if (moved == 0) return;
-        Mat[b] = Chem.BuiltMat[Dominant(below)];
-        compressionCache[b] = cohesionCache[b] = 0;
-        MassChanged(b);
-        if (Units[v] == 0) { RemoveVoxel(c, v % Z); return; }   // its burial, if any, goes down to the floor
+        if (!moved) return;
+        if (Units[v] == 0) { RemoveVoxel(c, z); return; }   // its burial, if any, goes down to the floor
         Mat[v] = Chem.BuiltMat[Dominant(from)];
         compressionCache[v] = cohesionCache[v] = 0;
         Interlocked.Increment(ref TerrainVersion);
         ColumnVersion[c]++;
         MarkDirty(c);
+    }
+
+    // Moves as many of v's molecules into u as fit by volume (species in order). An air voxel becomes a
+    // new rubble block. Returns whether anything moved.
+    bool PourInto(int v, int u, ushort[] from)
+    {
+        if (!Room(u, v)) return false;
+        bool air = Mat[u] == Chemistry.Air;
+        float room = air ? P.VoxelSpace : P.VoxelSpace - VoxelVolume(u);
+        var into = air ? new ushort[Chemistry.S] : null;
+        if (!air && !Mixed(u, out into))
+        {
+            into = new ushort[Chemistry.S];
+            into[Mat[u] - 2] = Units[u];
+            SetMixture(u, into);
+        }
+        int moved = 0;
+        for (int sp = 0; sp < Chemistry.S && room > 0; sp++)
+        {
+            if (from[sp] == 0) continue;
+            int fit = Math.Min(from[sp], (int)(room / Chem.Volume[sp]));
+            if (!air) fit = Math.Min(fit, ushort.MaxValue - Units[u]);
+            if (fit <= 0) continue;
+            from[sp] -= (ushort)fit; into[sp] += (ushort)fit;
+            Units[v] -= (ushort)fit; moved += fit;
+            if (!air) Units[u] += (ushort)fit;
+            room -= fit * Chem.Volume[sp];
+        }
+        if (moved == 0) return false;
+        int c = u / Z;
+        if (air)
+        {
+            DisplaceOccupants(c, u % Z, null);
+            PutMixture(u, into, 0);
+        }
+        else
+        {
+            Mat[u] = Chem.BuiltMat[Dominant(into)];
+            compressionCache[u] = cohesionCache[u] = 0;
+            MassChanged(u);
+            Interlocked.Increment(ref TerrainVersion);
+            ColumnVersion[c]++;
+        }
+        MarkDirty(c);
+        return true;
     }
 
     // A block whose path breaks falls if there is a cavity under it. If it rests on another hanging
