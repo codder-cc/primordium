@@ -102,7 +102,7 @@ public sealed partial class World
         foreach (var kv in Buried.OrderBy(kv => kv.Key)) { Mix((ulong)kv.Key); foreach (var m in kv.Value.Matter) Mix((ulong)m.Raw); F(kv.Value.Order); }
         foreach (var a in Agents)
         {
-            F(a.Mass); F(a.Volume); F(a.Tb); F(a.Lift); F(a.Vx); F(a.HeatHeld);
+            F(a.Mass); F(a.Volume); F(a.Tb); F(a.Lift); F(a.Vx); Mix((ulong)BitConverter.DoubleToInt64Bits(a.HeatHeld));
             Mix((ulong)a.Ip << 32 ^ (ulong)a.Sp << 16 ^ (ulong)a.InvTotal ^ (ulong)a.EnzN << 48 ^ (ulong)a.Links.Count << 56);
             for (int k = 0; k < a.EnzN; k++) F(a.Enz[k].Amount);
         }
@@ -113,6 +113,12 @@ public sealed partial class World
     }
 
     // What a file of format 1 or 2 can hold: every amount of matter rounded to float.
+    // What a file before version 9 can hold: the energy of bodies as floats (the rounding the writer does).
+    void EnergyToFloat()
+    {
+        foreach (var a in Agents) { a.Energy = (float)a.Energy; a.HeatHeld = (float)a.HeatHeld; }
+    }
+
     void RoundAmountsToFloat()
     {
         foreach (var c in C) for (int i = 0; i < N; i++) c[i] = c[i].F;
@@ -181,6 +187,7 @@ public sealed partial class World
                     a.RoundAmountsToFloat();
                     a.InitCaveClimate();   // nor do they hold the cave climate (version 5): it starts again from Temp
                     a.SkyFromOldFile();    // nor the sky (version 8): rebuilt at the load
+                    a.EnergyToFloat();     // nor energies as doubles (version 9)
                     double[] rounded = a.ElementBudget();
                     for (int e = 0; e < exact.Length; e++)
                         Require(Math.Abs(rounded[e] - exact[e]) < 0.05, $"rounding to float moved element {e} by {rounded[e] - exact[e]:R}");

@@ -635,7 +635,7 @@ public partial class Hud : Control
         float tx = x + 76;
         T(tx, y + 14, $"#{a.Id}" + (a.Dead ? $" · погиб ({Causes[a.Cause]})" : ""), a.Dead ? new Color(1, 0.5f, 0.45f) : Fg, 14, bold);
         T(tx, y + 31, $"линия #{a.Lineage} · поколение {a.Gen} · возраст {a.Age:N0}", Dim, 12);
-        float cap = a.Store, e = Math.Max(0, a.Energy);
+        float cap = a.Store, e = (float)Math.Max(0, a.Energy);
         R(new Rect2(tx, y + 38, cw - 76, 7), new Color(1, 1, 1, 0.08f));
         R(new Rect2(tx, y + 38, (cw - 76) * Math.Clamp(e / cap, 0, 1), 7), new Color(0.4f, 0.9f, 0.5f));
         T(tx, y + 59, $"энергия {e:F1} (удобный запас {cap:F0}, сверх — утекает быстрее) · {a.LastCycles} тактов/тик", Dim, 12);
@@ -669,7 +669,7 @@ public partial class Hud : Control
         y += 18;
 
         // The whole life: what it lived on (the lines above only cover the last ~100 ticks).
-        float acts = Math.Max(0, a.LifeStart + a.GainChem + a.LifeGot - a.LifeKids - a.LifeUpkeep - a.LifeHarm - a.LifeSpill - a.LifeUphill - a.LifeMineCost - Math.Max(0, a.Energy));
+        float acts = Math.Max(0, a.LifeStart + a.GainChem + a.LifeGot - a.LifeKids - a.LifeUpkeep - a.LifeHarm - a.LifeSpill - a.LifeUphill - a.LifeMineCost - (float)Math.Max(0, a.Energy));
         int meals = a.NBind + a.NSplit;
         string when = a.LastMeal < 0 ? "реакций с выгодой не было"
             : $"реакция в среднем раз в {a.Age / Math.Max(1, meals):N0} т., последняя " + (a.Dead ? $"за {a.Age - a.LastMeal:N0} т. до смерти" : $"{a.Age - a.LastMeal:N0} т. назад");

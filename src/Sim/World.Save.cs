@@ -42,7 +42,9 @@ public sealed partial class World
     // the depth profile is off (those worlds were made without it).
     // 8: the sky block (SyncSky, World.Sky) after the geochemistry; the energy ledger gains the `flare`
     // input (a version 7 ledger is mapped: the flows after it move up by one).
-    public const int SaveVersion = 8, OldestSaveVersion = 1;
+    // 9: the energy a body holds (Agent.Energy, Agent.HeatHeld) as double instead of float, so the energy
+    // ledger closes like the atoms (ROADMAP 10.8); older files hold floats and are read into doubles exactly.
+    public const int SaveVersion = 9, OldestSaveVersion = 1;
     static readonly byte[] SaveMagic = Encoding.ASCII.GetBytes("PRIMSAVE");
     const int EndMarker = 0x21444E45;   // "END!"
 
@@ -70,6 +72,14 @@ public sealed partial class World
             if (!Reading) for (int i = 0; i < f.Length; i++) f[i] = data[i].F;
             A<float>(f);
             if (Reading) for (int i = 0; i < f.Length; i++) data[i] = f[i];
+        }
+        // The energy of a body: double from version 9, float before (read exactly, written rounded).
+        public void E(ref double x)
+        {
+            if (Version >= 9) { V(ref x); return; }
+            float f = (float)x;
+            V(ref f);
+            if (Reading) x = f;
         }
         public void Q(ref Qty x)
         {
@@ -536,7 +546,7 @@ public sealed partial class World
     {
         s.V(ref a.Designed);
         s.V(ref a.X); s.V(ref a.Y); s.V(ref a.Z); s.V(ref a.Vx); s.V(ref a.Vy); s.V(ref a.Lift); s.V(ref a.Vz);
-        s.V(ref a.Energy); s.V(ref a.Tb); s.V(ref a.Age); s.V(ref a.Dead); s.V(ref a.Cause);
+        s.E(ref a.Energy); s.V(ref a.Tb); s.V(ref a.Age); s.V(ref a.Dead); s.V(ref a.Cause);
         s.A<int>(a.Inv); s.Q(a.Pend);
         s.V(ref a.InvTotal); s.V(ref a.Unstable); s.V(ref a.Solids); s.V(ref a.Mass); s.V(ref a.Volume);
         int cap = a.Enz.Length;
@@ -551,7 +561,7 @@ public sealed partial class World
         s.V(ref a.Act); s.V(ref a.ActDir); s.V(ref a.ActTick);
         s.V(ref a.GainPhoto); s.V(ref a.GainChem); s.V(ref a.GainMine);
         s.V(ref a.TickPhoto); s.V(ref a.TickChem); s.V(ref a.TickMine); s.V(ref a.TickAttack); s.V(ref a.TickHeat);
-        s.V(ref a.HeatHeld);
+        s.E(ref a.HeatHeld);
         s.V(ref a.EmaPhoto); s.V(ref a.EmaChem); s.V(ref a.EmaMine); s.V(ref a.EmaAttack);
         s.V(ref a.NChildren); s.V(ref a.NMates); s.V(ref a.NMoves); s.V(ref a.NAttacks); s.V(ref a.NKills); s.V(ref a.NInjects);
         s.V(ref a.NInfected); s.V(ref a.NCuts); s.V(ref a.NDigs); s.V(ref a.NPiles); s.V(ref a.NMines); s.V(ref a.NTakes);

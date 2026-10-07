@@ -57,7 +57,7 @@ public sealed partial class World
         var b = w.TestAgent(c, 2, u, 20);
         for (int k = 0; k < 20; k++) w.AddMol(b, v);
         b.Enz[0] = new Enzyme { Kind = Enzyme.Bind, A = (byte)u, B = (byte)v, Amount = 3, Eff = 1, Topt = 15 }; b.EnzN = 1;
-        float eb = b.Energy;
+        double eb = b.Energy;
         before = w.AuditEnergy();
         w.Bind(b, 0, u, v);
         Require(b.NBind > 0 && b.Energy < eb, "probe endothermic bind did not go");

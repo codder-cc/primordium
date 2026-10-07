@@ -277,13 +277,14 @@ public sealed partial class World
     // Energy from a reaction: part of what is released warms the body instead.
     void Release(Agent a, float de)
     {
-        float e0 = a.Energy, h0 = a.HeatHeld;
-        if (de <= 0) { a.Energy += de; a.LifeUphill -= de; Flows[FRounding] += de - ((double)a.Energy - e0); return; }
-        a.Energy += de * (1 - P.HeatShare);
+        double e0 = a.Energy, h0 = a.HeatHeld;
+        if (de <= 0) { a.Energy += de; a.LifeUphill -= de; Flows[FRounding] += de - (a.Energy - e0); return; }
+        double keep = de * (1.0 - P.HeatShare);
+        a.Energy += keep;
         // The heat share warms the body; it reaches the cells only as the body cools (LiveBody).
         a.Tb += de * P.HeatShare * 6f / (5f + a.Mass);
-        a.HeatHeld += de * P.HeatShare;
-        Flows[FRounding] += de - ((double)a.Energy - e0) - ((double)a.HeatHeld - h0);   // floats round (see World.Energy)
+        a.HeatHeld += de - keep;
+        Flows[FRounding] += de - (a.Energy - e0) - (a.HeatHeld - h0);   // doubles round too, ~1e-16 (see World.Energy)
         a.GainChem += de * (1 - P.HeatShare);
         a.TickChem += de;
         a.LastMeal = a.Age;
@@ -539,14 +540,14 @@ public sealed partial class World
     }
 
     // How hard a body hits: its size and how well fed it is.
-    static float Strength(Agent a) => MathF.Sqrt(a.Mass + 1) * (0.4f + 0.6f * Math.Clamp(a.Energy / a.Store, 0, 1));
+    static float Strength(Agent a) => MathF.Sqrt(a.Mass + 1) * (0.4f + 0.6f * (float)Math.Clamp(a.Energy / a.Store, 0, 1));
 
     // Tear molecules out of another body and keep them (if there is room); its proteins get damaged
     // too. A big, well-fed body hits hard and is hard to hurt; a small one is cheaper to move and can
     // run. A body that falls apart dies.
     void Attack(Agent a, int cell, int p)
     {
-        float power = Math.Min(Math.Max(0, p) * 0.1f, Math.Max(0, a.Energy - 1));   // as hard as it can afford
+        float power = (float)Math.Min(Math.Max(0, p) * 0.1f, Math.Max(0, a.Energy - 1));   // as hard as it can afford
         if (power <= 0) return;
         var t = Partner(a, cell);
         if (t == null) { Dissipate(a, P.CostSocial); return; }
@@ -615,7 +616,7 @@ public sealed partial class World
     {
         Dissipate(a, P.CostSocial);
         var t = Partner(a, cell);
-        float e = Math.Min(Math.Clamp(amount, 0, 255) / 8f, a.Energy - 1);
+        float e = (float)Math.Min(Math.Clamp(amount, 0, 255) / 8f, a.Energy - 1);
         if (t == null || e <= 0) return;
         a.Energy -= e;
         t.Energy += e;

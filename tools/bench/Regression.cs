@@ -36,7 +36,7 @@ public sealed partial class World
             if (Mat[v] != 0) Mix((ulong)v << 32 ^ (ulong)Mat[v] << 24 ^ (ulong)Units[v] << 8 ^ Order[v]);
         foreach (var c in C) for (int i = 0; i < N; i++) Mix((ulong)c[i].Raw);
         foreach (var a in Agents)
-            Mix((ulong)a.Id ^ (ulong)a.X << 40 ^ (ulong)a.Y << 50 ^ (ulong)a.Z << 20 ^ (uint)BitConverter.SingleToInt32Bits(a.Energy) ^ a.Hash);
+            Mix((ulong)a.Id ^ (ulong)a.X << 40 ^ (ulong)a.Y << 50 ^ (ulong)a.Z << 20 ^ (ulong)BitConverter.DoubleToInt64Bits(a.Energy) ^ a.Hash);
         return h;
     }
     static void BudgetEqual(double[] a, double[] b, string stage, double tolerance = 0.002)
@@ -727,12 +727,12 @@ public sealed partial class World
         // A stroke on the deep bottom costs more than in the shallows.
         var deep = w.TestAgent(row + 104, 2, heavy, 20);
         var shallow = w.TestAgent(row + 99, 2, heavy, 20);
-        float d0 = deep.Energy, s0 = shallow.Energy;
+        double d0 = deep.Energy, s0 = shallow.Energy;
         deep.Vx = 1; shallow.Vx = -1;
         int dc = deep.Y * W + deep.X, sc = shallow.Y * W + shallow.X;
         w.Move(deep, ref dc); w.Move(shallow, ref sc);
         Require(deep.X == 105 && shallow.X == 98, "swimmers did not move");
-        float dd = d0 - deep.Energy, ds = s0 - shallow.Energy;
+        double dd = d0 - deep.Energy, ds = s0 - shallow.Energy;
         Require(dd > 1.5f * ds && ds > 0, $"depth did not make strokes dearer: deep {dd}, shallow {ds}");
 
         // Swimming keeps its height: at the surface over to the bank, along the bottom it is a wall.

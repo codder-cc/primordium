@@ -24,10 +24,10 @@ namespace Primordium;
 // what a body still held when it died, spontaneous decay in bodies and on the ground, pressure
 // reactions in burials, energy of failed births (stillborn, failed abiogenesis) — and float rounding.
 //
-// Agent.Energy and HeatHeld are floats: subtracting a cost of 0.001 from an energy of ~30 rounds to
-// whole ulps, a few 1e-7 off, with a sign set by the binade. Costs and reaction gains book what the
-// float actually changed by, the difference to the nominal amount as Rounding (an output; negative
-// when a body kept more than it paid), so the balance is exact to the remaining float pools.
+// Agent.Energy and HeatHeld are doubles (floats before save version 9: a cost of 0.001 taken from an
+// energy of ~30 rounded by a few 1e-7, which summed to a drift of ~0.005–0.02 per 10⁸ moved). Costs and
+// reaction gains still book what the double actually changed by, the difference to the nominal amount
+// as Rounding (an output; now ~1e-16 of a store), so the balance is exact to the remaining pools.
 //
 // A cost larger than what the body has makes its energy negative; only what it had reaches the
 // cells (Dissipate). The rest is booked as Unpaid (an output that went nowhere); if the body dies

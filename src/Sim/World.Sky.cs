@@ -388,10 +388,10 @@ public sealed partial class World
         float q = P.FlareHeatK * dose;
         if (q > 0)
         {
-            float h0 = a.HeatHeld;
+            double h0 = a.HeatHeld;
             a.HeatHeld += q;
             a.Tb += q * 6f / (5f + a.Mass);
-            Flows[FFlare] += (double)a.HeatHeld - h0;
+            Flows[FFlare] += a.HeatHeld - h0;
         }
         return dose;
     }

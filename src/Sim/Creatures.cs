@@ -86,7 +86,7 @@ public sealed class CreatureDesign
             Name = name ?? $"линия {a.Lineage} #{a.Id}",
             Description = $"Снято с существа #{a.Id} (линия {a.Lineage}, поколение {a.Gen}, мир {w.Seed}, тик {w.Tick}).",
             Genome = GenomeAsm.Disassemble(a.G),
-            Energy = MathF.Round(Math.Max(0, a.Energy)),
+            Energy = MathF.Round((float)Math.Max(0, a.Energy)),
             Hue = a.Hue, Sat = a.Sat, Val = a.Val, Shape = a.Shape,
         };
         for (int s = 0; s < Chemistry.S; s++) if (a.Inv[s] > 0) d.Body[s.ToString(CultureInfo.InvariantCulture)] = a.Inv[s];
