@@ -11,7 +11,7 @@ public partial class NewWorldWindow : UiWindow
 {
     LineEdit seed;
     SpinBox pop;
-    CheckBox abio, strikes, flares, eclipses;
+    CheckBox abio, strikes, flares, eclipses, cycles;
     OptionButton preset;
     Button more;
     ParamEditor editor;
@@ -38,7 +38,8 @@ public partial class NewWorldWindow : UiWindow
         // Laws of the sky (World.Sky): the same switches as in "Дополнительно" (Flares, Eclipses).
         flares = UiKit.Check("Солнечные вспышки", true, on => SetLaw("Flares", on), "облучение освещённой стороны: мутации, износ белков, урон; закон Flares");
         eclipses = UiKit.Check("Затмения", true, on => SetLaw("Eclipses", on), "тень спутника проходит по дневной стороне; закон Eclipses");
-        Body.AddChild(UiKit.Row(18, UiKit.Spacer(84, 0, false), abio, strikes, flares, eclipses));
+        cycles = UiKit.Check("Климатические циклы", true, on => SetLaw("ClimateCycles", on), "наклон оси, эксцентриситет и солнце меняются: ледниковья и вулканические зимы; закон ClimateCycles");
+        Body.AddChild(UiKit.Row(18, UiKit.Spacer(84, 0, false), abio, strikes, flares, eclipses, cycles));
 
         preset = UiKit.Options();
         preset.CustomMinimumSize = new Vector2(220, 0);
@@ -100,6 +101,7 @@ public partial class NewWorldWindow : UiWindow
         editor.Refresh(true);
         flares.SetPressedNoSignal(draft.Values.TryGetValue("Flares", out var f) && f != 0);
         eclipses.SetPressedNoSignal(draft.Values.TryGetValue("Eclipses", out var ec) && ec != 0);
+        cycles.SetPressedNoSignal(draft.Values.TryGetValue("ClimateCycles", out var cy) && cy != 0);
     }
 
     void SetLaw(string name, bool on)

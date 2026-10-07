@@ -18,6 +18,7 @@ if (Array.IndexOf(args, "--self-test-cave") >= 0) { World.CaveClimateRegression(
 if (Array.IndexOf(args, "--self-test-evolution") >= 0) { World.RunEvolutionRegression(); return; }
 if (Array.IndexOf(args, "--self-test-resources") >= 0) { World.ResourcesRegression(); return; }   // just the resources test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-geochem") >= 0) { World.GeochemRegression(); return; }   // just the geochemistry test (also in --self-test)
+if (Array.IndexOf(args, "--self-test-climate") >= 0) { World.ClimateCyclesRegression(); return; }   // just the climate cycles test (also in --self-test)
 if (Array.IndexOf(args, "--list-params") >= 0)
 {
     foreach (var p in ParamRegistry.All)
@@ -45,7 +46,8 @@ if (Array.IndexOf(args, "--run-one") >= 0) { Batch.RunOne(args, laws); return; }
 if (Array.IndexOf(args, "--geochem") >= 0) { World.GeochemReport(args); return; }   // strata by depth, what bodies need (World.Geochem)
 if (Array.IndexOf(args, "--resources") >= 0) { World.ResourceReport(args); return; }   // gas and loose food by region (World.Resources)
 if (Array.IndexOf(args, "--invade") >= 0) { World.InvasionProbe(args); return; }   // plant a design, follow its lineage (World.Geochem probe)
-if (Array.IndexOf(args, "--sun") >= 0) { World.SunReport(args); return; }   // the sky: day length, climate by latitude, photon supply (World.Sky)
+if (Array.IndexOf(args, "--sun") >= 0) { World.SunReport(args); return; }
+if (Array.IndexOf(args, "--climate") >= 0) { World.ClimateReport(args); return; }   // the climate cycles' schedule by seed (World.ClimateCycles)   // the sky: day length, climate by latitude, photon supply (World.Sky)
 if (Array.IndexOf(args, "--bites") >= 0) { foreach (int s in new[] { 1, 2, 3, 5, 7 }) World.BiteReport(s); return; }
 if (Array.IndexOf(args, "--strength") >= 0) { foreach (int s in new[] { 1, 2, 3, 7 }) { Console.WriteLine($"seed {s}"); World.StrengthReport(s); } return; }
 
@@ -231,6 +233,10 @@ for (int t = 1; t <= ticks; t++)
     {
         var sk = w.SkyCensus();
         Console.WriteLine($"   sky: diets per 32×32 square {sk[0]:F2} (planet/square {sk[1]:F2}) | transparency {sk[3]:F3} | activity {w.SolarActivity:P0}, flare power {w.FlarePower:F2}, mean dose {sk[2]:F4} | flares {sk[4]:F0} (mutations {w.FlareMutations}, deaths {sk[6]:F0}), eclipses {sk[5]:F0}{(w.EclipseNow ? $" (now at {w.EclipseX:F0},{w.EclipseY:F0})" : "")} | strikes {(w.AutoStrikes ? "on" : "off")}");
+    }
+    {
+        var cc = w.ClimCensus();
+        Console.WriteLine($"   climate cycles: {w.EpochLine(true)} | glaciation N/S {cc[5]:F2}/{cc[6]:F2}, veil light {cc[7]:P0}, ice ages {cc[8]:F0}, volcanic winters {cc[9]:F0}, mega-eruptions {cc[10]:F0} | water liquid {cc[11]:P1} frozen {cc[12]:P1}, sea cells {cc[13]:P1}, snow/ice cover {cc[14]:P1}, total {w.WaterTotal():F1} (hand {w.WaterHand:F1})");
     }
     Console.WriteLine($"   divide tries {w.DivFail[0]}: no energy {w.DivFail[1]}, small body {w.DivFail[2]}, no room {w.DivFail[3]}, uneven {w.DivFail[4]}");
     {

@@ -48,7 +48,7 @@ public sealed partial class World
     void UpdateClouds()
     {
         float t = Tick * 0.00012f, asp = H / (float)W, hydro = P.TranspHydro;
-        bool sky = TranspLaw;
+        bool sky = TranspLaw, dry = dryOn;
         int ns = Seed * 31 + 11;
         Parallel.For(0, H, y =>
         {
@@ -60,6 +60,7 @@ public sealed partial class World
                 float u = x / (float)W;
                 float n = Noise.Fbm(ns, u - t, v + 0.04f * MathF.Sin(t * 3 + u * 6.283f), 3, 4, asp);
                 float c = Smooth(0.36f, 0.66f, n * wet);
+                if (dry) c *= 1 - dryW[i];   // a drought (World.ClimateCycles): a blocking high clears the sky
                 Cloud[i] = c;
                 Rain[i] = Math.Max(0, c - 0.55f) * 2.2f;
                 // Clear air rains less (World.Sky): the same moisture falls elsewhere.
@@ -73,8 +74,11 @@ public sealed partial class World
         RainSum = sum;
     }
 
-    float TempEq(int i) =>
-        climRow[i / W] + P.TDay * (Light[i] - 0.25f) - P.TLapse * (Height[i] - 11 - Crust) + 35f * ventHeat[i] - 4f * Math.Min(1f, Snow[i] * 3);
+    float TempEq(int i)
+    {
+        float t = climRow[i / W] + P.TDay * (Light[i] - 0.25f) - P.TLapse * (Height[i] - 11 - Crust) + 35f * ventHeat[i] - 4f * Math.Min(1f, Snow[i] * 3);
+        return dryOn ? t + dryT[i] : t;   // a drought is warmer (World.ClimateCycles)
+    }
 
     // Reaction speed roughly doubles every 15 °C.
     public static float TempFactor(float t) => Math.Clamp(MathF.Pow(2f, (t - 15f) / 15f), 0.25f, 3f);
@@ -82,6 +86,7 @@ public sealed partial class World
     void UpdateClimate()
     {
         FlushedHeat();
+        if (climOn) StepClimateState();   // glaciation, ash, droughts, the chronicle of epochs (World.ClimateCycles)
         Parallel.For(0, H, y =>
         {
             for (int x = 0; x < W; x++)

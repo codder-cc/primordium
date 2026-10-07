@@ -99,6 +99,8 @@ public sealed partial class World
         for (int v = 0; v < N * Z; v++) if (Pressure[v] != 0) { Mix((ulong)v); F(Pressure[v]); }
         for (int i = 0; i < N; i++) { F(Temp[i]); F(Water[i]); F(Ice[i]); F(Photon[i]); F(Bite[i]); }
         for (int i = 0; i < N; i++) { F(Tmean[i]); F(CaveWarm[i]); F(caveHeatIn[i]); }
+        F(GlaciN); F(GlaciS); Mix((ulong)climT0); Mix((ulong)forcedIceUntil);
+        for (int i = 0; i < N; i++) if (Veil[i] != 0) { Mix((ulong)i); F(Veil[i]); }
         foreach (var kv in Buried.OrderBy(kv => kv.Key)) { Mix((ulong)kv.Key); foreach (var m in kv.Value.Matter) Mix((ulong)m.Raw); F(kv.Value.Order); }
         foreach (var a in Agents)
         {
@@ -175,12 +177,13 @@ public sealed partial class World
                 // the original is first rounded to what they can hold (the rounding the writer does);
                 // then the loaded world is the same world and goes on the same way. Version 2 keeps
                 // the ledger; version 1 has none: it starts from zero and closes from the load.
-                foreach (int version in new[] { 4, 2, 1 })
+                foreach (int version in new[] { 8, 4, 2, 1 })
                 {
                     double[] exact = a.ElementBudget();
                     a.RoundAmountsToFloat();
                     a.InitCaveClimate();   // nor do they hold the cave climate (version 5): it starts again from Temp
                     a.SkyFromOldFile();    // nor the sky (version 8): rebuilt at the load
+                    a.ClimateFromOldFile();   // nor the climate cycles (version 10): neutral phase from the load, nothing running
                     double[] rounded = a.ElementBudget();
                     for (int e = 0; e < exact.Length; e++)
                         Require(Math.Abs(rounded[e] - exact[e]) < 0.05, $"rounding to float moved element {e} by {rounded[e] - exact[e]:R}");

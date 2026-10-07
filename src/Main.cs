@@ -526,6 +526,7 @@ public partial class Main : Node
             case Key.F8: Ui.Chronicle.Toggle(); break;
             case Key.F9: Ui.Saves.QuickLoad(); break;
             case Key.F10: Ui.Evolution.Toggle(); break;
+            case Key.F11: Ui.Catastrophes.Toggle(); break;
             case Key.K: v.KinFocus = !v.KinFocus; break;
             case Key.B: ShowRecords = !ShowRecords; break;
             case Key.O:
