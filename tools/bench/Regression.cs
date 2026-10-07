@@ -148,6 +148,7 @@ public sealed partial class World
         FaceRegression();
         WaterRegression();
         HandRegression();
+        RubbleRegression();
         FatalActionRegression();
         RegionalStructureRegression();
         StackRegression();
@@ -638,6 +639,33 @@ public sealed partial class World
 
     // The player's brush: what it pours or digs out is exactly what HandInput books; killing leaves
     // remains and sound cell lists; water adds up.
+    // A heavy pile crushes the rock under it into rubble, but matter never takes less room than it fills:
+    // the column under the pile keeps its blocks, nothing is packed into burials (once crushed blocks
+    // became burials — mass without volume — and a big pile sucked its whole column into the bottom).
+    static void RubbleRegression()
+    {
+        var w = new World(new WorldSettings { Seed = 1, InitialPop = 0, Abiogenesis = false, Strikes = false });
+        int cx = 128, cy = 80, s = w.RandomPourable(), c0 = cy * W + cx;
+        double[] a0 = w.ElementBudget();
+        double Buried() { double t = 0; foreach (var kv in w.Buried) foreach (var q in kv.Value.Matter) t += q; return t; }
+        int Solid() { int n = 0; for (int dy = -3; dy <= 3; dy++) for (int dx = -3; dx <= 3; dx++) { int c = (cy + dy) * W + cx + dx; for (int z = 0; z < Z; z++) if (w.Mat[c * Z + z] >= 2) n++; } return n; }
+        for (int k = 0; k < 300; k++) { w.Pour(cx, cy, 6, s, 1f); if (k % 20 == 0) w.Step(); }
+        int solid0 = Solid();
+        double buried0 = Buried();
+        for (int t = 0; t < 1500; t++) w.Step();
+        int solid1 = Solid();
+        double buried1 = Buried();
+        double[] a1 = w.ElementBudget();
+        for (int e = 0; e < a1.Length; e++)
+            Require(Math.Abs(a1[e] - a0[e] - w.HandInput[e] - w.InteriorInput[e]) < 1e-6, $"rubble: element {e} drifted");
+        Require(w.CrushedBlocks > 0, "the pile crushed nothing — the test does not test");
+        Require(solid1 >= 0.8 * solid0, $"the pile's columns lost blocks: {solid0} → {solid1}");
+        Require(buried1 - buried0 < 0.02 * solid0 * Chem0Cap(w, s), $"crushed rock went into burials: {buried0:F0} → {buried1:F0} molecules");
+        Console.WriteLine($"PASS rubble: a {w.Height[c0]}-level pile crushed {w.CrushedBlocks} blocks into rubble; blocks under it {solid0} → {solid1}, burials {buried0:F0} → {buried1:F0} molecules, atoms exact");
+    }
+
+    static int Chem0Cap(World w, int s) => w.Chem.MatCap[s + 2];
+
     static void HandRegression()
     {
         var w = Fixture();

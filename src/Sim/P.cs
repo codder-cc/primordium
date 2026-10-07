@@ -38,6 +38,9 @@ public static class P
     // it routine. Rock is eaten slowly.
     public static float RockBarrier = 4f;
     public static float CompactionPressure = 8f;
+    // A crushed block becomes rubble in place (order 0, same molecules, same room). Rubble at least this
+    // full bears any compression; a thinner skin of it is crushed down into the voxel below.
+    public static float RubbleFill = 0.5f;
     public static int StructureEvery = 4, MetamorphEvery = 64;
 
     // Virtual machine

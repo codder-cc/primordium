@@ -359,9 +359,8 @@ public sealed partial class World
             if (dest < z) { impactSource = 1; TransferVoxel(v, c * Z + dest, true); }
             else if (Crushes(v))
             {
-                int burial = c * Z + Math.Max(1, z - 1);
-                SpillVoxel(v, BurialAt(burial).Matter);
-                MoveBurial(v, burial);
+                if (Order[v] > 0) CrushToRubble(v);   // the lattice breaks; the molecules keep their room
+                else CompactRubble(v);                // a thin skin of rubble packs into the block under it
                 CrushedBlocks++;
             }
         }
@@ -376,9 +375,74 @@ public sealed partial class World
     // (Crushing such a skin only turned its last molecules into loose food without the face's work.)
     bool Crushes(int v)
     {
+        // Rubble that fills its voxel has nowhere to go under compression: crushing breaks a lattice, it
+        // does not make matter take less room. (Crushed blocks used to become burials — mass without
+        // volume — so a heavy pile sucked its whole column down into the bottom voxels.)
+        if (Order[v] == 0 && (Fill(v) >= P.RubbleFill || !RoomBelow(v))) return false;
         float load = Pressure[v];
         if (v % Z + 1 < Z && Mat[v + 1] == Chemistry.Air) load -= OwnLoad(v);
         return load > CompressionCapacity(v);
+    }
+
+    // Compression failure: the block's lattice is crushed into rubble in place. Same molecules, same
+    // room; disorder makes it weaker (it may crush the blocks under it in turn, but never vanish), and
+    // pressure orders it again over time (Metamorphose) once it bears its load.
+    void CrushToRubble(int v)
+    {
+        int c = v / Z;
+        Order[v] = 0;
+        compressionCache[v] = 0;
+        if (BurialOf(v, out var burial)) burial.Dirty = true;
+        Interlocked.Increment(ref TerrainVersion);
+        ColumnVersion[c]++;
+        annealable[c] = true;
+        MarkDirty(c);
+    }
+
+    // Room left in the solid block right under v (0 if it is full, air or the boundary).
+    bool RoomBelow(int v) => v % Z > 2 && Mat[v - 1] >= 2 && VoxelVolume(v - 1) < P.VoxelSpace * 0.999f;
+
+    // Rubble too thin to bear its load packs into the block under it: molecules move down as far as
+    // that block has room by volume. The voxel empties only when all of it fits (the pore closes and
+    // whatever stands above settles), so matter never takes less room than it fills.
+    void CompactRubble(int v)
+    {
+        if (!RoomBelow(v)) return;
+        int b = v - 1, c = v / Z;
+        float room = P.VoxelSpace - VoxelVolume(b);
+        if (!Mixed(b, out var below))
+        {
+            below = new ushort[Chemistry.S];
+            below[Mat[b] - 2] = Units[b];
+            SetMixture(b, below);
+        }
+        if (!Mixed(v, out var from))
+        {
+            from = new ushort[Chemistry.S];
+            from[Mat[v] - 2] = Units[v];
+            SetMixture(v, from);
+        }
+        int moved = 0;
+        for (int sp = 0; sp < Chemistry.S && room > 0; sp++)
+        {
+            if (from[sp] == 0) continue;
+            int fit = Math.Min(from[sp], (int)(room / Chem.Volume[sp]));
+            fit = Math.Min(fit, ushort.MaxValue - Units[b]);
+            if (fit <= 0) continue;
+            from[sp] -= (ushort)fit; below[sp] += (ushort)fit;
+            Units[v] -= (ushort)fit; Units[b] += (ushort)fit; moved += fit;
+            room -= fit * Chem.Volume[sp];
+        }
+        if (moved == 0) return;
+        Mat[b] = Chem.BuiltMat[Dominant(below)];
+        compressionCache[b] = cohesionCache[b] = 0;
+        MassChanged(b);
+        if (Units[v] == 0) { RemoveVoxel(c, v % Z); return; }   // its burial, if any, goes down to the floor
+        Mat[v] = Chem.BuiltMat[Dominant(from)];
+        compressionCache[v] = cohesionCache[v] = 0;
+        Interlocked.Increment(ref TerrainVersion);
+        ColumnVersion[c]++;
+        MarkDirty(c);
     }
 
     // A block whose path breaks falls if there is a cavity under it. If it rests on another hanging

@@ -525,7 +525,9 @@ public sealed partial class World
                 {
                     int v = c * Z + z;
                     // Annealing only strengthens a block: refresh its cached strength, nothing can fail from it.
-                    if (Mat[v] >= 2 && Pressure[v] > P.CompactionPressure && Order[v] < 245)
+                    // Only a block that bears its load anneals: overloaded rubble stays rubble instead of
+                    // ordering a little and being crushed again every pass.
+                    if (Mat[v] >= 2 && Pressure[v] > P.CompactionPressure && Order[v] < 245 && Pressure[v] <= CompressionCapacity(v))
                     {
                         Order[v]++; compressionCache[v] = 0;
                         if (Order[v] < 245) more = true;
