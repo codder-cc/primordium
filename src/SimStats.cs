@@ -54,7 +54,7 @@ public sealed class SimStats
                 int cell = a.Y * World.W + a.X;
                 c.Pop++;
                 c.AvgLen += a.G.Length;
-                c.AvgEnergy += a.Energy;
+                c.AvgEnergy += (float)a.Energy;
                 c.AvgAge += a.Age;
                 c.AvgCycles += a.LastCycles;
                 c.AvgTb += a.Tb;
@@ -86,7 +86,7 @@ public sealed class SimStats
                 }
 
                 v[0] = a.Age; v[1] = a.NChildren; v[2] = a.Gen; v[3] = a.Mass; v[4] = a.Cells + a.Mass * 1e-4f;
-                v[5] = a.Energy; v[6] = enzTotal; v[7] = protShare; v[8] = a.G.Length; v[9] = a.NKills;
+                v[5] = (float)a.Energy; v[6] = enzTotal; v[7] = protShare; v[8] = a.G.Length; v[9] = a.NKills;
                 v[10] = a.NAttacks; v[11] = a.NInjects; v[12] = a.NMates; v[13] = w.Count[cell]; v[14] = a.Tb; v[15] = -a.Tb;
                 for (int r = 0; r < R; r++)
                     if (v[r] > p.Best[r]) { p.Best[r] = v[r]; p.BestA[r] = a; }

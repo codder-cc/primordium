@@ -83,7 +83,7 @@ public sealed partial class World
         if (a.Dead) return;
         if (a.Target?.Dead == true) a.Target = null;
         if (a.LinkWant?.Dead == true) a.LinkWant = null;
-        float e0 = a.Energy;
+        double e0 = a.Energy;
         a.TickPhoto = a.TickChem = a.TickMine = a.TickAttack = a.TickHeat = 0;
         long restStart = ProfileOps ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         Exec(a, cell);
@@ -99,8 +99,10 @@ public sealed partial class World
         // in the cells, not in both at once.
         float relax = 1f / (6f + 0.15f * a.Mass);
         a.Tb += (FootTemp(a) - a.Tb) * relax;
-        float shed = a.HeatHeld * relax;
-        a.HeatHeld -= shed; a.TickHeat += shed;
+        double held = a.HeatHeld;
+        a.HeatHeld = held - held * relax;
+        double shed = held - a.HeatHeld;   // what the double actually lost: booked exactly
+        a.TickHeat += (float)shed;
         Flows[FShed] += shed;
 
         // A solar flare (World.Sky): the dose of this tick wears proteins, costs energy and heats the
@@ -173,9 +175,9 @@ public sealed partial class World
         // the more is hoarded beyond it. There is no cap.
         if (a.Energy > 0)
         {
-            float ratio = a.Energy / a.Store, hold = P.HoldK * a.Energy * ratio * ratio;
+            double ratio = a.Energy / a.Store, hold = P.HoldK * a.Energy * ratio * ratio;
             Dissipate(a, hold);
-            a.LifeSpill += hold;
+            a.LifeSpill += (float)hold;
         }
         a.EmaPhoto += (a.TickPhoto - a.EmaPhoto) * 0.01f;
         a.EmaChem += (a.TickChem - a.EmaChem) * 0.01f;
@@ -184,7 +186,7 @@ public sealed partial class World
         a.EmaGot += (a.TickGot - a.EmaGot) * 0.01f;
         a.EmaUpkeep += (upkeep + a.LastCycles * P.CostInstr - a.EmaUpkeep) * 0.01f;
         a.EmaHarm += (harm - a.EmaHarm) * 0.01f;
-        a.EmaNet += (a.Energy - e0 - a.EmaNet) * 0.01f;
+        a.EmaNet += ((float)(a.Energy - e0) - a.EmaNet) * 0.01f;
         a.TickGot = 0;
         a.Age++;
         if ((a.Age & 7) == 0) ChronLive(a);   // the chronicle looks: depth, caves, water (observation only)
@@ -218,6 +220,8 @@ public sealed partial class World
             a.SetGenome(g, p);
             if (u >= pDecay + pSun) FlareMutated();
         }
+        // Thermal ageing of everything it holds (World.Wear; draws random numbers only with the law on).
+        if (WearLaw) Wear(a, cell);
 
         if (a.Energy <= 0)
         {
@@ -290,11 +294,11 @@ public sealed partial class World
                 continue;
             }
             if (a.Id > b.Id) continue;
-            float f = (a.Energy - b.Energy) * P.LinkFlow;
+            double f = (a.Energy - b.Energy) * P.LinkFlow;
             a.Energy -= f; b.Energy += f;
             var to = f > 0 ? b : a;
-            to.TickGot += Math.Abs(f);
-            to.LifeGot += Math.Abs(f);
+            to.TickGot += (float)Math.Abs(f);
+            to.LifeGot += (float)Math.Abs(f);
             float vx = (a.Vx + b.Vx) * 0.5f, vy = (a.Vy + b.Vy) * 0.5f;
             a.Vx = b.Vx = vx; a.Vy = b.Vy = vy;
         }
@@ -336,8 +340,8 @@ public sealed partial class World
             var e = a.Enz[k];
             if (buried == null) C[e.Material][cell] += e.Matter; else buried[e.Material] += e.Matter;
         }
-        float heat = Math.Max(0, a.Energy) + a.HeatHeld;
-        heatIn[cell] += heat;
+        double heat = Math.Max(0, a.Energy) + a.HeatHeld;
+        heatIn[cell] += (float)heat;
         var flows = Flows;
         flows[FDeath] += heat;
         if (a.Energy < 0) flows[FWriteOff] -= a.Energy;   // its debt leaves the stock (see World.Energy)
@@ -415,7 +419,7 @@ public sealed partial class World
         Looks.Inherit(child, a, Rng);
         child.Energy = a.Energy * frac;
         a.Energy -= child.Energy;
-        a.LifeKids += cost + child.Energy;
+        a.LifeKids += (float)(cost + child.Energy);
         for (int s = 0; s < Chemistry.S; s++)
             for (int k = 0; k < give[s]; k++) { RemoveMol(a, s); AddMol(child, s); }
         Array.Copy(a.Mem, child.Mem, P.MemSize);
@@ -425,7 +429,7 @@ public sealed partial class World
 
     void Born(Agent parent, Agent child, int cell, Agent mate = null)
     {
-        child.LifeStart = child.Energy;
+        child.LifeStart = (float)child.Energy;
         child.Z = WalkLevel(cell, parent.Z);
         SetLift(child, cell, child.Z, Level(parent));   // born in water: at its parent's height
         Place(child, cell);
@@ -454,9 +458,9 @@ public sealed partial class World
         Looks.Inherit(child, Rng.NextDouble() < 0.5 ? a : t, Rng);
         foreach (var parent in new[] { a, t })
         {
-            float e = parent.Energy * 0.25f;
+            double e = parent.Energy * 0.25;
             parent.Energy -= e;
-            parent.LifeKids += e;
+            parent.LifeKids += (float)e;
             child.Energy += e;
             for (int s = 0; s < Chemistry.S; s++)
             {
@@ -468,7 +472,7 @@ public sealed partial class World
         {
             // Not enough matter for a body: what was given spills on the ground.
             for (int s = 0; s < Chemistry.S; s++) if (child.Inv[s] > 0) ChangeLoose(a, cell, s, child.Inv[s]);
-            heatIn[cell] += child.Energy;
+            heatIn[cell] += (float)child.Energy;
             Flows[FStillborn] += child.Energy;
             return;
         }
@@ -601,7 +605,7 @@ public sealed partial class World
             if (a.Dead) continue;
             c.Pop++;
             c.AvgLen += a.G.Length;
-            c.AvgEnergy += a.Energy;
+            c.AvgEnergy += (float)a.Energy;
             c.AvgAge += a.Age;
             c.AvgCycles += a.LastCycles;
             c.AvgTb += a.Tb;

@@ -137,7 +137,8 @@ public sealed partial class World
         // What a dose does, under the ledger.
         open.Enz[0] = new Enzyme { Kind = Enzyme.Photo, A = (byte)light, Amount = 3, Eff = 1, Topt = 15 }; open.EnzN = 1;
         var eb = g.EnergyStart();
-        float tb = open.Tb, en = open.Energy, amount = open.Enz[0].Amount;
+        float tb = open.Tb, amount = open.Enz[0].Amount;
+        double en = open.Energy;
         float dose = g.Flare(open, out float harm);
         Require(dose == dOpen && open.Tb > tb && open.Energy < en && open.Enz[0].Amount < amount && open.HeatHeld > 0 && harm > 0, "a flare dose did nothing");
         g.EnergyBalanced(eb, "flare", FFlare, FDissipate);

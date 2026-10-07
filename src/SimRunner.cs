@@ -223,7 +223,7 @@ public sealed class SimRunner
         {
             if (selHistN == SelHistCap) { Array.Copy(selHist, 1, selHist, 0, SelHistCap - 1); Array.Copy(selMass, 1, selMass, 0, SelHistCap - 1); selHistN--; }
             selMass[selHistN] = s.Mass;
-            selHist[selHistN++] = s.Energy;
+            selHist[selHistN++] = (float)s.Energy;
         }
         if (w.Tick % 100 == 0)
         {
@@ -386,7 +386,7 @@ public sealed class SimRunner
                 s.Ref = a;
                 s.Id = a.Id; s.X = a.X; s.Y = a.Y; s.Z = a.Z; s.Cells = a.Cells; s.Shape = a.Shape; s.Lineage = a.Lineage;
                 s.Lift = a.Lift; s.Mass = a.Mass; s.Sx = a.Sx; s.Sy = a.Sy; s.Sz = a.Sz; s.Hue = a.Hue; s.Sat = a.Sat; s.Val = a.Val;
-                s.EnergyK = Math.Clamp(a.Energy / a.Store, 0, 1);
+                s.EnergyK = (float)Math.Clamp(a.Energy / a.Store, 0, 1);
                 s.EmaPhoto = a.EmaPhoto; s.EmaChem = a.EmaChem; s.EmaMine = a.EmaMine; s.EmaAttack = a.EmaAttack;
                 float ph = 0, chem = 0, mo = 0, tot = 0;
                 var enz = a.Enz;

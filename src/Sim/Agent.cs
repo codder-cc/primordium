@@ -32,7 +32,8 @@ public sealed class Agent
     public int X, Y, Z; // Z is the free voxel occupied above a floor, also inside caves
     public float Vx, Vy;
     public float Lift, Vz;   // in water: how high above its floor it swims (blocks), and how fast it rises
-    public float Energy, Tb;                   // Tb: body temperature, °C
+    public double Energy;                      // free energy: double, so the energy ledger closes (see World.Energy)
+    public float Tb;                           // body temperature, °C
     public int Age;
     public bool Dead;
     public int Cause;
@@ -80,7 +81,7 @@ public sealed class Agent
     // What the agent actually ended up doing (inspector, colouring, census)
     public float GainPhoto, GainChem, GainMine;
     public float TickPhoto, TickChem, TickMine, TickAttack, TickHeat;
-    public float HeatHeld;   // reaction heat still in the body (it warmed Tb), shed into the cells as it cools
+    public double HeatHeld;  // reaction heat still in the body (it warmed Tb), shed into the cells as it cools
     public float FlareDose;  // solar flare dose this tick (World.Sky; for the view, recomputed every tick)
     public long FlareEp;     // the last flare episode that reached it (chronicle counts, observation only; saved)
     public float EmaPhoto, EmaChem, EmaMine, EmaAttack;
