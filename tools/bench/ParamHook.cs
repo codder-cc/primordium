@@ -10,6 +10,8 @@ namespace Primordium;
 //   --preset path.json            a saved preset: every law it names, the rest back to defaults (first)
 //   --set Name=value              one law before the world is made (repeatable; --param is the same flag)
 //   --param-at TICK:Name=value    a law changed between ticks during the run (World.SetParam, logged)
+//   --catastrophe-at "TICK:spec"  a catastrophe between ticks (World.Catastrophe, logged), e.g. "3000:iceage days=5",
+//                                 "6000:volcano x=-1 y=-1", "2000:drought x=100 y=60 r=24 days=5 dt=8" (Catastrophe.Parse)
 //
 // Names are those of `--list-params` (case does not matter); values are clamped to the law's range
 // and rounded for integer laws, as the registry stores them (the run prints what was actually set).
@@ -21,6 +23,7 @@ public static class ParamHook
         public readonly List<string> Presets = new();
         public readonly List<(string name, double value)> Set = new();
         public readonly List<(long tick, string name, double value)> At = new();
+        public readonly List<(long tick, Catastrophe c)> Catastrophes = new();
         public readonly List<string> Forward = new();   // the flags as given, for child processes
 
         // How the laws are written into result files: "Name=value;…", "@tick:Name=value", "preset:file", or "default".
@@ -28,11 +31,12 @@ public static class ParamHook
         {
             var parts = Presets.Select(p => "preset:" + System.IO.Path.GetFileNameWithoutExtension(p))
                 .Concat(Set.Select(s => $"{s.name}={s.value.ToString("R", CultureInfo.InvariantCulture)}"))
-                .Concat(At.Select(a => $"@{a.tick}:{a.name}={a.value.ToString("R", CultureInfo.InvariantCulture)}")).ToList();
+                .Concat(At.Select(a => $"@{a.tick}:{a.name}={a.value.ToString("R", CultureInfo.InvariantCulture)}"))
+                .Concat(Catastrophes.Select(c => $"@{c.tick}:{c.c.Spec()}")).ToList();
             return parts.Count == 0 ? "default" : string.Join(";", parts).Replace(',', ' ');
         }
 
-        public bool Any => Presets.Count + Set.Count + At.Count > 0;
+        public bool Any => Presets.Count + Set.Count + At.Count + Catastrophes.Count > 0;
     }
 
     static (string name, double value) NameValue(string flag, string text)
@@ -69,6 +73,12 @@ public static class ParamHook
                     var (name, value) = NameValue(flag, text[(colon + 1)..]);
                     laws.At.Add((tick, name, value));
                     break;
+                case "--catastrophe-at":
+                    int cc = text.IndexOf(':');
+                    if (cc <= 0 || !long.TryParse(text[..cc], out long ct)) throw new ArgumentException($"--catastrophe-at expects TICK:spec, got '{text}'");
+                    try { laws.Catastrophes.Add((ct, Catastrophe.Parse(text[(cc + 1)..]))); }
+                    catch (FormatException e) { throw new ArgumentException($"--catastrophe-at: {e.Message}"); }
+                    break;
                 default: continue;
             }
             laws.Forward.Add(flag); laws.Forward.Add(text);
@@ -98,6 +108,12 @@ public static class ParamHook
     // Applies the --param-at changes due before the step to tick `tick`; returns a line per change.
     public static IEnumerable<string> ApplyDue(Laws laws, World w)
     {
+        foreach (var (at, c) in laws.Catastrophes)
+            if (at == w.Tick)
+            {
+                string done = w.Catastrophe(c, out string error);
+                yield return $"tick {w.Tick}: catastrophe {c.Spec()}: " + (done ?? "FAILED " + error);
+            }
         foreach (var (at, name, value) in laws.At)
             if (at == w.Tick)
             {

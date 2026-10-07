@@ -295,7 +295,7 @@ public partial class Hud : Control
 
     void TopBar(World w, float px)
     {
-        DrawRect(new Rect2(0, 0, px, 82), BarBg);
+        DrawRect(new Rect2(0, 0, px, 98), BarBg);
         int season = (int)(w.YearFrac * 4) % 4;
         float tod = w.DayFrac;
         T(16, 24, $"Сутки {w.Day + 1} · {Seasons[season]} на севере · тик {w.Tick:N0}", Fg, 16, bold);
@@ -322,6 +322,10 @@ public partial class Hud : Control
         string skyLine = SkyLine(w, v.CursorCell, true);
         if (TW(skyLine, 12) > px - 32) skyLine = SkyLine(w, v.CursorCell, false);
         T(16, 76, skyLine, Dim, 12);
+        // The climate epoch (World.ClimateCycles): ice age or interglacial, the phase of the cycles, ash, droughts.
+        string epoch = w.EpochLine(true);
+        if (TW(epoch, 12) > px - 32) epoch = w.EpochLine(false);
+        T(16, 92, epoch, w.IceAgeNow || w.VolcanicWinterNow ? Acc : Dim, 12);
     }
 
     // The sky (World.Sky): the sun's activity and flares, the next eclipse, and the column under the cursor —
@@ -384,7 +388,8 @@ public partial class Hud : Control
         0 => "породы и почва",
         1 => "температура",
         2 => "мощность солнца у поверхности",
-        View3D.TranspOverlay => World.TranspLaw ? $"прозрачность атмосферы (в среднем {w.TranspMean:0.00})" : "прозрачность атмосферы (закон выключен: небо везде ясное)",
+        View3D.TranspOverlay => (World.TranspLaw ? $"прозрачность атмосферы (в среднем {w.TranspMean:0.00})" : "прозрачность атмосферы (закон выключен: небо везде ясное)")
+                                + (w.VeilTransMean < 0.999f ? $", пепел: свет {w.VeilTransMean:P0}" : ""),
         View3D.DayOverlay => "длина дня: ночь — чёрный, 12 ч — зелёный, полярный день — светлый",
         View3D.FlareOverlay => World.FlareLaw ? (w.FlarePower > 0 ? $"доза вспышки на открытой поверхности (мощность {w.FlarePower:0.0})" : $"доза вспышки: вспышки нет, тускло — куда достаёт активность солнца ({w.SolarActivity:P0})") : "доза вспышки (вспышки выключены)",
         3 => "останки на земле",

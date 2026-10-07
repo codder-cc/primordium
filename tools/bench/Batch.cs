@@ -51,7 +51,7 @@ public static class Batch
     }
 
     public static readonly string[] RunColumns = new[] { "seed", "rep", "tick", "pop", "births", "deaths", "ms_tick", "mean_temp" }
-        .Concat(EvoMetrics.Names.Skip(1)).Concat(EvolutionHistory.Names.Skip(1)).Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames).Concat(World.GeoNames).Concat(World.ResNames).Concat(World.SkyNames).Concat(new[] { "energy_drift", "energy_tolerance", "atom_drift", "hash", "params" }).ToArray();
+        .Concat(EvoMetrics.Names.Skip(1)).Concat(EvolutionHistory.Names.Skip(1)).Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames).Concat(World.GeoNames).Concat(World.ResNames).Concat(World.SkyNames).Concat(World.ClimNames).Concat(new[] { "energy_drift", "energy_tolerance", "atom_drift", "hash", "params" }).ToArray();
 
     // The latest sample of the course of evolution (World.Evolution), without its tick; zeros before the first.
     public static double[] ProgressRow(World w) =>
@@ -91,6 +91,11 @@ public static class Batch
         var evo = new EvoMetrics();
         using var o = new StreamWriter(csv);
         o.WriteLine(string.Join(",", RunColumns));
+        // The chronicle's climate and player events and the course of evolution's events, with their ticks
+        // (next to the CSV: for looking at bursts after an epoch begins).
+        using var ev = new StreamWriter(Path.ChangeExtension(csv, ".events.csv"));
+        ev.WriteLine("tick,type,value,important,text");
+        long evSeen = w.Chronicle.NextSeq - 1;
         var sw = Stopwatch.StartNew();
         double last = 0;
         int births = 0, deaths = 0;
@@ -98,7 +103,15 @@ public static class Batch
         {
             foreach (var line in ParamHook.ApplyDue(laws, w)) Console.WriteLine(line);
             w.Step();
+            if (w.Chronicle.NextSeq - 1 > evSeen)
+            {
+                foreach (var e in w.Chronicle.Since(evSeen))
+                    if (e.Type is EvType.Climate or EvType.Player or EvType.Speciation or EvType.Extinction or EvType.NewDominant or EvType.NewDiet)
+                        ev.WriteLine(string.Join(",", e.Tick.ToString(), e.Type.ToString(), F(e.Value), e.Important ? "1" : "0", "\"" + e.Text.Replace("\"", "'") + "\""));
+                evSeen = w.Chronicle.NextSeq - 1;
+            }
             if (t % every != 0 && t != ticks) continue;
+            ev.Flush();
             double wall = sw.Elapsed.TotalMilliseconds;
             int span = t % every == 0 ? every : t % every;
             double ms = (wall - last) / span;
@@ -123,6 +136,7 @@ public static class Batch
             row.AddRange(w.GeoCensus().Select(x => F(x)));
             row.AddRange(w.ResCensus().Select(x => F(x)));
             row.AddRange(w.SkyCensus().Select(x => F(x)));
+            row.AddRange(w.ClimCensus().Select(x => F(x)));
             row.AddRange(new[] { drift, tol, atomDrift, w.StateHash().ToString("x16"), paramText });
             o.WriteLine(string.Join(",", row));
             o.Flush();
@@ -342,7 +356,7 @@ public static class Batch
     // ---- summary ----
 
     static readonly string[] SummaryColumns = new[] { "pop", "births", "deaths", "ms_tick", "mean_temp" }.Concat(EvoMetrics.Names.Skip(1)).Concat(EvolutionHistory.Names.Skip(1))
-        .Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames).Concat(World.GeoNames).Concat(World.ResNames).Concat(World.SkyNames).Concat(new[] { "energy_drift", "atom_drift" }).ToArray();
+        .Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames).Concat(World.GeoNames).Concat(World.ResNames).Concat(World.SkyNames).Concat(World.ClimNames).Concat(new[] { "energy_drift", "atom_drift" }).ToArray();
 
     static void WriteSummary(RunTable t, string path, double extinct, double boom)
     {
@@ -482,7 +496,7 @@ public static class Batch
         }
         foreach (int c in Checkpoints(common)) Line($"pop @{c}", c, "pop", "F0");
         foreach (var col in new[] { "mean_temp", "ms_tick", "births", "deaths" }) Line($"{col} @{end}", end, col, "F2");
-        foreach (var col in EvoMetrics.Names.Skip(1).Concat(EvolutionHistory.Names.Skip(1)).Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames).Concat(World.GeoNames).Concat(World.ResNames).Concat(World.SkyNames)) Line($"{col} @{end}", end, col, "F3");
+        foreach (var col in EvoMetrics.Names.Skip(1).Concat(EvolutionHistory.Names.Skip(1)).Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames).Concat(World.GeoNames).Concat(World.ResNames).Concat(World.SkyNames).Concat(World.ClimNames)) Line($"{col} @{end}", end, col, "F3");
         PrintAligned(lines);
         int Count(RunTable t, Func<double, bool> f, bool max) => (max ? t.RunMax("pop") : t.RunLast("pop")).Count(f);
         int na = a.Runs.Count, nb = b.Runs.Count;

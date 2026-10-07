@@ -170,6 +170,27 @@ public static class P
     public static int CaveClimate = 1;
     public static float GeoGrad = 0.15f, CaveDepthK = 3f;
     public static int TmeanTau = 12000;
+    // Non-stationary climate (World.ClimateCycles): slow deterministic cycles of the seed and the tick.
+    // The axial tilt swings by ±TiltAmp around Tilt over TiltPeriod days; the orbit's eccentricity grows
+    // from 0 to EccAmp and back over EccPeriod days while the perihelion turns through the year over
+    // PrecPeriod days (the hemisphere whose summer meets the perihelion gets the hotter summer: the sun
+    // there × 1 + 2e); the sun's output drifts by ±SunDriftAmp over SunDriftPeriod days (on top of the
+    // activity cycle of the flares). Periods 0 — from the seed. A relative change of sunlight warms or
+    // cools a latitude's climate by ClimSens °C per unit. Ice ages: when a hemisphere's high-latitude
+    // (65°) summer insolation falls below IceAgeThreshold of its norm, its glaciation grows towards 1
+    // over IceAgeTau days (and retreats the same way): up to IceAgeDT °C colder, twice as much at the
+    // pole as at the equator; snow and ice then spread by the existing water cycle (the same water).
+    // Volcanic winters: MegaEruptionRate a day, an existing vent throws out MegaEruptionBlocks blocks of
+    // the interior (booked like any vent) and ash: MegaAsh of the planet's mean optical depth once spread,
+    // mixed around the latitude within hours and pole to pole in about AshSpreadDays days, falling out
+    // with a time constant of AshTau days. ClimateCycles 0 switches the cycles off (the player's
+    // catastrophes still work through the same machinery); the code then runs the old expressions.
+    public static int ClimateCycles = 1;
+    public static float TiltAmp = 0.05f, TiltPeriod = 0f, EccAmp = 0.04f, EccPeriod = 0f, PrecPeriod = 0f;
+    public static float SunDriftAmp = 0.03f, SunDriftPeriod = 0f, ClimSens = 25f;
+    public static float IceAgeThreshold = 0.93f, IceAgeDT = 8f, IceAgeTau = 4f;
+    public static float MegaEruptionRate = 0.01f, MegaAsh = 0.4f, AshTau = 10f, AshSpreadDays = 4f;
+    public static int MegaEruptionBlocks = 60;
 
     // Water
     public static float SeaShare = 0.22f;       // the lowest share of the land starts under water

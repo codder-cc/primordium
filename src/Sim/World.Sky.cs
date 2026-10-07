@@ -42,7 +42,7 @@ public sealed partial class World
     bool transpValid;
 
     public static float Latitude(int y) => (0.5f - (y + 0.5f) / H) * MathF.PI * 0.92f;
-    public float DeclinationAt(double tick) => (float)(P.Tilt * Math.Sin(2 * Math.PI * tick / P.DayLen / P.YearDays));
+    public float DeclinationAt(double tick) => (float)(TiltAt(tick) * Math.Sin(2 * Math.PI * tick / P.DayLen / P.YearDays));   // the tilt of the climate cycles
 
     // ---- 1.1 insolation ----
 
@@ -79,20 +79,22 @@ public sealed partial class World
     public static float NoonElevation(float lat, float decl) => 90f - MathF.Abs(lat - decl) * 180f / MathF.PI;
 
     // The year's mean insolation per row and the equator's equinox day (the climate's yardstick):
-    // derived from the laws, rebuilt when they change.
+    // derived from the laws, rebuilt when they change (and, with the climate cycles, when the tilt moved
+    // by a step of 0.002 rad: the light update passes the tilt rounded to that).
     readonly float[] yearInsol = new float[H];
     float insolEq = 1;
     (float, float, float, float, int) insolKey = (float.NaN, 0, 0, 0, -1);
-    void EnsureInsolNorms()
+    void EnsureInsolNorms() => EnsureInsolNorms(P.Tilt);
+    void EnsureInsolNorms(float tilt)
     {
-        var key = (P.Tilt, P.InsolExp, P.TwilightLo, P.TwilightHi, P.Insolation);
+        var key = (tilt, P.InsolExp, P.TwilightLo, P.TwilightHi, P.Insolation);
         if (key == insolKey) return;
         insolKey = key;
         insolEq = Math.Max(1e-4f, DailyInsol(0, 0));
         Parallel.For(0, H, y =>
         {
             float lat = Latitude(y), sum = 0;
-            for (int j = 0; j < YearSeasons; j++) sum += DailyInsol(lat, P.Tilt * MathF.Sin(2 * MathF.PI * (j + 0.5f) / YearSeasons));
+            for (int j = 0; j < YearSeasons; j++) sum += DailyInsol(lat, tilt * MathF.Sin(2 * MathF.PI * (j + 0.5f) / YearSeasons));
             yearInsol[y] = sum / YearSeasons;
         });
     }
@@ -285,10 +287,18 @@ public sealed partial class World
         return true;
     }
 
-    // The summed power of the flares under way at a tick (each rises over a tenth of its length, then fades).
+    // The summed power of the flares under way at a tick (each rises over a tenth of its length, then fades),
+    // with the strong flares the player sent (World.ClimateCycles: catastrophes; they come with the law off too).
     public float FlareAt(long tick)
     {
-        if (!FlareLaw || P.FlareRate <= 0) return 0;
+        float forced = 0;
+        foreach (var f in forcedFlares)
+        {
+            if (tick < f.Start || tick >= f.Start + f.Len) continue;
+            float u = (tick - f.Start) / f.Len;
+            forced += f.Power * (u < 0.1f ? u / 0.1f : (1 - u) / 0.9f);
+        }
+        if (!FlareLaw || P.FlareRate <= 0) return forced;
         long first = (long)Math.Floor((tick - 2 * P.FlareLen - FlareSlot) / (double)FlareSlot), last = tick / FlareSlot;
         float sum = 0;
         for (long k = Math.Max(0, first); k <= last; k++)
@@ -297,7 +307,7 @@ public sealed partial class World
             float u = (tick - start) / len;
             sum += power * (u < 0.1f ? u / 0.1f : (1 - u) / 0.9f);
         }
-        return sum;
+        return forced > 0 ? sum + forced : sum;
     }
 
     public float SolarActivity, FlarePower;   // this tick (derived from the tick and the laws)
@@ -312,13 +322,14 @@ public sealed partial class World
     // episode (start, and at the end its peak, the bodies it reached, mutations and deaths).
     void StepSky()
     {
-        if (!FlareLaw)
+        if (forcedFlares.Count > 0) forcedFlares.RemoveAll(f => f.Start + f.Len < Tick);
+        if (!FlareLaw && forcedFlares.Count == 0)
         {
             SolarActivity = 0; FlarePower = 0;
             if (flareEp != 0) EndFlare();
             return;
         }
-        SolarActivity = ActivityAt(Tick);
+        SolarActivity = FlareLaw ? ActivityAt(Tick) : 0;
         FlarePower = FlareAt(Tick);
         if (FlarePower > 0)
         {

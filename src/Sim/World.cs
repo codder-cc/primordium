@@ -201,6 +201,7 @@ public sealed partial class World
         UpdateLight();
         for (int i = 0; i < N; i++) Temp[i] = TempEq(i);
         InitCaveClimate();
+        ClimateFromOldFile();   // the climate cycles (World.ClimateCycles) start at their neutral phase at tick 0
         if (life != 0) lifeRng = new SimRng(seed ^ life, -7349);
         for (int k = 0, tries = 0; k < initialPop && tries < initialPop * 20; tries++)
             if (SpawnRandom()) k++;
@@ -246,6 +247,7 @@ public sealed partial class World
         LapStart();
         Tick++;
         ResMark(-1);   // the resource probe (World.Resources, observation): start of the tick
+        StepClimateCycles();   // World.ClimateCycles: is anything of the non-stationary climate running
         if (TranspLaw && (!transpValid || Tick % (P.LightEvery * 8) == 0)) UpdateTransparency();
         else if (!TranspLaw && transpValid) { transpValid = false; Array.Fill(Transp, 1f); TranspMean = 1; }
         if (Tick % (P.LightEvery * 2) == 0) UpdateClouds();
@@ -433,16 +435,21 @@ public sealed partial class World
     {
         double day = (double)Tick / P.DayLen;
         SunX = (float)(day % 1.0 * W);
-        SunDecl = (float)(P.Tilt * Math.Sin(2 * Math.PI * day / P.YearDays));
+        float tilt = climOn ? TiltAt(Tick) : P.Tilt;   // the tilt swings with the climate cycles (World.ClimateCycles)
+        SunDecl = (float)(tilt * Math.Sin(2 * Math.PI * day / P.YearDays));
         float sd = MathF.Sin(SunDecl), cd = MathF.Cos(SunDecl), sunX = SunX;
         int top = 0;   // nothing stands higher than the highest column: shadow rays stop there
         for (int i = 0; i < N; i++) if (Height[i] > top) top = Height[i];
         bool insol = InsolLaw, sky = TranspLaw;
-        if (insol) EnsureInsolNorms();
+        if (insol) EnsureInsolNorms(climOn ? MathF.Round(tilt / 0.002f) * 0.002f : P.Tilt);
         StepEclipse();
         bool ecl = EclipseNow;
         float ex = EclipseX, ey = EclipseY, reach = 1.3f * P.EclipseR + 1;
         float lum = FlareLaw ? 1 + P.SolarLumAmp * (2 * ActivityAt(Tick) - 1) : 1;
+        // The climate cycles: the sun's drift and the orbit dim or brighten the light, the ash veil too, and
+        // shift each latitude's climate (with the ice ages); nothing of it with them off.
+        bool clim = climOn, veil = veilOn;
+        if (clim) { lum *= CycleLum(); PrepareClimShift(lum); }
         Parallel.For(0, H, y =>
         {
             float lat = (0.5f - (y + 0.5f) / H) * MathF.PI * 0.92f;
@@ -450,6 +457,7 @@ public sealed partial class World
             // Climate of this latitude today: how high the sun climbs at noon — with the cosine law, the
             // day's insolation sum held back by the year's (World.Sky).
             climRow[y] = insol ? ClimateOf(y, SunDecl) : P.TPole + (P.TEquator - P.TPole) * MathF.Pow(Math.Max(0f, MathF.Cos(lat - SunDecl)), 1.3f);
+            if (clim) climRow[y] += climShift[y];
             bool shadowRow = ecl && MathF.Abs(y + 0.5f - ey) < reach;
             for (int x = 0; x < W; x++)
             {
@@ -479,6 +487,7 @@ public sealed partial class World
                     if (sky) l *= Transp[i];
                     if (shadowRow) l *= EclipseShade(x, y, ex, ey);
                     if (lum != 1) l *= lum;
+                    if (veil) l *= veilT[i];
                 }
                 // Photons are counted where they reach the water's surface (a body catches them only as deep as
                 // they get, see Photo); Light is what is left of it at the floor.

@@ -201,6 +201,7 @@ public sealed partial class World
             if (Vents.Count > vents) { var v = Vents[^1]; Add(EvType.Climate, $"проснулся вулкан ({v.X}, {v.Y}), сила {v.Strength:0.00}", null, v.Strength, false, null, v.X, v.Y); }
         }
         if (ventsDirty) { RecomputeVentFields(); ventsDirty = false; }
+        MaybeMegaEruption();   // the climate cycles' volcanic winters (World.ClimateCycles; nothing with the law off)
     }
 
     void RecomputeVentFields()

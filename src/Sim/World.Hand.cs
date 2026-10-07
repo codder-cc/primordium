@@ -65,7 +65,12 @@ public sealed partial class World
     // like any other water.
     public void PourWater(int cx, int cy, float r, float depth)
     {
-        foreach (var (c, w) in Brush(cx, cy, r)) Water[c] += depth * w;
+        foreach (var (c, w) in Brush(cx, cy, r))
+        {
+            float was = Water[c];
+            Water[c] += depth * w;
+            WaterHand += (double)Water[c] - was;   // the water budget (World.ClimateCycles): brought from outside
+        }
     }
 
     // Dig: the top block of each column goes with chance `chance` at the centre per stroke (less

@@ -425,6 +425,7 @@ void fragment() {
             case TranspOverlay:
                 // Clear-sky transparency (World.Sky): murky grey-brown → clear blue.
                 c = new Rgb(0.42f, 0.36f, 0.3f).Lerp(new Rgb(0.45f, 0.78f, 1f), Math.Clamp((w.Transp[i] - P.TranspMin) / Math.Max(0.01f, 1 - P.TranspMin), 0f, 1f));
+                if (w.Veil[i] > 0.005f) c = c.Lerp(new Rgb(0.16f, 0.13f, 0.12f), 1 - MathF.Exp(-w.Veil[i]));   // the ash veil (World.ClimateCycles)
                 lit = 1;
                 break;
             case DayOverlay:
@@ -480,6 +481,8 @@ void fragment() {
         }
         // A solar flare tints the sunlit side violet-white (World.Sky).
         if (Overlay == 0 && w.FlarePower > 0 && w.Sun[i] > 0) c = c.Lerp(new Rgb(1f, 0.8f, 1f), Math.Min(0.45f, 0.12f * w.FlarePower * w.Sun[i]));
+        // Volcanic ash in the stratosphere (World.ClimateCycles) greys the surface under it.
+        if (Overlay == 0 && w.Veil[i] > 0.01f) c = c.Lerp(new Rgb(0.42f, 0.38f, 0.36f), Math.Min(0.6f, 0.6f * (1 - MathF.Exp(-w.Veil[i]))));
         buf[o + 12] = c.R; buf[o + 13] = c.G; buf[o + 14] = c.B; buf[o + 15] = lit;
     }
 

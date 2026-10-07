@@ -37,6 +37,7 @@ public partial class UiManager : Control
     public ChronicleWindow Chronicle;
     public FossilWindow Fossil;
     public EvolutionWindow Evolution;
+    public CatastropheWindow Catastrophes;
 
     readonly ConcurrentQueue<Action> posted = new();
     VBoxContainer toastBox;
@@ -58,7 +59,7 @@ public partial class UiManager : Control
         LoadState();
 
         toolbar = UiKit.Row(4);
-        toolbar.Position = new Vector2(14, 88);
+        toolbar.Position = new Vector2(14, 104);
         foreach (var (text, tip, act) in new (string, string, Action)[]
         {
             ("Законы  F2", "законы мира: цены, прочность, климат…", () => Laws.Toggle()),
@@ -67,6 +68,7 @@ public partial class UiManager : Control
             ("Конструктор  F7", "свои существа: геном, тело, посадка кистью 5", () => Creator.Toggle()),
             ("Хроника  F8", "события мира, окаменелости; биография выбранного — вкладка в карточке существа", () => Chronicle.Toggle()),
             ("Ход эволюции  F10", "новизна против нейтральной тени, сложность, экология, темп, филогения; сводная подсказка", () => Evolution.Toggle()),
+            ("Катастрофы  F11", "ледниковье, потоп, вулканическая зима, вспышка, засуха, отравление — теми же законами, что и в мире", () => Catastrophes.Toggle()),
         })
         {
             var b = UiKit.Button(text, act, tip);
@@ -83,6 +85,7 @@ public partial class UiManager : Control
         Add(Chronicle = new ChronicleWindow());
         Add(Fossil = new FossilWindow());
         Add(Evolution = new EvolutionWindow());
+        Add(Catastrophes = new CatastropheWindow());
 
         toastBox = UiKit.Col(4);
         toastBox.MouseFilter = MouseFilterEnum.Ignore;

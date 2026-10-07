@@ -42,7 +42,9 @@ public sealed partial class World
     // the depth profile is off (those worlds were made without it).
     // 8: the sky block (SyncSky, World.Sky) after the geochemistry; the energy ledger gains the `flare`
     // input (a version 7 ledger is mapped: the flows after it move up by one).
-    public const int SaveVersion = 8, OldestSaveVersion = 1;
+    // 10: the climate cycles block (SyncClimateCycles, World.ClimateCycles) after the sky. Version 9 is the
+    // body chemistry branch's; when the two are merged both blocks follow each other (9, then 10).
+    public const int SaveVersion = 10, OldestSaveVersion = 1;
     static readonly byte[] SaveMagic = Encoding.ASCII.GetBytes("PRIMSAVE");
     const int EndMarker = 0x21444E45;   // "END!"
 
@@ -255,6 +257,7 @@ public sealed partial class World
         else if (s.Reading) EvoRegisterAll();
         SyncGeochem(s);                           // version 7: its own block after the course of evolution
         SyncSky(s);                               // version 8: its own block after the geochemistry (World.Sky)
+        SyncClimateCycles(s);                     // version 10: its own block after the sky (World.ClimateCycles)
     }
 
     // ---- cave climate (save version 5, World.Cave) ----

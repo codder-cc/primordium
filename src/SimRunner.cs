@@ -588,6 +588,14 @@ public sealed class SimRunner
         catch (Exception e) { Fail($"не сохранить {path}: {e.Message}"); }
     });
 
+    // A catastrophe (World.Catastrophe, ROADMAP 9.4): applied between ticks, chronicled and logged with the laws.
+    public void Catastrophe(Catastrophe c, Action<string> done = null) => Do(w =>
+    {
+        string text = w.Catastrophe(c, out string error);
+        if (text != null) { Notice("катастрофа: " + text); PublishChronicle(w, true); } else Fail($"{Primordium.Catastrophe.Names[(int)c.Kind]}: {error}");
+        done?.Invoke(text);
+    });
+
     public void SetAbiogenesis(bool on) => Do(w => w.Abiogenesis = on);
     public void SetStrikes(bool on) => Do(w => w.AutoStrikes = on);
 
