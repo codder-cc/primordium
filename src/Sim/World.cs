@@ -245,6 +245,7 @@ public sealed partial class World
         prof.Restart();
         LapStart();
         Tick++;
+        ResMark(-1);   // the resource probe (World.Resources, observation): start of the tick
         if (TranspLaw && (!transpValid || Tick % (P.LightEvery * 8) == 0)) UpdateTransparency();
         else if (!TranspLaw && transpValid) { transpValid = false; Array.Fill(Transp, 1f); TranspMean = 1; }
         if (Tick % (P.LightEvery * 2) == 0) UpdateClouds();
@@ -254,11 +255,14 @@ public sealed partial class World
         double checkpoint = prof.Elapsed.TotalMilliseconds;
         Prof[4] += checkpoint;
         if (flowDirty && Tick % 16 == 0) RecomputeFlow();   // terrain changes often; flow weights can lag a little
+        ResMark(ResourceProbe.POther);
         Diffuse();
+        ResMark(ResourceProbe.PDiffusion);
         Lap(DDiffusion);
         Prof[5] += prof.Elapsed.TotalMilliseconds - checkpoint;
         checkpoint = prof.Elapsed.TotalMilliseconds;
         if (Tick % P.EnvEvery == 0) EnvChem();
+        ResMark(ResourceProbe.PEnv);
         Prof[6] += prof.Elapsed.TotalMilliseconds - checkpoint;
         LapStart();
         if (Tick % P.ErodeEvery == 0) Erode();
@@ -280,6 +284,7 @@ public sealed partial class World
         Lap(DBurials);
         Prof[7] += prof.Elapsed.TotalMilliseconds - checkpoint;
         Prof[0] += prof.Elapsed.TotalMilliseconds; prof.Restart();
+        ResMark(ResourceProbe.POther);
 
         foreach (var b in tiles) b.Clear();
         // Where each body is is read in parallel (that is what costs: touching every body); the lists
@@ -351,6 +356,7 @@ public sealed partial class World
         EvoTick();   // the neutral shadow, the family tree, the progress tracks (observation only)
         Lap(DEvolution);
         Relieve();   // overfull floors let their smallest bodies go (see World.Volume)
+        ResMark(ResourceProbe.PBio);
         Lap(DRelieve);
         int alarmStart = (int)(Tick % 16) * (N / 16);
         for (int c = alarmStart; c < alarmStart + N / 16; c++)
@@ -367,6 +373,8 @@ public sealed partial class World
         // soup tries far more often.
         float barren = Math.Max(0, 1 - Agents.Count / 200f);
         if (Abiogenesis && mainRng.NextDouble() < P.AbioChance * (1 + 160 * barren)) SpawnRandom();
+        ResMark(ResourceProbe.POther);
+        ResTick();
         Lap(DAbio);
     }
 
@@ -488,6 +496,7 @@ public sealed partial class World
         var c = C[Chem.Gas];
         var next = back;
         float d = Chem.Diff[Chem.Gas];
+        if (P.GasDiffK != 1) d *= P.GasDiffK;   // World.Resources: the same integer flow per edge, both ways
         Parallel.For(0, H / 8, chunk =>   // each cell reads the old buffer only: rows are independent
         {
             for (int i = chunk * 8 * W, end = i + 8 * W; i < end; i++)
@@ -505,6 +514,12 @@ public sealed partial class World
                 next[i] = Qty.FromRaw(sum);
             }
         });
+        if (ResProbe != null)
+        {
+            double gross = 0;
+            for (int i = 0; i < N; i++) gross += Math.Abs(next[i].Raw - c[i].Raw);
+            ResProbe.DiffusionGross += gross / 2;
+        }
         C[Chem.Gas] = back; back = c; // swap buffers instead of copying a planet every tick
     }
 
@@ -532,6 +547,7 @@ public sealed partial class World
                 {
                     int v = i * Z + Height[i] - 1;
                     C[Chem.Gas][i] -= captured; BurialAt(v).Matter[Chem.Gas] += captured; MassChanged(v);
+                    if (ResProbe != null) ResProbe.Rain[RegionOf(i)] += captured.Raw;
                 }
             }
             if (weathering[i])

@@ -21,7 +21,7 @@ public partial class View3D : Node3D
     public SimFrame Frame;           // set by Main every frame
     public float[] Stress;           // per column, for the load overlay (filled by the simulation thread)
     public Camera3D Cam { get; private set; }
-    public int Overlay;              // 0 surface, 1 temperature, 2 light, 3 remains, 4 density, 5 deaths, 6 body heat, 7 load, 8 lattice, 9 temperature at depth, 10 deep element, FirstSpecies+s one species
+    public int Overlay;              // 0 surface, 1 temperature, 2 light, 3 remains, 4 density, 5 deaths, 6 body heat, 7 load, 8 lattice, 9 temperature at depth, 10 deep element, 11 food and gas stock, FirstSpecies+s one species
     public int ColorMode;            // see ColorModeNames
     public bool Lighting = true;
     public int Slice = -1;           // cut-away: rows south of this are hidden
@@ -30,8 +30,8 @@ public partial class View3D : Node3D
     public float PanelWidth = 440;   // logical px covered by the HUD panel on the right
 
     public int OverlayCount => FirstSpecies + Chemistry.S;
-    public const int FirstSpecies = 14;  // overlays before the per-molecule ones
-    public const int DepthTempOverlay = 9, DeepOverlay = 10, TranspOverlay = 11, DayOverlay = 12, FlareOverlay = 13;
+    public const int FirstSpecies = 15;  // overlays before the per-molecule ones
+    public const int DepthTempOverlay = 9, DeepOverlay = 10, StockOverlay = 11, TranspOverlay = 12, DayOverlay = 13, FlareOverlay = 14;
 
     // Timings of the steps of Refresh, ms summed since Main last cleared them (perf overlay).
     public const int ProfSlots = 10;
@@ -413,6 +413,10 @@ void fragment() {
                 c = h > 0 ? DeepColour(w.VoxelDeepShare(i * Z + h - 1), false) : DeepColour(0, false);
                 lit = 1;
                 break;
+            case StockOverlay:
+                c = StockColour(w, i);
+                lit = 1;
+                break;
             case 2:
                 // The sun's power at the surface now (World.Sun: cosine law, sky, shadows, clouds, eclipse).
                 c = new Rgb(0.08f, 0.08f, 0.14f).Lerp(new Rgb(1f, 0.92f, 0.55f), MathF.Min(1, w.Sun[i]));
@@ -477,6 +481,19 @@ void fragment() {
         // A solar flare tints the sunlit side violet-white (World.Sky).
         if (Overlay == 0 && w.FlarePower > 0 && w.Sun[i] > 0) c = c.Lerp(new Rgb(1f, 0.8f, 1f), Math.Min(0.45f, 0.12f * w.FlarePower * w.Sun[i]));
         buf[o + 12] = c.R; buf[o + 13] = c.G; buf[o + 14] = c.B; buf[o + 15] = lit;
+    }
+
+    // Food and gas within reach on the surface of a column (World.Resources): loose molecules (the air's
+    // gas left out) and what lies adsorbed in the top block as green → yellow, the air's gas as blue.
+    // Black: nothing to take — an eaten-out patch.
+    public static Rgb StockColour(World w, int i)
+    {
+        var ch = w.Chem;
+        float food = 0;
+        for (int s = 0; s < Chemistry.S; s++) if (s != ch.Gas) food += w.C[s][i].F;
+        float gas = w.C[ch.Gas][i].F;
+        float f = food / (food + 6f), g = gas / (gas + 0.4f);
+        return new Rgb(0.03f + 0.85f * f * f, 0.03f + 0.8f * f, 0.05f + 0.25f * f * (1 - f)).Lerp(new Rgb(0.25f, 0.6f, 1f), 0.75f * g);
     }
 
     // −25 °C deep blue · 0 °C white · +40 °C red

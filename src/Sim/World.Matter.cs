@@ -349,6 +349,7 @@ public sealed partial class World
     float Loose(Agent a, int cell, Burial b, int s)
     {
         float lying = (float)((a.Z >= Height[cell] ? C[s][cell] : Qty.Zero) + (b != null ? b.Matter[s] : Qty.Zero));
+        if (s == Chem.Gas && P.CaveGasK > 0 && a.Z < Height[cell]) lying += (float)CaveGas(cell, a.Z);   // the column's air under a roof (World.Resources)
         return lying > 0 && InWater(cell, a.Z) ? lying * Exposure(a, cell, s) : lying;   // in water: only what it reaches (World.Water)
     }
 
@@ -365,6 +366,15 @@ public sealed partial class World
             if (amount == 0) return;
         }
         int v = LooseVoxel(cell, level);
+        // Under a roof the air's gas is reached through the column (World.Resources): what lies on the
+        // cave floor first, the rest from the column's air.
+        if (amount < 0 && s == Chem.Gas && P.CaveGasK > 0)
+        {
+            Qty floor = BurialOf(v, out var fb) ? Qty.Max(Qty.Zero, fb.Matter[s]) : Qty.Zero;
+            Qty air = Qty.Min(Qty.Max(Qty.Zero, -amount - floor), C[s][cell]);
+            if (air > 0) { C[s][cell] -= air; amount += air; }
+            if (amount == 0) return;
+        }
         BurialAt(v).Matter[s] += amount;
         MassChanged(v);
     }

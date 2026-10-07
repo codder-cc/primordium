@@ -448,6 +448,7 @@ public sealed partial class World
         Qty m = Qty.Min(1 - a.Pend[s], LooseAmount(a, cell, s));   // the same amount leaves the floor and enters
         if (m <= 0) return;
         ChangeLoose(a, cell, s, -m);
+        if (ResProbe != null) ResIntake(cell, s, m, a.Z < Height[cell]);
         a.Pend[s] += m;
         a.Mass += m.F * Chem.Mass[s];
         a.Volume += m.F * Chem.BodyVolume[s];
@@ -502,6 +503,7 @@ public sealed partial class World
         Dissipate(a, P.CostExpel);
         if (a.Inv[s] == 0) return;
         RemoveMol(a, s);
+        if (ResProbe != null) ResExpel(s);
         // It lands on the floor next door it can reach (level, a step up, or down into a hollow),
         // never inside a wall or in the air of a cave; against a wall it drops at the body's feet.
         int n = nb[cell * 4 + d], level = n == cell ? -1 : WalkLevel(n, a.Z);

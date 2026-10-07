@@ -462,9 +462,9 @@ public sealed partial class World
 
     // ---- observation (bench, HUD) ----
 
-    public static readonly string[] SkyNames = { "diet_region", "diet_beta", "flare_dose", "transp_mean", "flares", "eclipses", "deaths_flare" };
+    public static readonly string[] SkyNames = { "diet_region", "diet_ratio", "flare_dose", "transp_mean", "flares", "eclipses", "deaths_flare" };
 
-    // diet_region: the mean e^H of diets within populated 32×32 squares (≥ 5 bodies); diet_beta: the
+    // diet_region: the mean e^H of diets within populated 32×32 squares (≥ 5 bodies, unweighted); diet_ratio: the
     // planet's e^H over that mean (how differently squares eat: 1 — alike); flare_dose: the mean dose of
     // the last tick over living bodies; the mean transparency; flare episodes, eclipses and flare deaths.
     public double[] SkyCensus()

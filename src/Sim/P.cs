@@ -192,6 +192,13 @@ public static class P
     public static float Evap = 0.0004f;         // per env step from open water at 20 °C
     public static float RainShare = 0.02f;      // of the air's moisture falls per env step
 
+    // Resources (World.Resources): how far the air's gas travels and where bodies can reach it.
+    // GasDiffK multiplies the gas's diffusion (Chemistry.Diff of the gas, from its mass): 1 — as
+    // before, below 1 the air mixes slower and what bodies take in is felt locally first.
+    // CaveGasK: blocks of roof for an e-fold less of the column's air reaching a body under a roof
+    // (0 — off: under a roof only what lies on the cave floor, as before).
+    public static float GasDiffK = 1f, CaveGasK = 0f;
+
     // Space
     public static int StrikeMin = 2500, StrikeMax = 8000;   // ticks between mutagenic strikes
     // Eclipses (World.Sky): a moon on an inclined orbit from the seed (MoonPeriod days between new moons,
