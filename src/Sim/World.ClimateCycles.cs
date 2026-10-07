@@ -50,6 +50,7 @@ public sealed partial class World
     public readonly float[] Veil = new float[N];
     bool veilOn;
     readonly float[] veilRowTrans = new float[H];
+    readonly float[] veilT = new float[N];       // e^(−veil) per cell for the light (derived)
     readonly float[] climShift = new float[H];   // °C added to climRow by the cycles (derived at each light update)
     public float VeilTransMean = 1;
 
@@ -162,7 +163,7 @@ public sealed partial class World
 
     // ---- the ash veil ----
 
-    readonly float[] veilRow = new float[H], veilNext = new float[H], veilMax = new float[H];
+    readonly float[] veilRow = new float[H], veilNext = new float[H];
 
     void StepVeil()
     {
@@ -172,12 +173,13 @@ public sealed partial class World
         float kTotal = (H / 2f) * (H / 2f) / (2 * steps);                                    // pole-wards: σ² = 2·K·steps
         int sub = Math.Max(1, (int)MathF.Ceiling(kTotal / 0.4f));
         float km = kTotal / sub, decay = MathF.Exp(-dt / (Math.Max(0.01f, P.AshTau) * P.DayLen));
-        Parallel.For(0, H, y =>
+        // Sequential: a few passes over the planet, cheaper than handing rows to threads.
+        for (int y = 0; y < H; y++)
         {
             double s = 0;
             for (int i = y * W, end = i + W; i < end; i++) s += Veil[i];
             veilRow[y] = (float)(s / W);
-        });
+        }
         Array.Copy(veilRow, veilNext, H);
         for (int r = 0; r < sub; r++)
         {
@@ -190,35 +192,38 @@ public sealed partial class World
         }
         // veilNext: the new row means; each row is mixed along the latitude, scaled to its new mean and decays.
         float max = 0;
-        Parallel.For(0, H, y =>
+        double trans = 0;
+        for (int y = 0; y < H; y++)
         {
-            double s = 0;
+            double s = 0, ts = 0;
             for (int i = y * W, end = i + W; i < end; i++) s += Veil[i];
-            float m0 = (float)(s / W), m1 = veilNext[y], mx = 0;
+            float m0 = (float)(s / W), m1 = veilNext[y];
             for (int i = y * W, end = i + W; i < end; i++)
             {
                 float v = Veil[i] + (m0 - Veil[i]) * kz;
                 v = m0 > 0 ? v * (m1 / m0) : m1;
                 v *= decay;
                 Veil[i] = v;
-                if (v > mx) mx = v;
+                if (v > max) max = v;
+                float t = MathF.Exp(-v);   // the light's transmission (as VeilRowTransmission)
+                veilT[i] = t; ts += t;
             }
-            veilMax[y] = mx;
-        });
-        foreach (float m in veilMax) max = Math.Max(max, m);
-        if (max < 1e-4f) { Array.Clear(Veil); veilOn = false; }
-        VeilRowTransmission();
+            veilRowTrans[y] = (float)(ts / W);
+            trans += veilRowTrans[y];
+        }
+        VeilTransMean = (float)(trans / H);
+        if (max < 1e-4f) { Array.Clear(Veil); veilOn = false; VeilRowTransmission(); }
     }
 
     void VeilRowTransmission()
     {
         if (!veilOn) { Array.Fill(veilRowTrans, 1f); VeilTransMean = 1; return; }
-        Parallel.For(0, H, y =>
+        for (int y = 0; y < H; y++)
         {
             double s = 0;
-            for (int i = y * W, end = i + W; i < end; i++) s += MathF.Exp(-Veil[i]);
+            for (int i = y * W, end = i + W; i < end; i++) { float e = MathF.Exp(-Veil[i]); veilT[i] = e; s += e; }
             veilRowTrans[y] = (float)(s / W);
-        });
+        }
         double t = 0;
         for (int y = 0; y < H; y++) t += veilRowTrans[y];
         VeilTransMean = (float)(t / H);
@@ -348,10 +353,13 @@ public sealed partial class World
         }
         else if (iceAgeNow)
         {
-            var (liquid, ice, snow, _) = WaterParts();
-            iceLiquidMin = Math.Min(iceLiquidMin, liquid);
-            iceFrozenMax = Math.Max(iceFrozenMax, ice + snow);
-            if (Tick % (P.EnvEvery * 16) == 0) iceSnowMax = Math.Max(iceSnowMax, SnowCover());
+            if (Tick % (P.EnvEvery * 16) == 0)   // what the chronicle tells of it: sampled every 16 env steps
+            {
+                var (liquid, ice, snow, _) = WaterParts();
+                iceLiquidMin = Math.Min(iceLiquidMin, liquid);
+                iceFrozenMax = Math.Max(iceFrozenMax, ice + snow);
+                iceSnowMax = Math.Max(iceSnowMax, SnowCover());
+            }
             if (g < 0.25f)
             {
                 iceAgeNow = false;

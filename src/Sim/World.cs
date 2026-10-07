@@ -487,7 +487,7 @@ public sealed partial class World
                     if (sky) l *= Transp[i];
                     if (shadowRow) l *= EclipseShade(x, y, ex, ey);
                     if (lum != 1) l *= lum;
-                    if (veil) l *= MathF.Exp(-Veil[i]);
+                    if (veil) l *= veilT[i];
                 }
                 // Photons are counted where they reach the water's surface (a body catches them only as deep as
                 // they get, see Photo); Light is what is left of it at the floor.
