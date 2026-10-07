@@ -417,11 +417,104 @@ public sealed partial class World
         int c = v / Z;
         Order[v] = 0;
         compressionCache[v] = 0;
+        Dilate(v);   // broken rock swells: what no longer fits goes up or out, or the lattice stays partly whole
         if (BurialOf(v, out var burial)) burial.Dirty = true;
         Interlocked.Increment(ref TerrainVersion);
         ColumnVersion[c]++;
         annealable[c] = true;
         MarkDirty(c);
+    }
+
+    // Dilatancy: a block whose lattice was broken (crushed, or shattered by a fall) takes more room than
+    // its voxel has. The excess goes where there is room — up into the voxel above, then out of an open
+    // side, level with it or one up — as a new heap of rubble or into a block that is not full. Where it
+    // is confined and nothing can give, it cannot swell: its lattice stays as ordered as the room allows.
+    void Dilate(int v)
+    {
+        float over = VoxelVolume(v) - P.VoxelSpace;
+        if (over <= 0) return;
+        int c = v / Z, z = v % Z;
+        if (!Mixed(v, out var from))
+        {
+            from = new ushort[Chemistry.S];
+            from[Mat[v] - 2] = Units[v];
+            SetMixture(v, from);
+        }
+        bool moved = SwellInto(v, v + 1, from);
+        for (int d = 0; d < 4 && VoxelVolume(v) > P.VoxelSpace; d++)
+        {
+            int n = nb[c * 4 + d];
+            if (n == c) continue;
+            moved |= SwellInto(v, n * Z + z, from);
+            if (VoxelVolume(v) > P.VoxelSpace) moved |= SwellInto(v, n * Z + z + 1, from);
+        }
+        if (moved)
+        {
+            Mat[v] = Chem.BuiltMat[Dominant(from)];
+            cohesionCache[v] = 0;
+            Interlocked.Increment(ref TerrainVersion);
+            ColumnVersion[c]++;
+            MarkDirty(c);
+        }
+        // Still too much: confinement keeps the lattice partly whole — the order at which it just fits.
+        float dense = 0, loose = 0;
+        for (int s = 0; s < Chemistry.S; s++)
+            if (from[s] > 0) { dense += from[s] * Chem.Volume[s]; loose += from[s] * Chem.Volume[s] * P.Bulking * Chem.Looseness[s]; }
+        if (dense + loose * (1 - Order[v] / 255f) > P.VoxelSpace && loose > 0)
+        {
+            float o = 1 - Math.Max(0, P.VoxelSpace - dense) / loose;
+            Order[v] = (byte)Math.Clamp((int)MathF.Ceiling(o * 255), Order[v], 255);
+        }
+        compressionCache[v] = 0;
+    }
+
+    // Moves molecules of v that do not fit its voxel into u (air on top of something solid, or a block
+    // that is not full), as many as u has room for. Returns whether anything moved.
+    bool SwellInto(int v, int u, ushort[] from)
+    {
+        if (u % Z < 2 || u % Z >= Z - 1) return false;
+        bool air = Mat[u] == Chemistry.Air;
+        if (air ? !(Mat[u - 1] >= 2) : !(Mat[u] >= 2 && VoxelVolume(u) < P.VoxelSpace * 0.999f)) return false;
+        float excess = VoxelVolume(v) - P.VoxelSpace;
+        if (excess <= 0) return false;
+        float room = air ? P.VoxelSpace : P.VoxelSpace - VoxelVolume(u);
+        var into = air ? new ushort[Chemistry.S] : null;
+        if (!air && !Mixed(u, out into))
+        {
+            into = new ushort[Chemistry.S];
+            into[Mat[u] - 2] = Units[u];
+            SetMixture(u, into);
+        }
+        int moved = 0, ov = Order[v];
+        for (int sp = Chemistry.S - 1; sp >= 0 && room > 0 && excess > 0; sp--)
+        {
+            if (from[sp] == 0) continue;
+            float leave = PackedVolume(sp, ov), each = PackedVolume(sp, air ? 0 : Order[u]);
+            int fit = Math.Min(from[sp], (int)MathF.Ceiling(excess / leave));
+            fit = Math.Min(fit, (int)(room / each));
+            if (!air) fit = Math.Min(fit, ushort.MaxValue - Units[u]);
+            if (fit <= 0) continue;
+            from[sp] -= (ushort)fit; into[sp] += (ushort)fit; Units[v] -= (ushort)fit; moved += fit;
+            if (!air) Units[u] += (ushort)fit;
+            room -= fit * each; excess -= fit * leave;
+        }
+        if (moved == 0) return false;
+        int c = u / Z;
+        if (air)
+        {
+            DisplaceOccupants(c, u % Z, null);
+            PutMixture(u, into, 0);
+        }
+        else
+        {
+            Mat[u] = Chem.BuiltMat[Dominant(into)];
+            compressionCache[u] = cohesionCache[u] = 0;
+            MassChanged(u);
+            Interlocked.Increment(ref TerrainVersion);
+            ColumnVersion[c]++;
+        }
+        MarkDirty(c);
+        return true;
     }
 
     // Failed rubble (no lattice left to break) behaves as a granular mass: it flows into room — first the
@@ -496,13 +589,14 @@ public sealed partial class World
         for (int sp = 0; sp < Chemistry.S && room > 0; sp++)
         {
             if (from[sp] == 0) continue;
-            int fit = Math.Min(from[sp], (int)(room / Chem.Volume[sp]));
+            float each = PackedVolume(sp, air ? 0 : Order[u]);   // a new heap is rubble
+            int fit = Math.Min(from[sp], (int)(room / each));
             if (!air) fit = Math.Min(fit, ushort.MaxValue - Units[u]);
             if (fit <= 0) continue;
             from[sp] -= (ushort)fit; into[sp] += (ushort)fit;
             Units[v] -= (ushort)fit; moved += fit;
             if (!air) Units[u] += (ushort)fit;
-            room -= fit * Chem.Volume[sp];
+            room -= fit * each;
         }
         if (moved == 0) return false;
         int c = u / Z;
@@ -607,7 +701,7 @@ public sealed partial class World
         compressionCache[from] = compressionCache[to] = 0;
         cohesionCache[to] = cohesionCache[from]; cohesionCache[from] = 0;
         Mat[to] = Mat[from]; Units[to] = Units[from];
-        Order[to] = (byte)(impact ? Order[from] * 0.6f : Order[from]);
+        Order[to] = (byte)(impact ? Order[from] * 0.6f : Order[from]);   // an impact shatters part of the lattice
         var seq = TakeMixture(from);
         if (seq != null) SetMixture(to, seq);
         MoveBurial(from, to);
@@ -615,6 +709,7 @@ public sealed partial class World
         Height[c] = Math.Max(Height[c], targetZ + 1);
         TrimColumn(from / Z);
         TerrainChanged(c); TerrainChanged(from / Z);
+        if (impact) Dilate(to);   // the shattered part swells
     }
 
     // Body weight per floor voxel. Nearly every occupied cell has bodies on one floor only: that one

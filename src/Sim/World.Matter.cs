@@ -80,13 +80,22 @@ public sealed partial class World
     // How many molecules of kind s the block holds.
     public int VoxelCount(int v, int s) => Mat[v] < 2 ? 0 : Mixed(v, out var counts) ? counts[s] : s == Mat[v] - 2 ? Units[v] : 0;
 
+    // Room one molecule of kind s takes in a block of this order: its packed volume, more in a disordered
+    // heap (porosity: P.Bulking × its looseness × disorder). Crushing breaks order and swells a block;
+    // pressure orders it and packs it (Metamorphose).
+    public float PackedVolume(int s, int order) => Chem.Volume[s] * (1 + P.Bulking * Chem.Looseness[s] * (1 - order / 255f));
+
+    // How many molecules of kind s fill a voxel at this order.
+    public int BlockCapacity(int s, int order) => Math.Clamp((int)(P.VoxelSpace / PackedVolume(s, order)), 1, ushort.MaxValue);
+
     // Room its molecules take, and how full that makes the voxel (1 = full).
     public float VoxelVolume(int v)
     {
         if (Mat[v] < 2) return Mat[v] == Chemistry.Bedrock ? P.VoxelSpace : 0;
-        if (!Mixed(v, out var counts)) return Units[v] * Chem.Volume[Mat[v] - 2];
+        int o = Order[v];
+        if (!Mixed(v, out var counts)) return Units[v] * PackedVolume(Mat[v] - 2, o);
         float vol = 0;
-        for (int s = 0; s < Chemistry.S; s++) if (counts[s] > 0) vol += counts[s] * Chem.Volume[s];
+        for (int s = 0; s < Chemistry.S; s++) if (counts[s] > 0) vol += counts[s] * PackedVolume(s, o);
         return vol;
     }
     public float Fill(int v) => Math.Min(1f, VoxelVolume(v) / P.VoxelSpace);
@@ -242,11 +251,12 @@ public sealed partial class World
                 for (int s = 0; s < Chemistry.S && room > 0; s++)
                 {
                     if (add[s] == 0) continue;
-                    int fit = Math.Min(add[s], (int)(room / Chem.Volume[s]));
+                    float each = PackedVolume(s, Order[fv]);
+                    int fit = Math.Min(add[s], (int)(room / each));
                     fit = Math.Min(fit, ushort.MaxValue - Units[fv]);
                     if (fit <= 0) continue;
                     counts[s] += (ushort)fit; Units[fv] += (ushort)fit; add[s] -= (ushort)fit; total -= fit;
-                    room -= fit * Chem.Volume[s];
+                    room -= fit * each;
                 }
                 Mat[fv] = Chem.BuiltMat[Dominant(counts)];
                 compressionCache[fv] = cohesionCache[fv] = 0;
@@ -268,10 +278,11 @@ public sealed partial class World
         for (int s = 0; s < Chemistry.S; s++)
         {
             if (add[s] == 0) continue;
-            int fit = Math.Min(add[s], (int)(space / Chem.Volume[s]));
+            float each = PackedVolume(s, order);
+            int fit = Math.Min(add[s], (int)(space / each));
             if (fit <= 0) continue;
             block[s] = (ushort)fit; add[s] -= (ushort)fit; laid += fit;
-            space -= fit * Chem.Volume[s];
+            space -= fit * each;
         }
         if (laid == 0) { SpillLoose(c, floorLevel, add); return; }
         bool surface = floorLevel >= Height[c];
@@ -527,9 +538,11 @@ public sealed partial class World
                     // Annealing only strengthens a block: refresh its cached strength, nothing can fail from it.
                     // Only a block that bears its load anneals: overloaded rubble stays rubble instead of
                     // ordering a little and being crushed again every pass.
-                    if (Mat[v] >= 2 && Pressure[v] > P.CompactionPressure && Order[v] < 245 && (Pressure[v] <= CompressionCapacity(v) || Pressure[v] <= Strength(v)))
+                    // Each step of packing takes exponentially more pressure: a dense lattice hardly packs further.
+                    if (Mat[v] >= 2 && Order[v] < 245 && Pressure[v] > P.CompactionPressure * MathF.Exp(P.DensifyK * Order[v] / 255f)
+                        && (Pressure[v] <= CompressionCapacity(v) || Pressure[v] <= Strength(v)))
                     {
-                        Order[v]++; compressionCache[v] = 0;
+                        Order[v]++; compressionCache[v] = 0;   // packs: the block takes a little less room
                         if (Order[v] < 245) more = true;
                     }
                 }

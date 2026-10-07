@@ -17,6 +17,9 @@ public sealed class Chemistry
     public readonly int[] E = new int[S], SplitA = new int[S], SplitB = new int[S], PhotoUp = new int[S];
     public readonly int[,] Combine = new int[S, S];
     public readonly float[] Mass = new float[S], Diff = new float[S], Bond = new float[S], Packing = new float[S];
+    // How much more room a molecule takes in a disordered heap than in its ordered lattice, relative to
+    // P.Bulking: irregular, poorly packing molecules bulk most (1.15 − packing: 0.15 … 1).
+    public readonly float[] Looseness = new float[S];
     public readonly float[] Volume = new float[S];   // room one molecule takes: its mass over how tightly it packs
     public readonly float[] BodyVolume = new float[S];   // room it takes held in a body: the gas is a bubble there
     public readonly bool[] SplitExo = new bool[S], Poison = new bool[S], Solid = new bool[S];
@@ -85,6 +88,7 @@ public sealed class Chemistry
                 Mass[t] = mass;
                 Bond[t] = (affinity / count) * (valence / count) * (0.25f + count * 0.12f) / (1 + (t - s) * 0.5f);
                 Packing[t] = Math.Clamp(valence / (count * 4f), 0.15f, 1f);
+                Looseness[t] = 1.15f - Packing[t];
                 Volume[t] = mass / (0.5f + Packing[t]);
                 Diff[t] = 0.13f / MathF.Sqrt(mass);
                 Solid[t] = Bond[t] >= 0.85f;

@@ -442,8 +442,10 @@ public sealed partial class World
         var load = w.TestAgent(c, 7, s, n);
         var before = w.ElementBudget();
         w.StepStructure(); w.StepStructure();   // the lower block breaks away; then the upper one has nothing under it
-        Require(w.Mat[c * Z + 5] == 0 && w.Mat[c * Z + 6] == 0 && w.Mat[c * Z + 2] != 0 && w.Mat[c * Z + 3] != 0,
-            $"an overloaded hanging stack stood: z5 {w.Mat[c * Z + 5]} z6 {w.Mat[c * Z + 6]}");
+        // Both fell to the floor; shattered on impact they swell (porosity), so their rubble may reach level 5
+        // again — but as rubble (order 0), not as the block that hung there.
+        Require((w.Mat[c * Z + 5] == 0 || w.Order[c * Z + 5] == 0) && w.Mat[c * Z + 6] == 0 && w.Mat[c * Z + 2] != 0 && w.Mat[c * Z + 3] != 0,
+            $"an overloaded hanging stack stood: z5 {w.Mat[c * Z + 5]} (order {w.Order[c * Z + 5]}) z6 {w.Mat[c * Z + 6]}");
         BudgetEqual(before, w.ElementBudget(), "stack collapse", 0.01);
         // Without the load the same stack holds, and its weight reaches the pier.
         var w2 = Fixture();

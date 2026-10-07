@@ -82,8 +82,8 @@ public sealed partial class World
                     // Pressure selects denser, more cohesive aggregates; correlated domains make seams.
                     float rank = Math.Clamp(depth * 0.65f + domain * 0.35f + (vein - 0.5f) * 0.5f, 0, 0.999f);
                     int molecule = GeoOn ? GeoPick(x, y, z, h - z - 1, rank, weights) : species[(int)(rank * species.Length)];
-                    Mat[q] = Chem.BuiltMat[molecule]; Units[q] = (ushort)Chem.MatCap[Chem.BuiltMat[molecule]];
                     Order[q] = (byte)(255 * Math.Clamp(0.12f + depth * 0.75f + Chem.Packing[molecule] * 0.15f, 0, 1));
+                    Mat[q] = Chem.BuiltMat[molecule]; Units[q] = (ushort)BlockCapacity(molecule, Order[q]);   // full at its packing
                 }
                 Height[i] = h;
             }
@@ -240,9 +240,10 @@ public sealed partial class World
         // The interior delivers matter at a steady rate: a block of many small molecules takes longer.
         if (Rng.NextDouble() >= 300.0 / Chem.MatCap[m]) return;
         DisplaceOccupants(best, Height[best]);
-        Mat[w] = m; Units[w] = (ushort)Chem.MatCap[m]; Order[w] = 35;
-        for (int e = 0; e < Chemistry.ElementCount; e++) InteriorInput[e] += Chem.MatCap[m] * Chem.Atoms[molecule, e];
-        Flows[FVent] += (double)Chem.MatCap[m] * Chem.E[molecule];
+        int n = BlockCapacity(molecule, 35);   // fresh, poorly packed lava rock fills its voxel
+        Mat[w] = m; Units[w] = (ushort)n; Order[w] = 35;
+        for (int e = 0; e < Chemistry.ElementCount; e++) InteriorInput[e] += (double)n * Chem.Atoms[molecule, e];
+        Flows[FVent] += (double)n * Chem.E[molecule];
         Height[best]++;
         TerrainChanged(best);
         Repose(best);

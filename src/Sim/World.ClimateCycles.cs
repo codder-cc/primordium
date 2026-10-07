@@ -300,9 +300,10 @@ public sealed partial class World
             byte m = Chem.BuiltMat[molecule];
             int w = c * Z + Height[c];
             DisplaceOccupants(c, Height[c]);
-            Mat[w] = m; Units[w] = (ushort)Chem.MatCap[m]; Order[w] = 35;
-            for (int e = 0; e < Chemistry.ElementCount; e++) InteriorInput[e] += Chem.MatCap[m] * Chem.Atoms[molecule, e];
-            Flows[FVent] += (double)Chem.MatCap[m] * Chem.E[molecule];
+            int n = BlockCapacity(molecule, 35);
+            Mat[w] = m; Units[w] = (ushort)n; Order[w] = 35;
+            for (int e = 0; e < Chemistry.ElementCount; e++) InteriorInput[e] += (double)n * Chem.Atoms[molecule, e];
+            Flows[FVent] += (double)n * Chem.E[molecule];
             Height[c]++;
             TerrainChanged(c);
             Repose(c);

@@ -43,6 +43,12 @@ public static class P
     // LateralK × its own vertical stress (as well as their contact passes it on). FrictionQ ≈ 4 is a
     // friction angle of ~37°; LateralK ≈ 0.4 is the at-rest earth pressure of a rock with Poisson ~0.3.
     public static float FrictionQ = 4f, LateralK = 0.4f;
+    // Porosity (World.PackedVolume): a molecule in a block takes Volume × (1 + Bulking × looseness ×
+    // (1 − order)). A crushed, disordered heap takes up to (1 + Bulking) times the room of the same
+    // molecules in an ordered lattice (rock swells when broken, ~1.3–1.5 in nature). Pressure packs it:
+    // a block anneals (order +1) only above CompactionPressure × e^(DensifyK × order), so every step of
+    // packing takes exponentially more pressure — a dense lattice hardly packs further.
+    public static float Bulking = 0.4f, DensifyK = 3f;
     public static int StructureEvery = 4, MetamorphEvery = 64;
 
     // Virtual machine

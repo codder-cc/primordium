@@ -191,6 +191,7 @@ public sealed partial class World
                     a.SkyFromOldFile();    // nor the sky (version 8): rebuilt at the load
                     a.ClimateFromOldFile();   // nor the climate cycles (version 10): neutral phase from the load, nothing running
                     a.EnergyToFloat();     // nor energies as doubles (version 9)
+                    if (version < 7) a.GeoOn = false;   // nor the geochemistry (version 7): such a file loads with the depth profile off
                     double[] rounded = a.ElementBudget();
                     for (int e = 0; e < exact.Length; e++)
                         Require(Math.Abs(rounded[e] - exact[e]) < 0.05, $"rounding to float moved element {e} by {rounded[e] - exact[e]:R}");
