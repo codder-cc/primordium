@@ -295,7 +295,7 @@ public partial class Hud : Control
 
     void TopBar(World w, float px)
     {
-        DrawRect(new Rect2(0, 0, px, 66), BarBg);
+        DrawRect(new Rect2(0, 0, px, 82), BarBg);
         int season = (int)(w.YearFrac * 4) % 4;
         float tod = w.DayFrac;
         T(16, 24, $"Сутки {w.Day + 1} · {Seasons[season]} на севере · тик {w.Tick:N0}", Fg, 16, bold);
@@ -319,6 +319,31 @@ public partial class Hud : Control
                       $"{(v.Lighting ? "освещение солнца" : "без освещения")}{(v.Slice >= 0 ? $" · разрез по строке {v.Slice}" : "")}{(v.Follow ? " · слежу за агентом" : "")}" +
                       $" · самозарождение {(w.Abiogenesis ? "вкл" : "выкл")} (A) · удары с орбиты {(w.AutoStrikes ? "вкл" : "выкл")} (⇧X), было {w.StrikeCount}";
         T(16, 60, mode, Dim, 12);
+        string skyLine = SkyLine(w, v.CursorCell, true);
+        if (TW(skyLine, 12) > px - 32) skyLine = SkyLine(w, v.CursorCell, false);
+        T(16, 76, skyLine, Dim, 12);
+    }
+
+    // The sky (World.Sky): the sun's activity and flares, the next eclipse, and the column under the cursor —
+    // latitude, day length, the noon sun, the power now, the transparency. Read-only arithmetic.
+    double eclipseAskedAt = -10; long eclipseNext = -1; World eclipseWorld;
+    string SkyLine(World w, int cell, bool full)
+    {
+        double now = Time.GetTicksMsec() / 1000.0;
+        if (now - eclipseAskedAt > 2 || eclipseWorld != w) { eclipseAskedAt = now; eclipseWorld = w; eclipseNext = w.NextEclipse(w.Tick, 200); }
+        string sun = World.FlareLaw ? $"солнце: активность {w.SolarActivity:P0}" + (w.FlarePower > 0 ? $", ВСПЫШКА {w.FlarePower:0.0}" : "") + (full ? $", вспышек было {w.FlareCount}" : "") : "вспышки выключены";
+        string ecl = !World.EclipseLaw ? "затмения выключены" : w.EclipseNow ? $"ЗАТМЕНИЕ: тень в ({w.EclipseX:0}, {w.EclipseY:0})"
+                   : eclipseNext > 0 ? $"затмение через {(eclipseNext - w.Tick) / (float)P.DayLen:0.0} сут" : "затмений нет 200 суток";
+        string here = "";
+        if (cell >= 0)
+        {
+            int y = cell / World.W;
+            float lat = World.Latitude(y), decl = w.SunDecl, deg = lat * 180 / MathF.PI;
+            here = full ? $" · ({cell % World.W}, {y}): широта {MathF.Abs(deg):0.0}° {(deg >= 0 ? "с." : "ю.")}, день {World.DayShare(lat, decl) * 24:0.0} ч из 24, " +
+                          $"солнце в полдень {World.NoonElevation(lat, decl):0}°, мощность {w.Sun[cell]:0.00} (у дна {w.Light[cell]:0.00}), прозрачность {w.Transp[cell]:0.00}"
+                        : $" · ({cell % World.W}, {y}): {MathF.Abs(deg):0}° {(deg >= 0 ? "с." : "ю.")}, день {World.DayShare(lat, decl) * 24:0.0} ч, полдень {World.NoonElevation(lat, decl):0}°, мощность {w.Sun[cell]:0.00}, прозр. {w.Transp[cell]:0.00}";
+        }
+        return sun + " · " + ecl + here;
     }
 
     // Where a body is: underground, on dry ground, or in water — on the bottom, swimming, at the surface
@@ -358,7 +383,10 @@ public partial class Hud : Control
     {
         0 => "породы и почва",
         1 => "температура",
-        2 => "освещённость",
+        2 => "мощность солнца у поверхности",
+        View3D.TranspOverlay => World.TranspLaw ? $"прозрачность атмосферы (в среднем {w.TranspMean:0.00})" : "прозрачность атмосферы (закон выключен: небо везде ясное)",
+        View3D.DayOverlay => "длина дня: ночь — чёрный, 12 ч — зелёный, полярный день — светлый",
+        View3D.FlareOverlay => World.FlareLaw ? (w.FlarePower > 0 ? $"доза вспышки на открытой поверхности (мощность {w.FlarePower:0.0})" : $"доза вспышки: вспышки нет, тускло — куда достаёт активность солнца ({w.SolarActivity:P0})") : "доза вспышки (вспышки выключены)",
         3 => "останки на земле",
         4 => "плотность жизни",
         5 => "недавние смерти",
@@ -689,7 +717,9 @@ public partial class Hud : Control
         var (cave1, cave2) = CaveLines(w, a);
         T(x, y + 40, cave1, Dim, 12);
         if (cave2 != null) { T(x, y + 55, cave2, Dim, 12); y += 15; }
-        y += 15;
+        // The sky over it (World.Sky): what reaches it, what its own matter lets through, the flare dose now.
+        T(x, y + 55, $"небо над телом: доходит {w.SkyExposure(a):P0} · экран тела пропускает {w.Shield(a):P0}" + (World.FlareLaw ? $" · доза вспышки {a.FlareDose:0.00}" : ""), Dim, 12);
+        y += 30;
         if (y + 30 > clipTop && y + 30 < clipBot) DrawCircle(new Vector2(x + 6, y + 37), 6, View3D.KinColor(a));
         T(x + 18, y + 41, $"облик: {Looks.ShapeNames[a.Shape]} · родни на планете {Main.KinCount:N0}" +
                           (Main.View.KinFocus ? " (подсвечена, K — выкл.)" : " (K — подсветить)"), Fg, 12);

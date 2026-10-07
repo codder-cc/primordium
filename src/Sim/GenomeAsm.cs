@@ -28,6 +28,7 @@ public sealed class GenomeAsmException : Exception
 //   <variant>       the second meaning (immediate 2), .3 for 3      photo, thrust, mate, gnaw, grow,
 //                                                                   count, drink, digest, hurt, btemp,
 //                                                                   photons, swim (swim = up, swim.3 = down)
+//   uv              light.1: the UV at the body (with solar flares on; otherwise the light, as `light`)
 //   lit N           two bytes: lit and a literal 0–255
 //   enzyme KIND A B t=T q=Q [alt=K]   four bytes: a protein gene. KIND bind|split|photo|motor; A, B the
 //                   molecules (0–31); T its best temperature (−15…35.4 °C in steps of 0.8); Q the wanted
@@ -68,6 +69,7 @@ public static class GenomeAsm
     {
         int op = b & 63, imm = b >> 6;
         if (Genome.HasImm(op)) return $"{Genome.Names[op]} {imm}";
+        if (op == Genome.LightOp && imm == 1) return "uv";   // light.1: the UV at the body with solar flares on (World.Sky)
         if (imm >= 2 && variantOf[op] != null) return imm == 2 ? variantOf[op] : variantOf[op] + ".3";
         return imm == 0 ? Genome.Names[op] : $"{Genome.Names[op]}.{imm}";
     }
@@ -217,6 +219,13 @@ public static class GenomeAsm
             word = word[..dot];
         }
         int op;
+        if (word.Equals("uv", StringComparison.OrdinalIgnoreCase))
+        {
+            if (imm >= 0) throw new FormatException("uv: без вариантов (это light.1)");
+            Args(t, 0, word);
+            output.Add((byte)(Genome.LightOp | 1 << 6));
+            return;
+        }
         if (variantOps.TryGetValue(word, out op))
         {
             if (imm >= 0 && imm < 2) throw new FormatException($"{word}.{imm}: у второго значения варианты 2 или 3");

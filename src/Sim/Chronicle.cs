@@ -48,7 +48,7 @@ public sealed class ChronicleEvent
 // A line of a tracked body's biography.
 public enum BioKind : byte
 {
-    Born, Tracked, Protein, Reaction, CaveIn, CaveOut, Kill, Killed, Theft, Gift, Struck, Record, Child, Event, Death, Infected, Count,
+    Born, Tracked, Protein, Reaction, CaveIn, CaveOut, Kill, Killed, Theft, Gift, Struck, Record, Child, Event, Death, Infected, Flare, Count,
 }
 
 public struct BioEntry
@@ -255,7 +255,7 @@ public sealed class Chronicle
     public static string CauseName(int cause) => cause switch
     {
         World.CauseStarve => "голод", World.CauseKilled => "убит", World.CauseBroken => "распался",
-        World.CauseClimate => "мороз или жара", World.CauseBuried => "обвал", World.CauseHand => "рука игрока", _ => "жив",
+        World.CauseClimate => "мороз или жара", World.CauseBuried => "обвал", World.CauseHand => "рука игрока", World.CauseFlare => "солнечная вспышка", _ => "жив",
     };
 
     public static string WhyText(byte why)
@@ -285,6 +285,7 @@ public sealed class Chronicle
             BioKind.Theft => $"украл у #{e.Other} (кража №{e.Value:0})",
             BioKind.Gift => $"подарил #{e.Other} (дар №{e.Value:0})",
             BioKind.Struck => $"облучён ударом с орбиты: геном теперь {e.Value:0} байт",
+            BioKind.Flare => $"под солнечной вспышкой: доза {e.Value:0.00} за тик",
             BioKind.Record => $"рекорд: {RecordName(e.Arg)} {e.Value:0}",
             BioKind.Child => e.Value > 0 ? $"потомок №{e.Value:0}: #{e.Other}" : $"потомок от спаривания: #{e.Other}",
             BioKind.Event => $"событие хроники: {TypeNames[Math.Min((int)e.Arg, (int)EvType.Count - 1)]}",

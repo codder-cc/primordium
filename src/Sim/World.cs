@@ -88,7 +88,7 @@ public sealed partial class World
     public long Tick;
     public float SunX, SunDecl;
     public int Births, Spawns, MaxGen, DeathsStarve, DeathsKilled, DeathsBroken, DeathsClimate;
-    public int Deaths => DeathsStarve + DeathsKilled + DeathsBroken + DeathsClimate + DeathsBuried + DeathsHand;
+    public int Deaths => DeathsStarve + DeathsKilled + DeathsBroken + DeathsClimate + DeathsBuried + DeathsHand + DeathsFlare;
     public bool Abiogenesis;   // now and then a random newcomer (very rarely)
     public readonly long[] Ev = new long[(int)EvKind.Count];
     public readonly long[] Mined = new long[6], MinedCat = new long[6];
@@ -112,7 +112,8 @@ public sealed partial class World
     readonly List<Agent> newborn = new();
 
     public World(int seed, int initialPop = -1, bool abiogenesis = true, int lifeSeed = 0)   // initialPop < 0: P.InitialPop
-        : this(new WorldSettings { Seed = seed, InitialPop = initialPop, Abiogenesis = abiogenesis, Strikes = true, LifeSeed = lifeSeed }) { }   // strikes on, as before (bench, self-test)
+        // Strikes on, as before (bench, self-test) — unless solar flares are on: they replace the strikes.
+        : this(new WorldSettings { Seed = seed, InitialPop = initialPop, Abiogenesis = abiogenesis, Strikes = !FlareLaw, LifeSeed = lifeSeed }) { }
 
     // A new world from its settings: a preset of laws in the settings replaces the current laws
     // (defaults for those it does not name) before anything is generated.
@@ -195,6 +196,7 @@ public sealed partial class World
 
         RecomputeFlow();
         InitWater();
+        if (TranspLaw) UpdateTransparency(); else Array.Fill(Transp, 1f);
         UpdateClouds();
         UpdateLight();
         for (int i = 0; i < N; i++) Temp[i] = TempEq(i);
@@ -243,8 +245,11 @@ public sealed partial class World
         prof.Restart();
         LapStart();
         Tick++;
+        if (TranspLaw && (!transpValid || Tick % (P.LightEvery * 8) == 0)) UpdateTransparency();
+        else if (!TranspLaw && transpValid) { transpValid = false; Array.Fill(Transp, 1f); TranspMean = 1; }
         if (Tick % (P.LightEvery * 2) == 0) UpdateClouds();
         if (Tick % P.LightEvery == 0) UpdateLight();
+        StepSky();   // solar activity and flares now (World.Sky)
         Lap(DSky);
         double checkpoint = prof.Elapsed.TotalMilliseconds;
         Prof[4] += checkpoint;
@@ -414,7 +419,8 @@ public sealed partial class World
 
     // One sun. It circles the planet along x; its latitude swings with the seasons. Light fades in
     // and out gradually at the terminator; mountains cast shadows, vent ash and clouds dim the sky,
-    // water swallows light with depth, snow buries what grows under it.
+    // water swallows light with depth, snow buries what grows under it. With the laws of World.Sky:
+    // the cosine law, the sky's transparency, the moon's shadow and the sun's brightness by its activity.
     void UpdateLight()
     {
         double day = (double)Tick / P.DayLen;
@@ -423,19 +429,27 @@ public sealed partial class World
         float sd = MathF.Sin(SunDecl), cd = MathF.Cos(SunDecl), sunX = SunX;
         int top = 0;   // nothing stands higher than the highest column: shadow rays stop there
         for (int i = 0; i < N; i++) if (Height[i] > top) top = Height[i];
+        bool insol = InsolLaw, sky = TranspLaw;
+        if (insol) EnsureInsolNorms();
+        StepEclipse();
+        bool ecl = EclipseNow;
+        float ex = EclipseX, ey = EclipseY, reach = 1.3f * P.EclipseR + 1;
+        float lum = FlareLaw ? 1 + P.SolarLumAmp * (2 * ActivityAt(Tick) - 1) : 1;
         Parallel.For(0, H, y =>
         {
             float lat = (0.5f - (y + 0.5f) / H) * MathF.PI * 0.92f;
             float sl = MathF.Sin(lat), cl = MathF.Cos(lat);
-            // Climate of this latitude today: how high the sun climbs at noon.
-            climRow[y] = P.TPole + (P.TEquator - P.TPole) * MathF.Pow(Math.Max(0f, MathF.Cos(lat - SunDecl)), 1.3f);
+            // Climate of this latitude today: how high the sun climbs at noon — with the cosine law, the
+            // day's insolation sum held back by the year's (World.Sky).
+            climRow[y] = insol ? ClimateOf(y, SunDecl) : P.TPole + (P.TEquator - P.TPole) * MathF.Pow(Math.Max(0f, MathF.Cos(lat - SunDecl)), 1.3f);
+            bool shadowRow = ecl && MathF.Abs(y + 0.5f - ey) < reach;
             for (int x = 0; x < W; x++)
             {
                 int i = y * W + x;
                 float ha = 2 * MathF.PI * (x + 0.5f - sunX) / W;
                 float ch = MathF.Cos(ha), sh = MathF.Sin(ha);
                 float se = sl * sd + cl * cd * ch;              // sine of the sun's elevation
-                float l = Smooth(-0.04f, 0.3f, se);
+                float l = insol ? Insol(se) : Smooth(-0.04f, 0.3f, se);
                 if (l > 0)
                 {
                     float de = -sh * cd, dn = cl * sd - sl * cd * ch; // towards the sun: east, north
@@ -454,10 +468,14 @@ public sealed partial class World
                             if (Height[py * W + px] * P.BlockH - h0 > k * tanE) { l *= 0.15f; break; }
                         }
                     }
+                    if (sky) l *= Transp[i];
+                    if (shadowRow) l *= EclipseShade(x, y, ex, ey);
+                    if (lum != 1) l *= lum;
                 }
                 // Photons are counted where they reach the water's surface (a body catches them only as deep as
                 // they get, see Photo); Light is what is left of it at the floor.
                 float lit = l * (1 - Ash[i]) * (1 - 0.3f * Cloud[i]) * MathF.Exp(-P.WaterDim * Ice[i]) * (1 - 0.7f * Math.Min(1f, Snow[i] * 3));
+                Sun[i] = lit;
                 Light[i] = lit * MathF.Exp(-P.WaterDim * Water[i]);
                 Photon[i] = Math.Min(P.PhotonCap, Photon[i] + lit * P.PhotonK * P.LightEvery);
             }

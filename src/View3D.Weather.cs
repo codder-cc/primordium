@@ -155,6 +155,25 @@ public partial class View3D
         }
     }
 
+    // The moon's shadow (World.Sky): its light is already dimmed; a pale ring marks the edge of the full shadow.
+    MeshInstance3D eclipseRing;
+    void UpdateEclipse()
+    {
+        var w = World;
+        if (eclipseRing == null)
+        {
+            var mat = new StandardMaterial3D { ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded, AlbedoColor = new Color(0.95f, 0.85f, 1f, 0.9f), Transparency = BaseMaterial3D.TransparencyEnum.Alpha };
+            eclipseRing = new MeshInstance3D { Mesh = new TorusMesh { InnerRadius = 0.94f, OuterRadius = 1f, Rings = 64, RingSegments = 6 }, MaterialOverride = mat, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
+            AddChild(eclipseRing);
+        }
+        bool on = w.EclipseNow && (Slice < 0 || w.EclipseY <= Slice);
+        eclipseRing.Visible = on;
+        if (!on) return;
+        int x = Math.Clamp((int)w.EclipseX, 0, W - 1), y = Math.Clamp((int)w.EclipseY, 0, H - 1);
+        eclipseRing.Position = new Vector3(w.EclipseX, groundTop[y * W + x] + 2, w.EclipseY);
+        eclipseRing.Scale = new Vector3(P.EclipseR, 3, P.EclipseR);
+    }
+
     // Which column is under the cursor (-1 if none).
     public int PickCell(Vector2 screen)
     {

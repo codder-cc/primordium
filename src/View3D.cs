@@ -30,8 +30,8 @@ public partial class View3D : Node3D
     public float PanelWidth = 440;   // logical px covered by the HUD panel on the right
 
     public int OverlayCount => FirstSpecies + Chemistry.S;
-    public const int FirstSpecies = 11;  // overlays before the per-molecule ones
-    public const int DepthTempOverlay = 9, DeepOverlay = 10;
+    public const int FirstSpecies = 14;  // overlays before the per-molecule ones
+    public const int DepthTempOverlay = 9, DeepOverlay = 10, TranspOverlay = 11, DayOverlay = 12, FlareOverlay = 13;
 
     // Timings of the steps of Refresh, ms summed since Main last cleared them (perf overlay).
     public const int ProfSlots = 10;
@@ -281,6 +281,7 @@ void fragment() {
         UpdateStrikes();
         UpdateVents();
         UpdateRings();
+        UpdateEclipse();
         Lap(8);
     }
 
@@ -413,9 +414,33 @@ void fragment() {
                 lit = 1;
                 break;
             case 2:
-                c = new Rgb(0.08f, 0.08f, 0.14f).Lerp(new Rgb(1f, 0.92f, 0.55f), MathF.Min(1, w.Light[i]));
+                // The sun's power at the surface now (World.Sun: cosine law, sky, shadows, clouds, eclipse).
+                c = new Rgb(0.08f, 0.08f, 0.14f).Lerp(new Rgb(1f, 0.92f, 0.55f), MathF.Min(1, w.Sun[i]));
                 lit = 1;
                 break;
+            case TranspOverlay:
+                // Clear-sky transparency (World.Sky): murky grey-brown → clear blue.
+                c = new Rgb(0.42f, 0.36f, 0.3f).Lerp(new Rgb(0.45f, 0.78f, 1f), Math.Clamp((w.Transp[i] - P.TranspMin) / Math.Max(0.01f, 1 - P.TranspMin), 0f, 1f));
+                lit = 1;
+                break;
+            case DayOverlay:
+                {
+                    // Day length today: polar night black, 12 h grey-green, polar day white-yellow.
+                    float d = World.DayShare(World.Latitude(i / W), w.SunDecl);
+                    c = d < 0.5f ? new Rgb(0.03f, 0.03f, 0.1f).Lerp(new Rgb(0.35f, 0.5f, 0.45f), d * 2) : new Rgb(0.35f, 0.5f, 0.45f).Lerp(new Rgb(1f, 0.95f, 0.6f), d * 2 - 1);
+                    lit = 1;
+                    break;
+                }
+            case FlareOverlay:
+                {
+                    // The dose an unshielded body on the surface would get now; without a flare, faintly, where
+                    // the sun's activity reaches.
+                    float dose = w.FlarePower * w.Sun[i];
+                    c = dose > 0 ? new Rgb(0.1f, 0.05f, 0.15f).Lerp(new Rgb(1f, 0.3f, 1f), dose / (dose + 1f))
+                                 : new Rgb(0.05f, 0.05f, 0.08f).Lerp(new Rgb(0.35f, 0.2f, 0.45f), w.SolarActivity * w.Sun[i]);
+                    lit = 1;
+                    break;
+                }
             case 3:
                 {
                     float tot = 0;
@@ -449,6 +474,8 @@ void fragment() {
                     break;
                 }
         }
+        // A solar flare tints the sunlit side violet-white (World.Sky).
+        if (Overlay == 0 && w.FlarePower > 0 && w.Sun[i] > 0) c = c.Lerp(new Rgb(1f, 0.8f, 1f), Math.Min(0.45f, 0.12f * w.FlarePower * w.Sun[i]));
         buf[o + 12] = c.R; buf[o + 13] = c.G; buf[o + 14] = c.B; buf[o + 15] = lit;
     }
 

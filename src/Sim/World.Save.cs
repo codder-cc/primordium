@@ -40,7 +40,9 @@ public sealed partial class World
     // empty and every living body joins the shadows and the family tree as a founder.
     // 7: the geochemistry block (SyncGeochem, World.Geochem) after the course of evolution; before it
     // the depth profile is off (those worlds were made without it).
-    public const int SaveVersion = 7, OldestSaveVersion = 1;
+    // 8: the sky block (SyncSky, World.Sky) after the geochemistry; the energy ledger gains the `flare`
+    // input (a version 7 ledger is mapped: the flows after it move up by one).
+    public const int SaveVersion = 8, OldestSaveVersion = 1;
     static readonly byte[] SaveMagic = Encoding.ASCII.GetBytes("PRIMSAVE");
     const int EndMarker = 0x21444E45;   // "END!"
 
@@ -252,6 +254,7 @@ public sealed partial class World
         if (s.Version >= 6) SyncEvolution(s);   // version 6: its own block, last (World.Evolution.cs)
         else if (s.Reading) EvoRegisterAll();
         SyncGeochem(s);                           // version 7: its own block after the course of evolution
+        SyncSky(s);                               // version 8: its own block after the geochemistry (World.Sky)
     }
 
     // ---- cave climate (save version 5, World.Cave) ----
@@ -274,11 +277,23 @@ public sealed partial class World
     void SyncEnergy(Sync s)
     {
         System.Threading.LazyInitializer.EnsureInitialized(ref tileFlow, InitFlows);
-        int slots = tileFlow.Length, flows = FlowCount;
+        // Before version 8 there was no `flare` input (index FFlare): the flows after it sat one lower.
+        int count = s.Version >= 8 ? FlowCount : FlowCountV6;
+        int slots = tileFlow.Length, flows = count;
         s.V(ref slots); s.V(ref flows);
-        if (slots != tileFlow.Length || flows != FlowCount)
-            throw new InvalidDataException($"energy ledger layout differs: {slots}×{flows} saved, {tileFlow.Length}×{FlowCount} built");
-        foreach (var f in tileFlow) s.A<double>(f);
+        if (slots != tileFlow.Length || flows != count)
+            throw new InvalidDataException($"energy ledger layout differs: {slots}×{flows} saved, {tileFlow.Length}×{count} built");
+        if (count == FlowCount) foreach (var f in tileFlow) s.A<double>(f);
+        else
+        {
+            var old = new double[count];
+            foreach (var f in tileFlow)
+            {
+                if (!s.Reading) { Array.Copy(f, old, FFlare); Array.Copy(f, FFlare + 1, old, FFlare, count - FFlare); }
+                s.A<double>(old);
+                if (s.Reading) { Array.Clear(f); Array.Copy(old, f, FFlare); Array.Copy(old, FFlare, f, FFlare + 1, count - FFlare); }
+            }
+        }
         s.A<double>(rowLooseDecay);
         s.V(ref pressureHeat); s.V(ref heatFlushed); s.V(ref TrackHeat);
     }

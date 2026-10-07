@@ -180,6 +180,7 @@ public sealed partial class World
                     double[] exact = a.ElementBudget();
                     a.RoundAmountsToFloat();
                     a.InitCaveClimate();   // nor do they hold the cave climate (version 5): it starts again from Temp
+                    a.SkyFromOldFile();    // nor the sky (version 8): rebuilt at the load
                     double[] rounded = a.ElementBudget();
                     for (int e = 0; e < exact.Length; e++)
                         Require(Math.Abs(rounded[e] - exact[e]) < 0.05, $"rounding to float moved element {e} by {rounded[e] - exact[e]:R}");

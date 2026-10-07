@@ -58,7 +58,7 @@ public partial class UiManager : Control
         LoadState();
 
         toolbar = UiKit.Row(4);
-        toolbar.Position = new Vector2(14, 72);
+        toolbar.Position = new Vector2(14, 88);
         foreach (var (text, tip, act) in new (string, string, Action)[]
         {
             ("Законы  F2", "законы мира: цены, прочность, климат…", () => Laws.Toggle()),
