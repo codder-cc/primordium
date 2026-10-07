@@ -138,6 +138,8 @@ public partial class Main : Node
             View.LookAt(View.Selected);
             View.ZoomAt(focus);
         }
+        lookSun = Array.IndexOf(args, "--looksun") >= 0;
+        lookEclipse = lookSun || Array.IndexOf(args, "--lookeclipse") >= 0;
         if (Array.IndexOf(args, "--fastform") >= 0) OpenFastForm();   // for screenshots of the form
         // For screenshots of the biography: select the living body with the longest biography, show that tab.
         if (Array.IndexOf(args, "--seltracked") >= 0)
@@ -155,6 +157,7 @@ public partial class Main : Node
     }
 
     int startOverlay;
+    bool lookEclipse, lookSun;
     bool selCave;
 
     // A new world: the old simulation thread is stopped, the new world is warmed up here
@@ -232,6 +235,14 @@ public partial class Main : Node
         if (!Input.IsMouseButtonPressed(MouseButton.Right)) rDown = false;
         if (!Input.IsMouseButtonPressed(MouseButton.Middle)) mDown = false;
         if (uiTest >= 0) UiTest();
+        if (lookEclipse && frame == 30)
+        {
+            // For screenshots of an eclipse: fly to the moon's shadow (World.Sky).
+            lookEclipse = false;
+            var w = World;
+            if (w != null && lookSun) { View.LookAtCell(Math.Clamp((int)w.SunX, 0, World.W - 1), World.H / 2); View.ZoomAt(160); }   // --looksun: the day side
+            else if (w != null && w.EclipseNow) { View.LookAtCell(Math.Clamp((int)w.EclipseX, 0, World.W - 1), Math.Clamp((int)w.EclipseY, 0, World.H - 1)); View.ZoomAt(120); }
+        }
         if (selCave && frame == 30)
         {
             // For screenshots of the cave climate: select the living body under the thickest roof and cut the view through it.
@@ -254,6 +265,7 @@ public partial class Main : Node
         {
             var mp = GetViewport().GetMousePosition();
             View.Hover = OverPanel(mp) ? null : View.Pick(mp);
+            View.CursorCell = OverPanel(mp) ? -1 : View.PickCell(mp);   // the sky under the cursor (HUD)
         }
         View.Speed = Paused ? 1 : Tpf;
 

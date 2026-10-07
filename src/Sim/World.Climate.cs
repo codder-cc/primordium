@@ -47,13 +47,12 @@ public sealed partial class World
     // over the dry belts. Where they are thick enough, it rains (or snows).
     void UpdateClouds()
     {
-        float t = Tick * 0.00012f, asp = H / (float)W;
+        float t = Tick * 0.00012f, asp = H / (float)W, hydro = P.TranspHydro;
+        bool sky = TranspLaw;
         int ns = Seed * 31 + 11;
         Parallel.For(0, H, y =>
         {
-            float v = y / (float)H, lat = MathF.Abs(v - 0.5f) * 2;
-            float b1 = lat / 0.22f, b2 = (lat - 0.38f) / 0.12f, b3 = (lat - 0.66f) / 0.12f;
-            float wet = Math.Clamp(0.8f + 0.4f * MathF.Exp(-b1 * b1) - 0.45f * MathF.Exp(-b2 * b2) + 0.15f * MathF.Exp(-b3 * b3), 0.1f, 1.3f);
+            float v = y / (float)H, wet = Wet(v);
             float rain = 0;
             for (int x = 0; x < W; x++)
             {
@@ -63,6 +62,8 @@ public sealed partial class World
                 float c = Smooth(0.36f, 0.66f, n * wet);
                 Cloud[i] = c;
                 Rain[i] = Math.Max(0, c - 0.55f) * 2.2f;
+                // Clear air rains less (World.Sky): the same moisture falls elsewhere.
+                if (sky && Rain[i] > 0) Rain[i] *= Math.Max(0, 1 - hydro * (TranspRel(i) - 1));
                 rain += Rain[i];
             }
             rowSum[y] = rain;
@@ -111,6 +112,8 @@ public sealed partial class World
     void Hydro()
     {
         float rainNow = RainSum > 1e-3f ? Moisture * P.RainShare : 0, perRain = rainNow / Math.Max(1e-3f, RainSum);
+        bool sky = TranspLaw;
+        float hydro = P.TranspHydro;
         Parallel.For(0, H, y =>
         {
             float ev = 0;
@@ -125,6 +128,7 @@ public sealed partial class World
                 if (Water[i] > 0 && T > -5)
                 {
                     float e = Math.Min(Water[i], P.Evap * (T + 5) / 25f * Math.Min(1f, Water[i] / 0.3f + 0.1f));
+                    if (sky) e = Math.Min(Water[i], e * Math.Max(0, 1 + hydro * (TranspRel(i) - 1)));   // clear air dries more (World.Sky)
                     Water[i] -= e;
                     ev += e;
                 }

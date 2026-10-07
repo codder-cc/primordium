@@ -11,7 +11,7 @@ public partial class NewWorldWindow : UiWindow
 {
     LineEdit seed;
     SpinBox pop;
-    CheckBox abio, strikes;
+    CheckBox abio, strikes, flares, eclipses;
     OptionButton preset;
     Button more;
     ParamEditor editor;
@@ -35,7 +35,10 @@ public partial class NewWorldWindow : UiWindow
 
         abio = UiKit.Check("Самозарождение", false, null, "время от времени новое случайное существо из местного вещества (A — переключить на ходу)");
         strikes = UiKit.Check("Удары с орбиты", false, null, "мутагенные удары из космоса время от времени (⇧X — переключить на ходу)");
-        Body.AddChild(UiKit.Row(18, UiKit.Spacer(84, 0, false), abio, strikes));
+        // Laws of the sky (World.Sky): the same switches as in "Дополнительно" (Flares, Eclipses).
+        flares = UiKit.Check("Солнечные вспышки", true, on => SetLaw("Flares", on), "облучение освещённой стороны: мутации, износ белков, урон; закон Flares");
+        eclipses = UiKit.Check("Затмения", true, on => SetLaw("Eclipses", on), "тень спутника проходит по дневной стороне; закон Eclipses");
+        Body.AddChild(UiKit.Row(18, UiKit.Spacer(84, 0, false), abio, strikes, flares, eclipses));
 
         preset = UiKit.Options();
         preset.CustomMinimumSize = new Vector2(220, 0);
@@ -94,6 +97,14 @@ public partial class NewWorldWindow : UiWindow
             try { draft.Fill(ParamRegistry.LoadPreset(presetList[k - 2].path).Values); }
             catch (Exception e) { Ui.Toast("не прочитать набор: " + e.Message, true); draft.Fill(null); }
         }
+        editor.Refresh(true);
+        flares.SetPressedNoSignal(draft.Values.TryGetValue("Flares", out var f) && f != 0);
+        eclipses.SetPressedNoSignal(draft.Values.TryGetValue("Eclipses", out var ec) && ec != 0);
+    }
+
+    void SetLaw(string name, bool on)
+    {
+        draft.Set(ParamRegistry.Find(name), on ? 1 : 0);
         editor.Refresh(true);
     }
 

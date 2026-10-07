@@ -13,6 +13,7 @@ using Primordium;
 //   [--chronicle]: print the world's chronicle as events happen (World.Chronicle).
 if (Array.IndexOf(args, "--self-test") >= 0) { World.RunRegression(); return; }
 if (Array.IndexOf(args, "--self-test-infra") >= 0) { World.RunInfraRegression(); return; }
+if (Array.IndexOf(args, "--self-test-sun") >= 0) { World.SkyRegression(); return; }   // just the sky test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-cave") >= 0) { World.CaveClimateRegression(); return; }   // just the cave climate test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-evolution") >= 0) { World.RunEvolutionRegression(); return; }
 if (Array.IndexOf(args, "--self-test-resources") >= 0) { World.ResourcesRegression(); return; }   // just the resources test (also in --self-test)
@@ -44,6 +45,7 @@ if (Array.IndexOf(args, "--run-one") >= 0) { Batch.RunOne(args, laws); return; }
 if (Array.IndexOf(args, "--geochem") >= 0) { World.GeochemReport(args); return; }   // strata by depth, what bodies need (World.Geochem)
 if (Array.IndexOf(args, "--resources") >= 0) { World.ResourceReport(args); return; }   // gas and loose food by region (World.Resources)
 if (Array.IndexOf(args, "--invade") >= 0) { World.InvasionProbe(args); return; }   // plant a design, follow its lineage (World.Geochem probe)
+if (Array.IndexOf(args, "--sun") >= 0) { World.SunReport(args); return; }   // the sky: day length, climate by latitude, photon supply (World.Sky)
 if (Array.IndexOf(args, "--bites") >= 0) { foreach (int s in new[] { 1, 2, 3, 5, 7 }) World.BiteReport(s); return; }
 if (Array.IndexOf(args, "--strength") >= 0) { foreach (int s in new[] { 1, 2, 3, 7 }) { Console.WriteLine($"seed {s}"); World.StrengthReport(s); } return; }
 
@@ -212,7 +214,7 @@ for (int t = 1; t <= ticks; t++)
     Array.Clear(w.Prof);
     Array.Clear(w.Detail);
     Console.WriteLine($"   enzymes/body {c.AvgEnz:F1}: bind {c.EnzKind[0]:F2} split {c.EnzKind[1]:F2} photo {c.EnzKind[2]:F2} motor {c.EnzKind[3]:F2} | protected {c.AvgProt:P1} | Tb {c.AvgTb:F1} | crowded {c.Crowded} linked {c.Linked} | most in one cell {w.Count.Max()}, pushed off full floors {w.Pushed} | big bodies {c.Big}, largest {c.MaxCells} cells");
-    Console.WriteLine($"t={t} day={w.Day} pop={c.Pop} born={w.Births} died={w.DeathsStarve}/{w.DeathsKilled}/{w.DeathsBroken}/{w.DeathsClimate}/{w.DeathsBuried} spawn={w.Spawns} " +
+    Console.WriteLine($"t={t} day={w.Day} pop={c.Pop} born={w.Births} died={w.DeathsStarve}/{w.DeathsKilled}/{w.DeathsBroken}/{w.DeathsClimate}/{w.DeathsBuried}/{w.DeathsFlare} spawn={w.Spawns} " +
                       $"gen={w.MaxGen} len={c.AvgLen:F0} E={c.AvgEnergy:F0} age={c.AvgAge:F0} old={c.OldestAge} " +
                       $"| plant={c.Plants} eat={c.Eaters} mine={c.Miners} hunt={c.Hunters} idle={c.Idle} " +
                       $"| litter={w.MeanLitter():F1} gas={w.C[w.Chem.Gas].Average(q => q.D):F2} h={w.MeanHeight():F2} | {ev} | {t / sw.Elapsed.TotalSeconds:F0} t/s | hash {w.StateHash():x16}");
@@ -225,6 +227,10 @@ for (int t = 1; t <= ticks; t++)
         var rc = w.ResCensus();
         Console.WriteLine($"   resources: gas formula {rc[0]:P1} of body atoms | diets per region e^H {rc[1]:F2}, between regions {rc[2]:F3} nats, bodies per region CV {rc[3]:F2} | air gas {rc[4]:F3}/cell (CV across regions {rc[6]:F2}), loose food {rc[5]:F2}/cell (CV {rc[7]:F2})");
         Console.WriteLine($"   caves: under a roof {cv[0]:P1} (≥3 blocks {cv[1]:P1}), depth mean {cv[2]:F2} max {cv[3]:F0}, voids {cv[4]:F0} | polar {cv[5]:P0} of bodies, {cv[6]:P0} of them under a roof | mountains {cv[7]:P0}, {cv[8]:P0} under a roof");
+    }
+    {
+        var sk = w.SkyCensus();
+        Console.WriteLine($"   sky: diets per 32×32 square {sk[0]:F2} (planet/square {sk[1]:F2}) | transparency {sk[3]:F3} | activity {w.SolarActivity:P0}, flare power {w.FlarePower:F2}, mean dose {sk[2]:F4} | flares {sk[4]:F0} (mutations {w.FlareMutations}, deaths {sk[6]:F0}), eclipses {sk[5]:F0}{(w.EclipseNow ? $" (now at {w.EclipseX:F0},{w.EclipseY:F0})" : "")} | strikes {(w.AutoStrikes ? "on" : "off")}");
     }
     Console.WriteLine($"   divide tries {w.DivFail[0]}: no energy {w.DivFail[1]}, small body {w.DivFail[2]}, no room {w.DivFail[3]}, uneven {w.DivFail[4]}");
     {

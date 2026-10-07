@@ -59,8 +59,25 @@ public static class P
     public static float EnzWidth = 14f;         // °C around its best temperature where an enzyme works
 
     // Light: each cell catches a trickle of photons that everybody in it shares.
-    public static float PhotonK = 0.06f;        // photons per tick at full light
+    public static float PhotonK = 0.13f;        // photons per tick at full light (0.06 before the cosine law and the transparency: see World.Sky)
     public static float PhotonCap = 3f;         // a cell can't hoard more than this
+    // Insolation (World.Sky): power = max(0, sin elevation)^InsolExp — the cosine law: the noon sun at the
+    // equator gives 1, at 60° in the equinox 0.5, the polar winter 0. A soft terminator (twilight) between
+    // TwilightLo and TwilightHi. The climate of a latitude follows the day's insolation sum, held back by
+    // the year's mean (ClimInertia: oceans and ground keep warmth), shaped by ClimPow. 0 switches the law
+    // off: the old curve that saturates at a sun ~17° high, and the climate from the noon height.
+    public static int Insolation = 1;
+    public static float InsolExp = 1f, TwilightLo = -0.04f, TwilightHi = 0.05f;
+    public static float ClimInertia = 0.5f, ClimPow = 1.35f;
+    // Atmospheric transparency (World.Sky): a slow drifting field over the latitudinal profile of the
+    // wet and dry belts (the same profile the clouds follow), TranspMin … 1, clearer high up. Clear air
+    // evaporates more and rains less (TranspHydro). 0 switches it off: the sky clear everywhere.
+    public static int Transparency = 1;
+    public static float TranspMin = 0.3f, TranspNoise = 0.8f, TranspScale = 0.25f, TranspDrift = 1f, TranspAlt = 0.01f, TranspHydro = 0.5f;
+    // Shading (World.Sky): in a cell, bodies higher up (or, on one floor, bigger) catch the light first. A
+    // body gets a photon with chance e^(−ShadeK·Σ cover of those above it), cover = (volume per cell /
+    // VoxelSpace)^(2/3); a photon it misses stays for them. 0 switches it off.
+    public static float ShadeK = 1.5f;
 
     // Temperature: comfortable band; outside it harm grows exponentially.
     public static float ComfortLo = 2f, ComfortHi = 26f, TempTau = 7f;
@@ -184,6 +201,23 @@ public static class P
 
     // Space
     public static int StrikeMin = 2500, StrikeMax = 8000;   // ticks between mutagenic strikes
+    // Eclipses (World.Sky): a moon on an inclined orbit from the seed (MoonPeriod days between new moons,
+    // MoonTilt rad; 0 — from the seed), MoonDist planet radii away. Its shadow — EclipseR cells, the light
+    // there × EclipseDepth, a soft penumbra 0.3·EclipseR wide — crosses the day side at some new moons.
+    // A pure function of the tick: predictable.
+    public static int Eclipses = 1;
+    public static float MoonPeriod = 0f, MoonTilt = 0f, MoonDist = 6f, EclipseR = 20f, EclipseDepth = 0.02f;
+    // Solar flares (World.Sky): the sun's activity swings over SolarCycle days (0 — from the seed, 30…80)
+    // and shifts its brightness by ±SolarLumAmp. Flares come FlareRate times a day at full activity,
+    // last about FlareLen ticks, their power Pareto-distributed from FlarePowerMin (tail FlarePareto).
+    // Dose = power × exposure (the sunlit sky over the body, × 1 − cave cover, e^(−FlareWaterDim·depth)
+    // under water) × the body's shield e^(−ShieldK·Σ mass·packing of its molecules / room). A dose
+    // mutates the genome (FlareMutK per byte, the UV path), wears proteins (FlareProtK), costs energy
+    // (FlareHarmK) and heats the body (FlareHeatK: energy from outside, the ledger's `flare` input).
+    // 0 switches them off — the old constructor of bench and self-test then keeps the orbital strikes.
+    public static int Flares = 1;
+    public static float SolarCycle = 0f, SolarLumAmp = 0.02f, FlareRate = 0.5f, FlareLen = 150f, FlarePowerMin = 1f, FlarePareto = 2f;
+    public static float FlareWaterDim = 0.7f, ShieldK = 1f, FlareMutK = 3e-5f, FlareProtK = 0.002f, FlareHarmK = 0.02f, FlareHeatK = 0.01f;
 
     // Chronicle (observation only: none of these changes what happens in the world)
     public static int ChronicleCap = 10000;     // ordinary events kept (important ones are kept for ever)

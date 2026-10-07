@@ -82,6 +82,7 @@ public sealed partial class World
     void InitCaveClimate()
     {
         const int Seasons = 24, Hours = 48;
+        if (InsolLaw) EnsureInsolNorms();
         Parallel.For(0, H, y =>
         {
             float lat = (0.5f - (y + 0.5f) / H) * MathF.PI * 0.92f, sl = MathF.Sin(lat), cl = MathF.Cos(lat);
@@ -89,8 +90,8 @@ public sealed partial class World
             for (int j = 0; j < Seasons; j++)
             {
                 float decl = P.Tilt * MathF.Sin(2 * MathF.PI * (j + 0.5f) / Seasons), sd = MathF.Sin(decl), cd = MathF.Cos(decl);
-                clim += P.TPole + (P.TEquator - P.TPole) * MathF.Pow(Math.Max(0f, MathF.Cos(lat - decl)), 1.3f);
-                for (int h = 0; h < Hours; h++) light += Smooth(-0.04f, 0.3f, sl * sd + cl * cd * MathF.Cos(2 * MathF.PI * (h + 0.5f) / Hours));
+                clim += ClimateOf(y, decl);   // the law's climate of the latitude (World.Sky)
+                for (int h = 0; h < Hours; h++) light += Insol(sl * sd + cl * cd * MathF.Cos(2 * MathF.PI * (h + 0.5f) / Hours));
             }
             clim /= Seasons; light /= Seasons * Hours;
             for (int i = y * W, end = i + W; i < end; i++)

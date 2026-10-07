@@ -12,7 +12,8 @@ namespace Primordium;
 // and buried. Heat in the cells (heatIn → Temp) is outside: it is the sink.
 //
 // Inputs come from outside the chemistry: photons lifting a molecule to its excited state, strikes
-// exciting loose matter, matter the vents bring from the interior, matter the hand pours (or digs
+// exciting loose matter, solar flares heating the bodies they hit (World.Sky: the absorbed energy goes
+// into the heat a body holds, HeatHeld, and leaves as shed heat like reaction heat), matter the vents bring from the interior, matter the hand pours (or digs
 // away: a negative input), creatures planted from designs with matter or energy brought from outside
 // (Design: the bond energy of imported molecules plus imported free energy, World.HandEnergy; a body
 // made from local matter and local splits only moves energy between reservoirs), the law P.EnergyK
@@ -40,14 +41,16 @@ namespace Primordium;
 // chemistry, on the main thread elsewhere. Reading the stock scans the whole crust: on demand only.
 public sealed partial class World
 {
-    public const int FPhoto = 0, FStrike = 1, FVent = 2, FHand = 3, FDesign = 4, FScale = 5, FWriteOff = 6;  // inputs
-    public const int FDissipate = 7, FUnpaid = 8, FShed = 9, FDeath = 10, FBodyDecay = 11, FLooseDecay = 12,
-        FPressure = 13, FStillborn = 14, FRounding = 15;                                                        // outputs
-    public const int FImpact = 16, FAbio = 17;                                                                  // not in the balance
-    public const int FlowCount = 18, InputsEnd = 7, OutputsEnd = 16;
+    public const int FPhoto = 0, FStrike = 1, FVent = 2, FHand = 3, FDesign = 4, FScale = 5, FWriteOff = 6, FFlare = 7;  // inputs
+    public const int FDissipate = 8, FUnpaid = 9, FShed = 10, FDeath = 11, FBodyDecay = 12, FLooseDecay = 13,
+        FPressure = 14, FStillborn = 15, FRounding = 16;                                                        // outputs
+    public const int FImpact = 17, FAbio = 18;                                                                  // not in the balance
+    public const int FlowCount = 19, InputsEnd = 8, OutputsEnd = 17;
+    // Before save version 8 there was no `flare` input: the ledger had 18 flows (World.Save maps them).
+    public const int FlowCountV6 = 18;
     public static readonly string[] FlowNames =
     {
-        "photo", "strike", "vent", "hand", "design", "energy-k", "write-off",
+        "photo", "strike", "vent", "hand", "design", "energy-k", "write-off", "flare",
         "dissipate", "unpaid", "shed", "death", "body decay", "loose decay", "pressure", "stillborn", "rounding",
         "impact", "abiogenesis",
     };

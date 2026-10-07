@@ -139,6 +139,7 @@ public sealed partial class World
         StructureRegression();
         CaveRegression();
         CaveClimateRegression();
+        SkyRegression();
         GeochemRegression();
         ResourcesRegression();
         VolumeRegression();

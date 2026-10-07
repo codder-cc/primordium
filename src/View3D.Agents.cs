@@ -29,6 +29,7 @@ public partial class View3D
     MeshInstance3D selRing, hoverRing, brushRing;
     Mesh capNear, capFar;
     public int BrushCell = -1, BrushTool;   // the hand's brush under the cursor (set by Main)
+    public int CursorCell = -1;              // the column under the cursor (set by Main, for the HUD)
     public float BrushR;
     static readonly Color[] BrushColors = { default, new(0.95f, 0.8f, 0.45f), new(0.35f, 0.65f, 1f), new(1f, 0.3f, 0.25f), new(0.75f, 0.55f, 0.35f), new(0.55f, 1f, 0.6f) };
     DirectionalLight3D key;

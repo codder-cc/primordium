@@ -31,6 +31,7 @@ public static class GenomeHelp
         ["energy"] = "→ энергия тела", ["age"] = "→ возраст / 64", ["have"] = "m → сколько молекул m в теле", ["mass"] = "→ молекул в теле",
         ["temp"] = "→ температура клетки", ["btemp"] = "→ температура тела",
         ["light"] = "→ свет на тело ×100", ["photons"] = "→ фотоны клетки ×100 (под крышей 0)",
+        ["uv"] = "→ УФ у тела ×100: активность солнца и вспышки (light.1; без вспышек — как light)",
         ["sense"] = "m → концентрация m в клетке", ["sensed"] = "m d → концентрация m в соседней клетке d",
         ["smell"] = "m → запах m вокруг",
         ["look"] = "дальность d →: смотреть в сторону d (стоит энергии); кладёт деталь, расстояние, что видно",
@@ -61,7 +62,7 @@ public static class GenomeHelp
         ("Стек и числа", new[] { "push", "lit", "dup", "drop", "swap", "over", "rot", "add", "sub", "mul", "div", "mod", "neg", "inc", "dec", "lt", "eq", "rand", "nop" }),
         ("Управление и память", new[] { "label", "jmp", "jz", "jnz", "call", "ret", "skipz", "yield", "load", "store" }),
         ("Состояние тела", new[] { "energy", "age", "have", "mass", "temp", "btemp", "gene", "glen" }),
-        ("Мир", new[] { "sense", "sensed", "smell", "light", "photons", "look", "ground" }),
+        ("Мир", new[] { "sense", "sensed", "smell", "light", "photons", "uv", "look", "ground" }),
         ("Внимание и общение", new[] { "pick", "count", "feel", "hurt", "kin", "ngene", "listen", "emit" }),
         ("Белки и химия", new[] { "enzyme", "bind", "split", "photo", "digest" }),
         ("Мембрана и движение", new[] { "intake", "drink", "expel", "thrust", "swim" }),
@@ -78,6 +79,7 @@ public static class GenomeHelp
             if (Genome.HasImm(op)) continue;
             string v = GenomeAsm.Mnemonic((byte)(op | 2 << 6));
             if (!v.Contains('.')) yield return (v, op, true);
+            if (op == Genome.LightOp) yield return ("uv", op, true);
         }
     }
 

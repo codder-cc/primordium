@@ -91,7 +91,9 @@ public sealed partial class World
                 case Genome.EnzymeOp: Express(a, ip, g, n); a.Ip = ip + 4; break;
                 case Genome.MassOp: Push(a, a.InvTotal); break;
                 case Genome.Temp: Push(a, imm >= 2 ? (int)a.Tb : (int)(CaveLaw ? LocalTemp(cell, a.Z) : Temp[cell])); break;
-                case Genome.LightOp: Push(a, imm >= 2 ? (InCave(a) ? 0 : (int)(Photon[cell] * 100)) : (int)(AgentLight(a) * 100)); break;
+                // light.1 is `uv` with solar flares on (World.Sky: the sun's activity and flares at the body,
+                // information only); with them off it reads the light, as before.
+                case Genome.LightOp: Push(a, imm >= 2 ? (InCave(a) ? 0 : (int)(Photon[cell] * 100)) : imm == 1 && FlareLaw ? UvSense(a) : (int)(AgentLight(a) * 100)); break;
                 case Genome.Sense: Push(a, Conc(a, Chemistry.Spec(Pop(a)), cell)); break;
                 case Genome.Sensed: x = Pop(a); y = Pop(a); Push(a, Conc(a, Chemistry.Spec(y), nb[cell * 4 + (x & 3)])); break;
                 case Genome.Look: x = Pop(a); y = Pop(a); Look(a, cell, x & 3, y); break;
@@ -348,11 +350,14 @@ public sealed partial class World
         // The cell's photons arrive at the water's surface; each block of water above the body
         // swallows some of them before they reach it.
         float reach = MathF.Exp(-P.WaterDim * Below(a, cell));
+        // Bodies above it in the cell take the light first (World.Sky): a photon it misses stays for them.
+        float shade = ShadeOf(a, cell);
         int times = Turnovers(Chance(a, Enzyme.Photo, s, 0, out int slot)), caught = 0;
         for (int k = 0; k < times; k++)
         {
             float ph = Photon[cell];
             if (a.Inv[s] == 0 || ph < 1f) break;
+            if (shade < 1 && Rng.NextDouble() >= shade) continue;
             Photon[cell] = Math.Max(0, ph - 1);
             if (reach < 1 && Rng.NextDouble() >= reach) continue;
             RemoveMol(a, s);

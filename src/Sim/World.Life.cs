@@ -103,6 +103,10 @@ public sealed partial class World
         a.HeatHeld -= shed; a.TickHeat += shed;
         Flows[FShed] += shed;
 
+        // A solar flare (World.Sky): the dose of this tick wears proteins, costs energy and heats the
+        // body; its mutations go with the UV below.
+        float flareHarm = 0, dose = FlarePower > 0 ? Flare(a, out flareHarm) : (a.FlareDose = 0);
+
         // Poisons lying around seep in (from any of its cells); inside they wreck proteins.
         int pc = FootCell(a, Rng.Next(a.Cells));
         var pb = FloorBurial(a, pc);
@@ -187,7 +191,8 @@ public sealed partial class World
 
         // Wear: unstable molecules fall apart (faster when warm), sunlight damages the genome.
         float pDecay = a.Unstable * P.DecayK * TempFactor(a.Tb);
-        float pUv = P.UvK * AgentLight(a) * a.G.Length;
+        float pUv = P.UvK * AgentLight(a) * a.G.Length, pSun = pUv;
+        if (dose > 0) pUv += P.FlareMutK * dose * a.G.Length;   // a flare: the same path, more often
         double u = Rng.NextDouble();
         if (u < pDecay)
         {
@@ -211,9 +216,14 @@ public sealed partial class World
             g[at] = (byte)Rng.Next(256);
             p[at] = 0;
             a.SetGenome(g, p);
+            if (u >= pDecay + pSun) FlareMutated();
         }
 
-        if (a.Energy <= 0) Die(a, cell, harm > upkeep ? CauseClimate : CauseStarve);
+        if (a.Energy <= 0)
+        {
+            if (flareHarm > upkeep && flareHarm >= harm) { FlareKilled(); Die(a, cell, CauseFlare); }
+            else Die(a, cell, harm > upkeep ? CauseClimate : CauseStarve);
+        }
         else if (a.InvTotal < P.MinBody) Die(a, cell, CauseBroken);
     }
 
@@ -348,6 +358,7 @@ public sealed partial class World
             case CauseClimate: Interlocked.Increment(ref DeathsClimate); break;
             case CauseBuried: Interlocked.Increment(ref DeathsBuried); break;
             case CauseHand: Interlocked.Increment(ref DeathsHand); break;
+            case CauseFlare: Interlocked.Increment(ref DeathsFlare); break;
             default: Interlocked.Increment(ref DeathsBroken); break;
         }
         MarkDirty(cell);
