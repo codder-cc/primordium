@@ -110,6 +110,13 @@ public static class P
     public static float HoldK = 0.0005f;
     public static float CostLink = 0.002f;      // per link per tick: holding on to a partner
     public static float DecayK = 1.5e-4f;       // chance per unstable molecule per tick (at 15 °C)
+    // Wear of body matter (World.Wear): a molecule that loses its hold on the body leaves it — along its
+    // exothermic breakdown (products to the floor, the energy as heat) or whole. Photodamage: a caught
+    // photon breaks the excited molecule with chance PhotoDamage·e^(−PhotoHold·hold/x), x its excitation
+    // energy, hold its cohesion (Bond) + PhotoCage × the body's matrix (mean Bond × packing up to 1).
+    // Wear: every held molecule, WearK·TempFactor(Tb)·e^(−WearHold·Bond) per tick. 0 switches a law off.
+    public static float PhotoDamage = 0f, PhotoHold = 10f, PhotoCage = 1f;
+    public static float WearK = 0f, WearHold = 3f;
     public static float UvK = 3e-6f;            // somatic mutation chance per genome byte per tick in full light
     public static float HeatToTemp = 0.12f;     // °C a cell warms per unit of energy its bodies dissipate (a quarter of that in water)
     // Bodies that outgrow one cell: covering k+1 cells needs mass GrowMass·k^GrowPow (80, ~211, ~373 … ~1720 for 10).

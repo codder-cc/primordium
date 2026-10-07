@@ -218,6 +218,8 @@ public sealed partial class World
             a.SetGenome(g, p);
             if (u >= pDecay + pSun) FlareMutated();
         }
+        // Thermal ageing of everything it holds (World.Wear; draws random numbers only with the law on).
+        if (WearLaw) Wear(a, cell);
 
         if (a.Energy <= 0)
         {

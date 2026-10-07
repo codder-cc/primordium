@@ -17,6 +17,7 @@ if (Array.IndexOf(args, "--self-test-sun") >= 0) { World.SkyRegression(); return
 if (Array.IndexOf(args, "--self-test-cave") >= 0) { World.CaveClimateRegression(); return; }   // just the cave climate test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-evolution") >= 0) { World.RunEvolutionRegression(); return; }
 if (Array.IndexOf(args, "--self-test-resources") >= 0) { World.ResourcesRegression(); return; }   // just the resources test (also in --self-test)
+if (Array.IndexOf(args, "--self-test-wear") >= 0) { World.WearRegression(); return; }   // just the photodamage and wear test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-geochem") >= 0) { World.GeochemRegression(); return; }   // just the geochemistry test (also in --self-test)
 if (Array.IndexOf(args, "--list-params") >= 0)
 {

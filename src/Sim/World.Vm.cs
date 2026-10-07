@@ -353,6 +353,8 @@ public sealed partial class World
         // Bodies above it in the cell take the light first (World.Sky): a photon it misses stays for them.
         float shade = ShadeOf(a, cell);
         int times = Turnovers(Chance(a, Enzyme.Photo, s, 0, out int slot)), caught = 0;
+        // Photodamage (World.Wear): the chance the excitation breaks the molecule instead of being stored.
+        float damage = PhotoDamageLaw && times > 0 ? PhotoDamageChance(a, s, p) : 0;
         for (int k = 0; k < times; k++)
         {
             float ph = Photon[cell];
@@ -367,6 +369,7 @@ public sealed partial class World
             a.TickPhoto += gain;
             Flows[FPhoto] += gain;
             caught++;
+            if (damage > 0) PhotoDamageAfter(a, p, damage);
         }
         if (caught == 0) return;
         a.NPhoto += caught;
