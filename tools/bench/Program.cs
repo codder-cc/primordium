@@ -15,6 +15,7 @@ if (Array.IndexOf(args, "--self-test") >= 0) { World.RunRegression(); return; }
 if (Array.IndexOf(args, "--self-test-infra") >= 0) { World.RunInfraRegression(); return; }
 if (Array.IndexOf(args, "--self-test-cave") >= 0) { World.CaveClimateRegression(); return; }   // just the cave climate test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-evolution") >= 0) { World.RunEvolutionRegression(); return; }
+if (Array.IndexOf(args, "--self-test-resources") >= 0) { World.ResourcesRegression(); return; }   // just the resources test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-geochem") >= 0) { World.GeochemRegression(); return; }   // just the geochemistry test (also in --self-test)
 if (Array.IndexOf(args, "--list-params") >= 0)
 {
@@ -41,6 +42,7 @@ if (Array.IndexOf(args, "--batch") >= 0) { Batch.Run(args, laws); return; }
 if (Array.IndexOf(args, "--compare") >= 0) { Batch.Compare(args); return; }
 if (Array.IndexOf(args, "--run-one") >= 0) { Batch.RunOne(args, laws); return; }
 if (Array.IndexOf(args, "--geochem") >= 0) { World.GeochemReport(args); return; }   // strata by depth, what bodies need (World.Geochem)
+if (Array.IndexOf(args, "--resources") >= 0) { World.ResourceReport(args); return; }   // gas and loose food by region (World.Resources)
 if (Array.IndexOf(args, "--invade") >= 0) { World.InvasionProbe(args); return; }   // plant a design, follow its lineage (World.Geochem probe)
 if (Array.IndexOf(args, "--bites") >= 0) { foreach (int s in new[] { 1, 2, 3, 5, 7 }) World.BiteReport(s); return; }
 if (Array.IndexOf(args, "--strength") >= 0) { foreach (int s in new[] { 1, 2, 3, 7 }) { Console.WriteLine($"seed {s}"); World.StrengthReport(s); } return; }
@@ -220,6 +222,8 @@ for (int t = 1; t <= ticks; t++)
         var cv = w.CaveCensus();
         var gc = w.GeoCensus();
         Console.WriteLine($"   geochem: deep element {w.Chem.ElementName[w.DeepElement]} ({(w.GeoOn ? "profile on" : "profile off")}) {gc[0]:P1} of body atoms | mined {gc[1]:F0}, depth mean {gc[2]:F2}, from 3+ levels {gc[3]:P1}, deep element {gc[4]:P1} of mined atoms; by depth 0/1-2/3-9/10-29/30+ {string.Join("/", w.GeoMined.Take(5))}");
+        var rc = w.ResCensus();
+        Console.WriteLine($"   resources: gas formula {rc[0]:P1} of body atoms | diets per region e^H {rc[1]:F2}, between regions {rc[2]:F3} nats, bodies per region CV {rc[3]:F2} | air gas {rc[4]:F3}/cell (CV across regions {rc[6]:F2}), loose food {rc[5]:F2}/cell (CV {rc[7]:F2})");
         Console.WriteLine($"   caves: under a roof {cv[0]:P1} (≥3 blocks {cv[1]:P1}), depth mean {cv[2]:F2} max {cv[3]:F0}, voids {cv[4]:F0} | polar {cv[5]:P0} of bodies, {cv[6]:P0} of them under a roof | mountains {cv[7]:P0}, {cv[8]:P0} under a roof");
     }
     Console.WriteLine($"   divide tries {w.DivFail[0]}: no energy {w.DivFail[1]}, small body {w.DivFail[2]}, no room {w.DivFail[3]}, uneven {w.DivFail[4]}");
