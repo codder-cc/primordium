@@ -159,6 +159,7 @@ public sealed partial class World
         FaceRegression();
         WaterRegression();
         HandRegression();
+        RegionRegression();
         RubbleRegression();
         ConfinementRegression();
         FatalActionRegression();

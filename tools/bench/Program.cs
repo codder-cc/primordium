@@ -15,6 +15,7 @@ using Primordium;
 //   Observation and speed modes: --invade [design.json] (Geochem.cs), --export-designs dir, --tournament (Tournament.cs),
 //   --food-chain (FoodChain.cs), --perf-baseline [--make] (PerfBaseline.cs).
 //   Population templates: --plant-population file.json [--at x,y] [--local] [--local-energy], --copy-population out.json (PopulationTool.cs).
+//   Regions before the run: --copy-region x,y,w,h file, --paste-region file --at x,y [--rotate k] [--paste-mode above] [--no-bodies] [--dz n] (RegionBench.cs).
 {
     int li = Array.IndexOf(args, "--lang");
     if (li >= 0 && li + 1 < args.Length) Loc.Set(args[li + 1]);
@@ -29,6 +30,7 @@ if (Array.IndexOf(args, "--self-test-wear") >= 0) { World.WearRegression(); retu
 if (Array.IndexOf(args, "--self-test-geochem") >= 0) { World.GeochemRegression(); return; }   // just the geochemistry test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-population") >= 0) { World.PopulationRegression(); return; }   // just the population templates test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-climate") >= 0) { World.ClimateCyclesRegression(); return; }   // just the climate cycles test (also in --self-test)
+if (Array.IndexOf(args, "--self-test-region") >= 0) { World.RegionRegression(); return; }   // just the regions test (also in --self-test)
 if (Array.IndexOf(args, "--list-params") >= 0)
 {
     foreach (var p in ParamRegistry.All)
@@ -130,6 +132,7 @@ if (Array.IndexOf(args, "--probe") >= 0)
         Console.WriteLine($"  species {s}: E{ch.E[s]} split→{ch.SplitA[s]}+{ch.SplitB[s]} dE={ch.E[s] - ch.E[ch.SplitA[s]] - ch.E[ch.SplitB[s]]} litter {w.C[s].Average(q => q.D):F2}");
 }
 PopulationTool.BeforeRun(w, args);   // --plant-population file.json [--at x,y] (PopulationTool.cs)
+RegionBench.Apply(w, args);   // --copy-region x,y,w,h file, --paste-region file --at x,y (RegionBench.cs)
 Console.WriteLine($"start: {w.Agents.Count} agents, spawns {w.Spawns}");
 var sw = Stopwatch.StartNew();
 var prev = new long[(int)EvKind.Count];

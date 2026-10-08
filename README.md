@@ -84,6 +84,7 @@ Every window and the main tools are also on the **sidebar** at the left edge: ic
 | F5 / F9 | Quick save / quick load |
 | F8 · F10 · F11 | Chronicle · course of evolution · catastrophes |
 | F1 · F12 | Tree of life (cladogram of living clades, lineages over time) · metrics over time with CSV export |
+| Y | Regions: select a rectangle on the map, copy it (with bodies) into a library, paste it turned here or in another world; JSON / binary export and import |
 | F3 · R / ⇧R · P | Performance overlay · new seed / same seed · screenshot |
 
 ## Headless bench
@@ -103,6 +104,7 @@ dotnet run -c Release --project tools/bench -- --tournament --seed 2 --ticks 800
 dotnet run -c Release --project tools/bench -- --food-chain --seeds 1-2              # who eats whom: trophic levels, chain length
 dotnet run -c Release --project tools/bench -- --perf-baseline --make                # once: make the reference boom save
 dotnet run -c Release --project tools/bench -- --perf-baseline --ticks 2000          # ms/tick by stage on it, end hash
+dotnet run -c Release --project tools/bench -- --seed 4 --audit --paste-region valley.region --at 100,40 --rotate 1   # paste a region file (made by the game or --copy-region x,y,w,h file)
 ```
 
 Decide on laws with batches, not single runs: `--compare` reports medians with bootstrap intervals, Mann–Whitney, a sign test across seeds and Fisher's test for extinctions and booms. Add `--lang ru` for Russian output. The full flag reference is in [README.ru.md](README.ru.md) and [docs/SIMULATION.md](docs/SIMULATION.md).

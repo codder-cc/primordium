@@ -120,7 +120,7 @@ public partial class Main : Node
                 // "window" or "window:view" (newworld:more, creator:looks, creator:help) — for screenshots.
                 if (item == "none") continue;   // no window, and none restored from ui.json either
                 var part = item.Split(':');
-                var win = Ui.ById(part[0] == "params" ? "laws" : part[0]) ?? throw new ArgumentException("--open: laws|params, newworld[:more], saves, creator[:looks|:help], chronicle[:fossils], fossil[:bio|:ancestry], evolution, tree[:lineages], metrics, catastrophes, life[:creatures|:populations]");
+                var win = Ui.ById(part[0] == "params" ? "laws" : part[0]) ?? throw new ArgumentException("--open: laws|params, newworld[:more], saves, creator[:looks|:help], chronicle[:fossils], fossil[:bio|:ancestry], evolution, tree[:lineages], metrics, catastrophes, life[:creatures|:populations], regions[:select|:paste]");
                 win.Open();
                 if (part.Length > 1) win.ShowView(part[1]);
             }
@@ -604,6 +604,7 @@ public partial class Main : Node
             case Key.F10: Ui.Evolution.Toggle(); break;
             case Key.F11: Ui.Catastrophes.Toggle(); break;
             case Key.U: Ui.Life.Toggle(); break;
+            case Key.Y: Ui.Regions.Toggle(); break;
             case Key.K: v.KinFocus = !v.KinFocus; break;
             case Key.B: ShowRecords = !ShowRecords; break;
             case Key.O:
@@ -652,6 +653,7 @@ public partial class Main : Node
             case Key.R: NewWorld(k.ShiftPressed ? World.Seed : (int)(Time.GetTicksMsec() % 100000)); break;
             case Key.Escape:
                 if (FastForward) { FastTo = -1; break; }
+                if (Ui.Regions.CancelTool()) break;   // the regions window's selection or paste brush
                 if (Tool > 0) { Tool = 0; painting = false; break; }
                 v.Selected = null; v.Follow = false;
                 break;
@@ -680,6 +682,7 @@ public partial class Main : Node
                     var hit = hud.HitTest(mb.Position);
                     if (hit != null) { Focus(hit); return; }
                     if (OverPanel(mb.Position)) return;
+                    if (Ui.Regions.MapPress(mb.Position)) return;   // selecting or pasting a region (RegionsWindow)
                     if (Tool == 5)
                     {
                         // Plant the creature editor's design in the column under the cursor.

@@ -48,6 +48,7 @@ public partial class UiManager : Control
     public TreeWindow Tree;
     public MetricsWindow Metrics;
     public LifeLibraryWindow Life;
+    public RegionsWindow Regions;
 
     readonly ConcurrentQueue<Action> posted = new();
     VBoxContainer toastBox;
@@ -113,6 +114,7 @@ public partial class UiManager : Control
         Add(Tree = new TreeWindow());
         Add(Metrics = new MetricsWindow());
         Add(Life = new LifeLibraryWindow());
+        Add(Regions = new RegionsWindow());
 
         toastBox = UiKit.Col(4);
         toastBox.MouseFilter = MouseFilterEnum.Ignore;
