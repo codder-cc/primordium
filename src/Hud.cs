@@ -502,11 +502,12 @@ public partial class Hud : Control
                             $"насыпать: {m.World.Chem.MatName[m.PourSpecies + 2]} (каждый мазок — новый случайный материал, свежая рыхлая насыпь)"),
                 2 => Loc.T("flood with water (then it flows, evaporates and falls as rain like any other)", "залить водой (дальше она течёт, испаряется и выпадает дождём как обычная)"),
                 3 => Loc.T("kill everyone in the circle (remains stay in place)", "убить всех в круге (останки остаются на месте)"),
-                5 => m.Ui.Creator.BrushText,
+                5 => m.Ui.Life.Armed != LifeLibraryWindow.Arm.None ? m.Ui.Life.BrushText : m.Ui.Creator.BrushText,
                 _ => Loc.T("dig: remove the top blocks (the matter leaves the world with the hand)", "копнуть: снять верхние блоки (вещество уходит из мира с рукой)"),
             };
             string l1 = Loc.T($"brush — {what}", $"кисть — {what}");
-            string l2 = m.Tool == 5
+            string l2 = m.Tool == 5 && m.Ui.Life.Armed != LifeLibraryWindow.Arm.None ? m.Ui.Life.BrushHint
+                : m.Tool == 5
                 ? Loc.T($"click — plant in this cell · spread {m.BrushR:0} ([ ]) · F7 — designer · 5, 0 or Esc — put away",
                         $"клик — посадить в эту клетку · разброс {m.BrushR:0} ([ ]) · F7 — конструктор · 5, 0 или Esc — убрать")
                 : m.Tool == 1

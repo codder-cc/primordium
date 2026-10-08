@@ -693,6 +693,39 @@ public sealed class SimRunner
         return s;
     }
 
+    // Copies living bodies chosen by `select` into a population template (Population.cs); `done` gets
+    // it (with no bodies if none was found) on the simulation thread.
+    public void CopyPopulation(Func<World, List<Agent>> select, string name, string source, Action<PopulationTemplate> done) => Do(w =>
+    {
+        var t = w.CopyPopulation(select(w), name, source);
+        done?.Invoke(t);
+    });
+
+    // Pastes a population template with its anchor at cell (x, y) (World.PastePopulation: matter and
+    // energy from the place or brought from outside, another chemistry mapped).
+    public void PastePopulation(PopulationTemplate template, int x, int y, PasteOptions options, Action<PasteResult> done = null) => Do(w =>
+    {
+        var r = w.PastePopulation(template, x, y, options);
+        if (r.Made > 0) PublishDesigned(w);
+        if (r.Ok) Notice(PasteText(w, template, r, options)); else Fail(PasteText(w, template, r, options));
+        done?.Invoke(r);
+    });
+
+    static string PasteText(World w, PopulationTemplate t, PasteResult r, PasteOptions o)
+    {
+        if (r.Made == 0) return Loc.T($"population \"{t.Name}\" not pasted: {r.Error ?? "no room"}", $"популяция «{t.Name}» не вставлена: {r.Error ?? "нет места"}");
+        string atoms = string.Join(", ", Enumerable.Range(0, Chemistry.ElementCount).Where(e => r.AtomsImported[e] > 0).Select(e => $"{w.Chem.ElementName[e]} {r.AtomsImported[e]:0}"));
+        string matter = o.Matter == MatterSource.Import ? Loc.T($"atoms brought from outside ({atoms})", $"атомы принесены извне ({atoms})") : Loc.T("local matter", "вещество местное");
+        string energy = o.Energy == EnergySource.Import
+            ? Loc.T($"energy from outside {r.EnergyImported:0.#}", $"энергия извне {r.EnergyImported:0.#}")
+            : Loc.T($"energy of local reactions {r.EnergyLocal:0.#}", $"энергия местных реакций {r.EnergyLocal:0.#}");
+        string s = Loc.T($"population \"{t.Name}\": pasted {r.Made} of {r.Requested} · {r.Lineages.Count} lineages · {matter} · {energy}",
+                         $"популяция «{t.Name}»: вставлено {r.Made} из {r.Requested} · линий {r.Lineages.Count} · {matter} · {energy}");
+        if (!r.Map.Same) s += Loc.T($" · another chemistry: {r.Map.Changed} species mapped, {r.GenesRemapped} protein genes remapped", $" · другая химия: заменено видов {r.Map.Changed}, перенацелено генов белков {r.GenesRemapped}");
+        if (r.Failures.Count > 0) s += Loc.T($" (not made: {string.Join("; ", r.Failures.Select(kv => $"{kv.Key} ×{kv.Value}"))})", $" (не сделаны: {string.Join("; ", r.Failures.Select(kv => $"{kv.Key} ×{kv.Value}"))})");
+        return s;
+    }
+
     // Autosave: every AutosaveMinutes of wall time (0 = off) into AutosaveDir/autosave_K.sav, K
     // rotating through AutosaveSlots. Not while fast-forwarding; skipped while paused with nothing new.
     public volatile float AutosaveMinutes;

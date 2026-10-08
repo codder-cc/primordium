@@ -141,7 +141,7 @@ public partial class CreatorWindow : UiWindow
         col.AddChild(explain);
         count = UiKit.Spin(1, 50, 1, 1, 80);
         count.ValueChanged += v => { Ui.State.SpawnCount = (int)v; Ui.SaveSoon(); };
-        var plant = UiKit.Button(Loc.T("Plant with brush (5)", "Посадить кистью (5)"), () => Main.SetTool(5), Loc.T("brush 5: a click on the map plants the design in that cell; [ ] sets the scatter radius", "кисть 5: клик по карте сажает дизайн в эту клетку; [ ] — радиус разброса"));
+        var plant = UiKit.Button(Loc.T("Plant with brush (5)", "Посадить кистью (5)"), () => { Ui.Life.Disarm(); Main.SetTool(5); }, Loc.T("brush 5: a click on the map plants the design in that cell; [ ] sets the scatter radius", "кисть 5: клик по карте сажает дизайн в эту клетку; [ ] — радиус разброса"));
         plant.AddThemeColorOverride("font_color", UiKit.Acc);
         col.AddChild(UiKit.Row(8, Fixed(Loc.T("Count", "Сколько"), 70), count, UiKit.Spacer(), plant));
         availability = UiKit.Text("", 12, UiKit.Dim, null, true);

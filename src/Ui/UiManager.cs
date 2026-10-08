@@ -20,6 +20,10 @@ public sealed class UiState
     public int SpawnMatter { get; set; }            // 0 local, 1 import
     public int SpawnEnergy { get; set; }
     public int SpawnCount { get; set; } = 1;
+    public int PasteMatter { get; set; }            // library of life: population paste, 0 local, 1 import
+    public int PasteEnergy { get; set; }
+    public bool PasteRelations { get; set; } = true;
+    public bool PasteRemap { get; set; } = true;
     public string Language { get; set; } = "en";   // en | ru
 }
 
@@ -42,6 +46,7 @@ public partial class UiManager : Control
     public CatastropheWindow Catastrophes;
     public TreeWindow Tree;
     public MetricsWindow Metrics;
+    public LifeLibraryWindow Life;
 
     readonly ConcurrentQueue<Action> posted = new();
     VBoxContainer toastBox;
@@ -54,6 +59,7 @@ public partial class UiManager : Control
     public static string SavesDir => UiKit.Global("user://saves");
     public static string PresetsDir => UiKit.Global("user://presets");
     public static string CreaturesDir => UiKit.Global("user://creatures");
+    public static string PopulationsDir => UiKit.Global("user://populations");
 
     public override void _Ready()
     {
@@ -92,6 +98,7 @@ public partial class UiManager : Control
             (Loc.T("New world  F4", "Новый мир  F4"), Loc.T("seed, population, abiogenesis, strikes, law preset", "seed, население, самозарождение, удары, набор законов"), () => NewWorld.Toggle()),
             (Loc.T("Saves  F6", "Сохранения  F6"), Loc.T("slots, loading, autosave (F5 — quick save, F9 — load)", "слоты, загрузка, автосохранение (F5 — быстро сохранить, F9 — загрузить)"), () => Saves.Toggle()),
             (Loc.T("Designer  F7", "Конструктор  F7"), Loc.T("your own creatures: genome, body, planting with brush 5", "свои существа: геном, тело, посадка кистью 5"), () => Creator.Toggle()),
+            (Loc.T("Life library  U", "Библиотека жизни  U"), Loc.T("creature templates and populations: copy a lineage, a clade or an area, save, paste here or in another world", "шаблоны существ и популяций: скопировать линию, ветвь или область, сохранить, вставить здесь или в другом мире"), () => Life.Toggle()),
             (Loc.T("Chronicle  F8", "Хроника  F8"), Loc.T("world events, fossils; the selected body's biography is a tab in its card", "события мира, окаменелости; биография выбранного — вкладка в карточке существа"), () => Chronicle.Toggle()),
             (Loc.T("Evolution  F10", "Ход эволюции  F10"), Loc.T("novelty vs. the neutral shadow, complexity, ecology, tempo, phylogeny; a summary hint", "новизна против нейтральной тени, сложность, экология, темп, филогения; сводная подсказка"), () => Evolution.Toggle()),
             (Loc.T("Tree of life  F1", "Древо жизни  F1"), Loc.T("lineages over time and the cladogram of living clades; a click flies to a member or opens a fossil", "линии во времени и кладограмма живых ветвей; клик — к представителю или его окаменелости"), () => Tree.Toggle()),
@@ -120,6 +127,7 @@ public partial class UiManager : Control
         Add(Catastrophes = new CatastropheWindow());
         Add(Tree = new TreeWindow());
         Add(Metrics = new MetricsWindow());
+        Add(Life = new LifeLibraryWindow());
 
         toastBox = UiKit.Col(4);
         toastBox.MouseFilter = MouseFilterEnum.Ignore;

@@ -74,7 +74,8 @@ Godot --path . -- --seed 3 --abio --warm 6000
 | Click · K · F · O | Select a creature · highlight kin · follow · oldest |
 | V · M · L · C, `[` `]` | Color mode · surface overlays (among them the ranges of clades) · sunlight · cross-section and its position |
 | N · A · X | Assemble life from local matter · abiogenesis · orbital strike |
-| 1–4 · 5 | Brushes (pour, water, kill, dig) · plant a design |
+| 1–4 · 5 | Brushes (pour, water, kill, dig) · plant a design (or, from the life library, paste a population / copy the bodies in the circle) |
+| U | Library of life: creature and population templates — copy a lineage, a clade or an area, save to `user://populations`, paste here or in another world |
 | Z · ⇧Z · I | With brush 1: keep the material for every stroke · next material · take the material under the cursor |
 | F2 · F4 · F6 · F7 | World laws · new world · saves · creature designer |
 | F5 / F9 | Quick save / quick load |
@@ -93,6 +94,8 @@ dotnet run -c Release --project tools/bench -- --list-params               # all
 dotnet run -c Release --project tools/bench -- --batch --seeds 1-16 --reps 3 --ticks 6000 --out runs/base
 dotnet run -c Release --project tools/bench -- --compare runs/base/runs.csv runs/try/runs.csv
 dotnet run -c Release --project tools/bench -- --invade my_design.json --seeds 1-6   # plant a creature-designer file, follow its lineage
+dotnet run -c Release --project tools/bench -- --seed 3 --ticks 2000 --copy-population pop.json         # copy the biggest lineage at the end
+dotnet run -c Release --project tools/bench -- --seed 5 --plant-population pop.json --at 100,60 --audit   # paste it first (another chemistry is mapped); --local, --local-energy
 dotnet run -c Release --project tools/bench -- --tournament --seed 2 --ticks 8000    # ancestors vs moderns in a copy of the world
 dotnet run -c Release --project tools/bench -- --food-chain --seeds 1-2              # who eats whom: trophic levels, chain length
 dotnet run -c Release --project tools/bench -- --perf-baseline --make                # once: make the reference boom save

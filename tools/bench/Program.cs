@@ -14,6 +14,7 @@ using Primordium;
 //   [--lang ru]: text from the game (law descriptions, chronicle) in Russian; English by default.
 //   Observation and speed modes: --invade [design.json] (Geochem.cs), --export-designs dir, --tournament (Tournament.cs),
 //   --food-chain (FoodChain.cs), --perf-baseline [--make] (PerfBaseline.cs).
+//   Population templates: --plant-population file.json [--at x,y] [--local] [--local-energy], --copy-population out.json (PopulationTool.cs).
 {
     int li = Array.IndexOf(args, "--lang");
     if (li >= 0 && li + 1 < args.Length) Loc.Set(args[li + 1]);
@@ -26,6 +27,7 @@ if (Array.IndexOf(args, "--self-test-evolution") >= 0) { World.RunEvolutionRegre
 if (Array.IndexOf(args, "--self-test-resources") >= 0) { World.ResourcesRegression(); return; }   // just the resources test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-wear") >= 0) { World.WearRegression(); return; }   // just the photodamage and wear test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-geochem") >= 0) { World.GeochemRegression(); return; }   // just the geochemistry test (also in --self-test)
+if (Array.IndexOf(args, "--self-test-population") >= 0) { World.PopulationRegression(); return; }   // just the population templates test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-climate") >= 0) { World.ClimateCyclesRegression(); return; }   // just the climate cycles test (also in --self-test)
 if (Array.IndexOf(args, "--list-params") >= 0)
 {
@@ -127,6 +129,7 @@ if (Array.IndexOf(args, "--probe") >= 0)
     for (int s = 0; s < 8; s++)
         Console.WriteLine($"  species {s}: E{ch.E[s]} split→{ch.SplitA[s]}+{ch.SplitB[s]} dE={ch.E[s] - ch.E[ch.SplitA[s]] - ch.E[ch.SplitB[s]]} litter {w.C[s].Average(q => q.D):F2}");
 }
+PopulationTool.BeforeRun(w, args);   // --plant-population file.json [--at x,y] (PopulationTool.cs)
 Console.WriteLine($"start: {w.Agents.Count} agents, spawns {w.Spawns}");
 var sw = Stopwatch.StartNew();
 var prev = new long[(int)EvKind.Count];
@@ -273,6 +276,7 @@ for (int t = 1; t <= ticks; t++)
     prevWall = sw.Elapsed.TotalMilliseconds;   // the reports above are not the simulation's time
 }
 log?.Dispose();
+PopulationTool.AfterRun(w, args);    // --copy-population out.json
 if (savePath != null)
 {
     var saveWatch = Stopwatch.StartNew();
