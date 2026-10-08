@@ -29,7 +29,7 @@ public sealed class PopulationTemplate
     public string Source { get; set; } = "";          // lineage | clade | area | bodies
     public int Seed { get; set; }                     // the world it was taken from
     public long Tick { get; set; }
-    public ChemSignature Chemistry { get; set; } = new();
+    public PopulationChemistry Chemistry { get; set; } = new();
     public List<PopulationBody> Bodies { get; set; } = new();
 
     public int Lineages => Bodies.Select(b => b.Lineage).Distinct().Count();
@@ -144,15 +144,15 @@ public sealed class ProteinInfo
 
 // The chemistry a template was taken from: the seed and every species' formula and properties (enough
 // to recognise the same chemistry and to find the nearest species in another one).
-public sealed class ChemSignature
+public sealed class PopulationChemistry
 {
     public int Seed { get; set; }
     public float[] ElementMass { get; set; } = Array.Empty<float>();
     public List<MoleculeInfo> Molecules { get; set; } = new();
 
-    public static ChemSignature Of(Chemistry c, int seed)
+    public static PopulationChemistry Of(Chemistry c, int seed)
     {
-        var sig = new ChemSignature { Seed = seed, ElementMass = (float[])c.AtomicMass.Clone() };
+        var sig = new PopulationChemistry { Seed = seed, ElementMass = (float[])c.AtomicMass.Clone() };
         for (int s = 0; s < Chemistry.S; s++)
         {
             var atoms = new int[Chemistry.ElementCount];
@@ -192,10 +192,10 @@ public sealed class ChemMap
     public bool Same;
     public readonly List<(int from, int to, bool formula, string en, string ru)> Changes = new();
 
-    public static ChemMap Build(ChemSignature from, Chemistry to, int seed)
+    public static ChemMap Build(PopulationChemistry from, Chemistry to, int seed)
     {
         var map = new ChemMap();
-        var here = ChemSignature.Of(to, seed);
+        var here = PopulationChemistry.Of(to, seed);
         bool same = from?.Molecules != null && from.Molecules.Count == Chemistry.S;
         for (int s = 0; s < Chemistry.S && same; s++) same = Equal(from.Molecules[s], here.Molecules[s]);
         map.Same = same;

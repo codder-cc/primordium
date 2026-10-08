@@ -59,7 +59,7 @@ public sealed partial class World
         var t = new PopulationTemplate
         {
             Name = string.IsNullOrWhiteSpace(name) ? "population" : name.Trim(), Source = source ?? "bodies",
-            Seed = Seed, Tick = Tick, Chemistry = ChemSignature.Of(Chem, Seed),
+            Seed = Seed, Tick = Tick, Chemistry = PopulationChemistry.Of(Chem, Seed),
         };
         var live = bodies.Where(a => a != null && !a.Dead).Distinct().OrderBy(a => a.Id).Take(PopulationTemplate.MaxBodies).ToList();
         t.Description = description ?? Loc.T($"{live.Count} bodies ({source}) taken from world {Seed} at tick {Tick}.",
