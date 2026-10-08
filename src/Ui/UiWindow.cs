@@ -108,14 +108,15 @@ public partial class UiWindow : Control
         if (Size.X < need.X || Size.Y < need.Y) Size = new Vector2(Math.Max(Size.X, need.X), Math.Max(Size.Y, need.Y));
     }
 
-    // Keeps the window on screen (all of it if it fits).
+    // Keeps the window on screen (all of it if it fits), right of the sidebar.
     public void KeepInside()
     {
         var vs = GetViewportRect().Size;
         if (vs.X <= 0) return;
         Fit();
-        Size = new Vector2(Math.Min(Size.X, vs.X), Math.Min(Size.Y, vs.Y));
-        Position = new Vector2(Math.Clamp(Position.X, 0, Math.Max(0, vs.X - Size.X)), Math.Clamp(Position.Y, 0, Math.Max(0, vs.Y - Size.Y)));
+        float left = Ui?.LeftInset ?? 0;
+        Size = new Vector2(Math.Min(Size.X, Math.Max(MinSize.X, vs.X - left)), Math.Min(Size.Y, vs.Y));
+        Position = new Vector2(Math.Clamp(Position.X, left, Math.Max(left, vs.X - Size.X)), Math.Clamp(Position.Y, 0, Math.Max(0, vs.Y - Size.Y)));
     }
 
     public bool IsOpen => Visible;

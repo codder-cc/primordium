@@ -41,7 +41,7 @@ Every world is grown from a seed: its own artificial elements, its own molecules
   </tr>
   <tr>
     <td><img src="docs/images/slice.jpg" alt="Cross-section of the terrain"><br><sub><b>Cross-section.</b> Strata, voids and caves under the surface.</sub></td>
-    <td><img src="docs/images/ru.jpg" alt="Russian interface"><br><sub><b>Two languages.</b> English by default; the <code>RU</code>/<code>EN</code> button on the toolbar switches the whole interface.</sub></td>
+    <td><img src="docs/images/ru.jpg" alt="Russian interface"><br><sub><b>Two languages.</b> English by default; the <code>RU</code>/<code>EN</code> button at the bottom of the sidebar switches the whole interface.</sub></td>
   </tr>
 </table>
 
@@ -57,7 +57,7 @@ dotnet build
 
 Then open `project.godot` in Godot 4.3 mono and press **Play**. A new world starts without life: press **N** to assemble creatures from local matter, **A** to turn on abiogenesis, or **F7** to plant your own design.
 
-Useful launch flags (after `--`): `--seed N`, `--abio`, `--warm N` (pre-simulate N ticks), `--lang en|ru`, `--open laws,evolution,tree,metrics,…`, `--shot path.png`.
+Useful launch flags (after `--`): `--seed N`, `--abio`, `--warm N` (pre-simulate N ticks), `--lang en|ru`, `--sidebar expanded|collapsed`, `--open laws,evolution,tree,metrics,…`, `--shot path.png`.
 
 ```sh
 Godot --path . -- --seed 3 --abio --warm 6000
@@ -65,8 +65,11 @@ Godot --path . -- --seed 3 --abio --warm 6000
 
 ## Controls
 
+Every window and the main tools are also on the **sidebar** at the left edge: icons with tooltips (name, hotkey, what it does), open windows and the brush in hand highlighted. The chevron on top or **Tab** expands it to show names and hotkeys; the choice is kept in `ui.json` (`--sidebar expanded|collapsed` for screenshots).
+
 | Key | Action |
 |---|---|
+| Tab | Collapse / expand the sidebar |
 | Space / `.` | Pause / single tick |
 | `+` / `−` | Simulation speed (the world runs on its own thread) |
 | T / ⇧T | Skip N days / skip 10 days |

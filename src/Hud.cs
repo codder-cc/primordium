@@ -106,6 +106,9 @@ public partial class Hud : Control
         return t;
     }
 
+    // The width of the sidebar on the left: nothing of the HUD's own is drawn under it.
+    float Left => Main?.Ui?.LeftInset ?? 0;
+
     public double DrawMs;   // summed since Main last read it (perf overlay)
     string lastError;
 
@@ -134,8 +137,12 @@ public partial class Hud : Control
         if (Main.FastForward) { DrawFastForward(w, vs); return; }
         DrawRect(new Rect2(px, 0, PanelW, vs.Y), PanelBg);
         DrawLine(new Vector2(px, 0), new Vector2(px, vs.Y), Rule);
-        TopBar(w, px);
-        Hints(vs, px);
+        // The status lines and the hints start right of the sidebar (UiManager.LeftInset).
+        float left = Left;
+        DrawSetTransform(new Vector2(left, 0), 0, Vector2.One);
+        TopBar(w, px - left);
+        Hints(vs, px - left);
+        DrawSetTransform(Vector2.Zero, 0, Vector2.One);
 
         float x = px + 18, y = 20, cw = PanelW - 36;
         var sel = Main.View.Selected;
@@ -199,7 +206,7 @@ public partial class Hud : Control
     void DrawRecords(Vector2 vs)
     {
         var rec = Main.Records;
-        float w = 440, h = 34 + rec.Count * 20, x = 16, y = vs.Y - 82 - h;
+        float w = 440, h = 34 + rec.Count * 20, x = Left + 16, y = vs.Y - 82 - h;
         DrawRect(new Rect2(x, y, w, h), new Color(0.04f, 0.045f, 0.06f, 0.94f));
         T(x + 12, y + 20, Loc.T("Records · click — show (B — hide, O — oldest)", "Рекорды · клик — показать (B — скрыть, O — старейший)"), Fg, 13, bold);
         var m = GetViewport().GetMousePosition();
@@ -242,7 +249,7 @@ public partial class Hud : Control
             (new(0.58f, 0.45f, 0.3f), Loc.T("thin top block — already grazed; a block eaten through vanishes", "тонкий верхний блок — его уже объели; съеденный до конца блок исчезает")),
             (new(0.45f, 0.4f, 0.6f), Loc.T("large body with a tinted floor under it — a creature spanning several cells", "большое тело и тонированный пол под ним — существо, занявшее несколько клеток")),
         };
-        float w = 520, h = 34 + rows.Length * 18, x = 16, y = vs.Y - 82 - h;
+        float w = 520, h = 34 + rows.Length * 18, x = Left + 16, y = vs.Y - 82 - h;
         DrawRect(new Rect2(x, y, w, h), new Color(0.04f, 0.045f, 0.06f, 0.94f));
         T(x + 12, y + 20, Loc.T("Legend (H — hide)", "Легенда (H — скрыть)"), Fg, 13, bold);
         for (int k = 0; k < rows.Length; k++)
@@ -323,16 +330,25 @@ public partial class Hud : Control
         DrawRect(new Rect2(0, 0, px, 98), BarBg);
         int season = (int)(w.YearFrac * 4) % 4;
         float tod = w.DayFrac;
-        T(16, 24, Loc.T($"Day {w.Day + 1} · {Seasons[season]} in the north · tick {w.Tick:N0}", $"Сутки {w.Day + 1} · {Seasons[season]} на севере · тик {w.Tick:N0}"), Fg, 16, bold);
-        string speed = (Main.Paused ? Loc.T("PAUSED", "ПАУЗА") : Loc.T($"speed ×{Main.Tpf} · {Main.Tps:F0} ticks/s", $"скорость ×{Main.Tpf} · {Main.Tps:F0} тиков/с"))
-                       + Loc.T($" · tick {Main.SimMs:F1} ms · frame {Main.ViewMs:F1} ms", $" · тик {Main.SimMs:F1} мс · кадр {Main.ViewMs:F1} мс");
+        string day = Loc.T($"Day {w.Day + 1} · {Seasons[season]} in the north · tick {w.Tick:N0}", $"Сутки {w.Day + 1} · {Seasons[season]} на севере · тик {w.Tick:N0}");
+        string speed = (Main.Paused ? Loc.T("PAUSED", "ПАУЗА") : Loc.T($"speed ×{Main.Tpf} · {Main.Tps:F0} ticks/s", $"скорость ×{Main.Tpf} · {Main.Tps:F0} тиков/с"));
+        string times = Loc.T($" · tick {Main.SimMs:F1} ms · frame {Main.ViewMs:F1} ms", $" · тик {Main.SimMs:F1} мс · кадр {Main.ViewMs:F1} мс");
+        // On a narrow screen the timings give way first, then the sun clock, then the tick number.
+        float dayW = TW(day, 16, bold);
+        if (16 + dayW + 24 + 130 + TW(speed + times, 14, bold) <= px - 16) speed += times;
+        bool clock = 16 + dayW + 24 + 130 + TW(speed, 14, bold) <= px - 16;
+        if (16 + dayW + 16 + TW(speed, 14, bold) > px - 16) day = Loc.T($"Day {w.Day + 1} · {Seasons[season]}", $"Сутки {w.Day + 1} · {Seasons[season]}");
+        T(16, 24, day, Fg, 16, bold);
         float sx = px - 16 - TW(speed, 14, bold);
         T(sx, 24, speed, Main.Paused ? Acc : Fg, 14, bold);
 
         // Sun clock: where the sun stands over the planet right now.
         float cx = sx - 130, cy = 19;
-        DrawRect(new Rect2(cx, cy - 2, 100, 4), new Color(0.15f, 0.17f, 0.22f));
-        DrawCircle(new Vector2(cx + tod * 100, cy), 5, new Color(1f, 0.85f, 0.35f));
+        if (clock)
+        {
+            DrawRect(new Rect2(cx, cy - 2, 100, 4), new Color(0.15f, 0.17f, 0.22f));
+            DrawCircle(new Vector2(cx + tod * 100, cy), 5, new Color(1f, 0.85f, 0.35f));
+        }
 
         var c = Main.Census;
         string tail = Loc.T($" · parentless {w.Spawns:N0} (first and abiogenic) · generations {w.MaxGen} · oldest {c.OldestAge:N0} t.",
@@ -531,8 +547,8 @@ public partial class Hud : Control
         }
         T(16, vs.Y - 56, Clip(Loc.T("Space pause · . step · +/− speed · T skip N days, ⇧T 10 · R new world, ⇧R same one · P snapshot · 1–4 brush · F3 benchmark",
                                "Space пауза · . шаг · +/− скорость · T промотка на N суток, ⇧T на 10 · R новый мир, ⇧R тот же · P снимок · 1–4 кисть · F3 замер"), px - 32, 12), Dim, 12);
-        T(16, vs.Y - 40, Clip(Loc.T("F1 tree of life · F2 laws · F4 new world · F5 quick save, F9 load · F6 saves · F7 designer · 5 plant a design · F8 chronicle · F10 evolution · F12 metrics",
-                                    "F1 древо жизни · F2 законы · F4 новый мир · F5 сохранить, F9 загрузить · F6 сохранения · F7 конструктор · 5 посадить · F8 хроника · F10 эволюция · F12 метрики"), px - 32, 12), Dim, 12);
+        T(16, vs.Y - 40, Clip(Loc.T("Tab sidebar · F1 tree of life · F2 laws · F4 new world · F5 quick save, F9 load · F6 saves · F7 designer · 5 plant a design · F8 chronicle · F10 evolution · F12 metrics",
+                                    "Tab панель · F1 древо жизни · F2 законы · F4 новый мир · F5 сохранить, F9 загрузить · F6 сохранения · F7 конструктор · 5 посадить · F8 хроника · F10 эволюция · F12 метрики"), px - 32, 12), Dim, 12);
         T(16, vs.Y - 24, Clip(Loc.T("LMB / WASD / two fingers — pan · RMB / Q E — rotate · wheel / pinch — zoom · G whole map · C cross-section, [ ] shift",
                                "ЛКМ / WASD / два пальца — сдвиг · ПКМ / Q E — поворот · колесо / щипок — зум · G вся карта · C разрез, [ ] сдвиг"), px - 32, 12), Dim, 12);
         T(16, vs.Y - 8, Clip(Loc.T("click — agent · H legend · B records · O oldest · K kin · F follow · V coloring · M surface · L light · N life · A abiogenesis · X strike",

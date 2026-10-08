@@ -491,6 +491,9 @@ public partial class Main : Node
     // A new random kind of matter for pouring (drawn from the world's random numbers, so on its thread).
     void NewPourSpecies() => Sim.Do(w => PourSpecies = w.RandomPourable());
 
+    public bool PerfShown => perf.Visible;
+    public void TogglePerf() { perf.Visible = !perf.Visible; perf.Reset(Sim); }
+
     public void SetTool(int t)
     {
         Tool = Tool == t ? 0 : t;   // the same key again puts the brush away
@@ -590,7 +593,7 @@ public partial class Main : Node
             case Key.F12: Ui.Metrics.Toggle(); break;
             case Key.Z when Tool == 1: PourKey(Key.Z, k.ShiftPressed); break;
             case Key.I when Tool == 1: PourKey(Key.I, false); break;
-            case Key.F3: perf.Visible = !perf.Visible; perf.Reset(Sim); break;
+            case Key.F3: TogglePerf(); break;
             case Key.F2: Ui.Laws.Toggle(); break;
             case Key.F4: Ui.NewWorld.Toggle(); break;
             case Key.F5: Ui.Saves.QuickSave(); break;

@@ -24,7 +24,7 @@ public partial class PerfOverlay : Control
     {
         MouseFilter = MouseFilterEnum.Ignore;
         SetAnchorsPreset(LayoutPreset.TopLeft);
-        Position = new Vector2(16, 76);
+        Position = new Vector2(60, 104);
         var bg = new StyleBoxFlat { BgColor = new Color(0, 0, 0, 0.72f), ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 6, ContentMarginBottom = 6 };
         label = new Label();
         label.AddThemeStyleboxOverride("normal", bg);
@@ -51,6 +51,7 @@ public partial class PerfOverlay : Control
     public void Frame(double delta, double main, double hud, double[] viewProf)
     {
         frames++;
+        Position = new Vector2(16 + (Main.Ui?.LeftInset ?? 0), 104);   // under the status lines, right of the sidebar
         frameMs += delta * 1000;
         frameMax = Math.Max(frameMax, delta * 1000);
         var vp = GetViewport().GetViewportRid();
