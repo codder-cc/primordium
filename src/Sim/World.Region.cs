@@ -12,7 +12,7 @@ public enum PasteMode
     AboveGround,   // nothing is taken out: the region's blocks fill only the air above the ground there
 }
 
-public sealed class PasteOptions
+public sealed class RegionPasteOptions
 {
     public int Rotation;                    // quarter turns clockwise, seen from above (north up)
     public PasteMode Mode = PasteMode.Replace;
@@ -30,7 +30,7 @@ public sealed class RegionMapping
     public int Changed;                          // kinds that became another kind (by name or properties)
 }
 
-public sealed class PasteResult
+public sealed class RegionPasteResult
 {
     public string Error;
     public bool Ok => Error == null;
@@ -216,10 +216,10 @@ public sealed partial class World
     // Paste a region with its corner (after rotation) at (x, y): x wraps; rows beyond the poles are
     // clipped, so are levels beyond the world's height. Fails without touching anything if the region
     // does not fit the world at all.
-    public PasteResult PasteRegion(Region r, int x, int y, PasteOptions o = null)
+    public RegionPasteResult PasteRegion(Region r, int x, int y, RegionPasteOptions o = null)
     {
-        o ??= new PasteOptions();
-        var res = new PasteResult();
+        o ??= new RegionPasteOptions();
+        var res = new RegionPasteResult();
         int rot = ((o.Rotation % 4) + 4) % 4;
         int rw = rot % 2 == 0 ? r.SizeX : r.SizeY, rh = rot % 2 == 0 ? r.SizeY : r.SizeX;
         x = ((x % W) + W) % W;
@@ -375,7 +375,7 @@ public sealed partial class World
         return !a.Top || (a.Loose.AsSpan().SequenceEqual(b.Loose) && a.Water == b.Water && a.Ice == b.Ice && a.Snow == b.Snow && a.LooseVolume == b.LooseVolume);
     }
 
-    void PasteColumn(Region r, RegionColumn col, int tc, PasteOptions o, RegionMapping map, PasteBook book, PasteResult res)
+    void PasteColumn(Region r, RegionColumn col, int tc, RegionPasteOptions o, RegionMapping map, PasteBook book, RegionPasteResult res)
     {
         int dz = o.Dz, oldH = Height[tc], top = -1;
         bool replace = o.Mode == PasteMode.Replace, changed = false;

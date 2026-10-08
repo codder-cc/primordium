@@ -30,7 +30,7 @@ public static class RegionBench
         {
             var r = Region.Load(file);
             var at = Arg(args, "--at") is string a ? Ints(a) : new[] { 0, 0 };
-            var o = new PasteOptions
+            var o = new RegionPasteOptions
             {
                 Rotation = Arg(args, "--rotate") is string k ? int.Parse(k, CultureInfo.InvariantCulture) : 0,
                 Mode = Arg(args, "--paste-mode") == "above" ? PasteMode.AboveGround : PasteMode.Replace,

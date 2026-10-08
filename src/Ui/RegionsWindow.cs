@@ -306,7 +306,7 @@ public partial class RegionsWindow : UiWindow
     {
         var r = armed;
         var (x, y, _, _) = PasteRect(cell);
-        var o = new PasteOptions { Rotation = rotation.Selected, Mode = pasteMode.Selected == 1 ? PasteMode.AboveGround : PasteMode.Replace, Bodies = pasteBodies.ButtonPressed, Dz = (int)dzSpin.Value };
+        var o = new RegionPasteOptions { Rotation = rotation.Selected, Mode = pasteMode.Selected == 1 ? PasteMode.AboveGround : PasteMode.Replace, Bodies = pasteBodies.ButtonPressed, Dz = (int)dzSpin.Value };
         Main.Sim.Do(world =>
         {
             var res = world.PasteRegion(r, x, y, o);

@@ -107,7 +107,7 @@ public sealed partial class World
         int qx = 180, qy = 20;
         var before = RegionLedger.Of(w);
         int alive = w.Agents.Count(a => !a.Dead);
-        var res = w.PasteRegion(loaded, qx, qy, new PasteOptions());
+        var res = w.PasteRegion(loaded, qx, qy, new RegionPasteOptions());
         Require(res.Ok && res.BodiesIn == 6 && res.Mapping.Identity && res.VoxelsIn > 0 && res.VoxelsOut > 0, "paste: " + res);
         Balanced(w, before, "paste");
         Require(w.Agents.Count(a => !a.Dead) == alive + res.BodiesIn - res.BodiesOut, "paste: bodies counted");
@@ -120,7 +120,7 @@ public sealed partial class World
         // Turned a quarter: every column lands where the turn puts it.
         int tx = 30, ty = 100;
         before = RegionLedger.Of(w);
-        res = w.PasteRegion(r, tx, ty, new PasteOptions { Rotation = 1 });
+        res = w.PasteRegion(r, tx, ty, new RegionPasteOptions { Rotation = 1 });
         Require(res.Ok && res.SizeX == sy && res.SizeY == sx, "turned paste: " + res);
         Balanced(w, before, "turned paste");
         var turned = w.CopyRegion(tx, ty, sy, sx, 0, Z, false);
@@ -134,27 +134,27 @@ public sealed partial class World
         // Matter only: the bodies standing there stay, nothing of life comes or goes.
         before = RegionLedger.Of(w);
         alive = w.Agents.Count(a => !a.Dead);
-        res = w.PasteRegion(r, qx, qy, new PasteOptions { Bodies = false, Rotation = 2 });
+        res = w.PasteRegion(r, qx, qy, new RegionPasteOptions { Bodies = false, Rotation = 2 });
         Require(res.Ok && res.BodiesIn == 0 && res.BodiesOut == 0 && w.Agents.Count(a => !a.Dead) == alive, "matter only: " + res);
         Balanced(w, before, "matter only");
         w.CheckCellLists();
 
         // Above the ground only: nothing is taken out.
         before = RegionLedger.Of(w);
-        res = w.PasteRegion(r, 60, 120, new PasteOptions { Mode = PasteMode.AboveGround, Bodies = false, Dz = 6 });
+        res = w.PasteRegion(r, 60, 120, new RegionPasteOptions { Mode = PasteMode.AboveGround, Bodies = false, Dz = 6 });
         Require(res.Ok && res.VoxelsOut == 0 && res.AtomsOut.All(a => a == 0) && res.VoxelsIn > 0, "above ground: " + res);
         Balanced(w, before, "above ground");
 
         // Clipped at the pole; refused when it cannot fit (nothing changes).
         before = RegionLedger.Of(w);
-        res = w.PasteRegion(r, 200, H - 5, new PasteOptions());
+        res = w.PasteRegion(r, 200, H - 5, new RegionPasteOptions());
         Require(res.Ok && res.ColumnsClipped == (sy - 5) * sx && res.Warnings.Count > 0, "clipped: " + res);
         Balanced(w, before, "clipped");
         ulong hash = w.RegionStateHash();
         var huge = new Region { SizeX = W + 1, SizeY = 1, Chem = r.Chem, Cols = new RegionColumn[W + 1], WorldZ = Z };
         for (int k = 0; k < huge.Cols.Length; k++) huge.Cols[k] = new RegionColumn();
         Require(!w.PasteRegion(huge, 0, 0).Ok, "a region wider than the world was pasted");
-        Require(!w.PasteRegion(r, 0, 0, new PasteOptions { Dz = Z }).Ok, "a region above the world's levels was pasted");
+        Require(!w.PasteRegion(r, 0, 0, new RegionPasteOptions { Dz = Z }).Ok, "a region above the world's levels was pasted");
         Require(w.RegionStateHash() == hash, "a refused paste changed the world");
 
         // Paste back: a place overwritten by another region and then given its own region back is the
@@ -166,15 +166,15 @@ public sealed partial class World
         var other = v.CopyRegion(150, 90, 20, 24, 0, Z, false);
         var twin = Twin(v);
         Require(v.RegionStateHash() == twin.RegionStateHash(), "twin");
-        res = v.PasteRegion(other, ax, ay, new PasteOptions { Rotation = 1, Bodies = false });
+        res = v.PasteRegion(other, ax, ay, new RegionPasteOptions { Rotation = 1, Bodies = false });
         Require(res.Ok && res.Columns == 480 && res.ColumnsSame < 480, "overwrite: " + res);
         Require(v.RegionStateHash() != twin.RegionStateHash(), "overwriting changed nothing");
         before = RegionLedger.Of(v);
-        res = v.PasteRegion(own, ax, ay, new PasteOptions { Bodies = false });
+        res = v.PasteRegion(own, ax, ay, new RegionPasteOptions { Bodies = false });
         Require(res.Ok, "paste back: " + res);
         Balanced(v, before, "paste back");
         Require(v.RegionStateHash() == twin.RegionStateHash(), "paste back: the world is not the original again");
-        var same = v.PasteRegion(own, ax, ay, new PasteOptions { Bodies = false });
+        var same = v.PasteRegion(own, ax, ay, new RegionPasteOptions { Bodies = false });
         Require(same.Ok && same.ColumnsSame == same.Columns && same.VoxelsIn == 0, "pasting the same cells again moved something: " + same);
         bool goesOn = true;
         // (The support solver re-solves the pasted columns and their neighbours: their pressures come out
@@ -194,7 +194,7 @@ public sealed partial class World
         var u = new World(11, 0, false) { AutoStrikes = false };
         u.Step();
         before = RegionLedger.Of(u);
-        res = u.PasteRegion(r, 70, 70, new PasteOptions());
+        res = u.PasteRegion(r, 70, 70, new RegionPasteOptions());
         Require(res.Ok && !res.Mapping.Identity && res.Mapping.Map[r.Chem.Gas] == u.Chem.Gas && res.Warnings.Count >= 2 && res.BodiesIn == 6, "another chemistry: " + res);
         Require(res.Mapping.Map.All(t => t >= 0 && t < Chemistry.S) && res.Mapping.Lines.Count == Chemistry.S, "another chemistry: mapping");
         Balanced(u, before, "another chemistry");
