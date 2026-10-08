@@ -13,6 +13,7 @@ namespace Primordium;
 //
 //   --batch --seeds 1-16 --reps 3 --ticks 6000 --every 1000 [--pop N] [--noabio] [--tile N] [--audit]
 //           [--jobs J] [--out dir] [--extinct N] [--boom N] [--server-gc [--gc-heaps H]]
+//           [--resume] [--shard K/N] [--machine name]
 //           [--preset path.json] [--set Name=value ...] [--param-at TICK:Name=value ...]   (laws: ParamHook)
 // Every (seed, rep) is its own process (`--run-one`) and gets the batch's law flags as given: laws are
 // process-wide, so all runs of a batch see the same values and nothing is shared between worlds. Rep 0 is the seed's own world;
@@ -24,6 +25,18 @@ namespace Primordium;
 // process with the server garbage collector (DOTNET_gcServer=1; --gc-heaps H caps its heaps,
 // DOTNET_GCHeapCount): the trajectory is the same, each process holds more memory. Every run reports
 // its processor time and peak working set (the `resources:` line of its log), the batch the totals.
+// --jobs defaults to the performance cores (macOS: sysctl hw.perflevel0.physicalcpu; elsewhere the
+// logical processors). A finished run leaves runs/sS_rR.done holding the batch's signature (every flag
+// that changes a trajectory); --resume skips the runs whose .done matches and runs the rest (after a
+// crash or Ctrl-C: the queue is just "runs without .done"); without --resume every run is made again.
+// --shard K/N keeps the K-th of every N runs (1-based), to split one batch over N machines. Every row
+// carries the machine (--machine, default the host name) and the code version (git commit, "-dirty"
+// with uncommitted changes, "unknown" outside a repository).
+//
+//   --merge outdir a/runs.csv b/ … (a batch directory or its runs.csv)
+// One runs.csv (columns matched by name), summary.csv and table from batches made on several machines
+// or in shards. A run (seed, rep, laws) met twice is kept once; if the two disagree on the state hash at
+// a common checkpoint the merge says so (same code and laws must give the same world on every machine).
 //
 //   --compare a/runs.csv b/runs.csv
 // Distributions side by side at the last common checkpoint (population also at the quartiles of
@@ -54,7 +67,7 @@ public static class Batch
     }
 
     public static readonly string[] RunColumns = new[] { "seed", "rep", "tick", "pop", "births", "deaths", "ms_tick", "mean_temp" }
-        .Concat(EvoMetrics.Names.Skip(1)).Concat(EvolutionHistory.Names.Skip(1)).Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames).Concat(World.GeoNames).Concat(World.ResNames).Concat(World.SkyNames).Concat(World.ClimNames).Concat(World.WearNames).Concat(World.WaterNames).Concat(new[] { "energy_drift", "energy_tolerance", "atom_drift", "hash", "params" }).ToArray();
+        .Concat(EvoMetrics.Names.Skip(1)).Concat(EvolutionHistory.Names.Skip(1)).Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames).Concat(World.GeoNames).Concat(World.ResNames).Concat(World.SkyNames).Concat(World.ClimNames).Concat(World.WearNames).Concat(World.WaterNames).Concat(new[] { "energy_drift", "energy_tolerance", "atom_drift", "hash", "params", "machine", "code_version" }).ToArray();
 
     // The latest sample of the course of evolution (World.Evolution), without its tick; zeros before the first.
     public static double[] ProgressRow(World w) =>
@@ -86,6 +99,7 @@ public static class Batch
         string paramText = laws.Describe();   // already applied (Program)
         string tile = Arg(args, "--tile", null);
         if (tile != null) World.TileSize = int.Parse(tile);
+        string machine = Clean(Arg(args, "--machine", MachineId())), version = Clean(Arg(args, "--code-version", null) ?? CodeVersion());
 
         var w = new World(seed, pop, abio, rep);
         w.TrackHeat = audit;
@@ -143,7 +157,7 @@ public static class Batch
             var wear = w.WearCensus();
             row.AddRange(wear.Select(x => F(x)));
             row.AddRange(w.WaterCensus().Select(x => F(x)));
-            row.AddRange(new[] { drift, tol, atomDrift, w.StateHash().ToString("x16"), paramText });
+            row.AddRange(new[] { drift, tol, atomDrift, w.StateHash().ToString("x16"), paramText, machine, version });
             o.WriteLine(string.Join(",", row));
             o.Flush();
             Console.WriteLine($"t={t} pop={w.Agents.Count} ms/tick {ms:F2} T {cl.MeanT:F1} | {EvoMetrics.Format(v)} | cave {cave[0]:P1} (≥3: {cave[1]:P1}), depth {cave[2]:F2} max {cave[3]:F0}, voids {cave[4]:F0} | matter: took in {wear[0]:P0}, intake {wear[1]:F2}/1000, mols {wear[3]:F1}, lost photo {wear[4]:F2} wear {wear[5]:F2}/1000" + (audit ? $" | energy drift {drift} (tol {tol}), atom drift {atomDrift}" : ""));
@@ -187,12 +201,57 @@ public static class Batch
         return (cpu, peak);
     }
 
+    // ---- machines, versions, cores ----
+
+    static string Clean(string s) => string.IsNullOrWhiteSpace(s) ? "unknown" : s.Trim().Replace(',', ';').Replace(' ', '_');
+
+    public static string MachineId() => Clean(Environment.MachineName);
+
+    // The git commit of the working directory (12 hex digits), "-dirty" with uncommitted tracked changes.
+    public static string CodeVersion()
+    {
+        string Git(string a)
+        {
+            try
+            {
+                var psi = new ProcessStartInfo("git", a) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+                using var p = Process.Start(psi);
+                string o = p.StandardOutput.ReadToEnd();
+                p.WaitForExit(5000);
+                return p.ExitCode == 0 ? o.Trim() : null;
+            }
+            catch (Exception) { return null; }
+        }
+        string head = Git("rev-parse --short=12 HEAD");
+        if (string.IsNullOrEmpty(head)) return "unknown";
+        string dirty = Git("status --porcelain --untracked-files=no");
+        return head + (string.IsNullOrEmpty(dirty) ? "" : "-dirty");
+    }
+
+    [System.Runtime.InteropServices.DllImport("libc", EntryPoint = "sysctlbyname")]
+    static extern int SysctlByName(string name, out int value, ref IntPtr size, IntPtr newp, IntPtr newlen);
+
+    // Performance cores: macOS reports them (hw.perflevel0.physicalcpu: the P-cores of Apple silicon;
+    // an Intel Mac has no perflevels and gives its physical cores); elsewhere the logical processors.
+    public static int PerformanceCores()
+    {
+        if (OperatingSystem.IsMacOS())
+            foreach (var name in new[] { "hw.perflevel0.physicalcpu", "hw.physicalcpu" })
+                try
+                {
+                    var size = (IntPtr)sizeof(int);
+                    if (SysctlByName(name, out int v, ref size, IntPtr.Zero, IntPtr.Zero) == 0 && v > 0) return v;
+                }
+                catch (Exception) { }
+        return Math.Max(1, Environment.ProcessorCount);
+    }
+
     public static void Run(string[] args, ParamHook.Laws laws)
     {
         var seeds = ParseSeeds(Arg(args, "--seeds", "1-8"));
         int reps = int.Parse(Arg(args, "--reps", "1"));
         int ticks = int.Parse(Arg(args, "--ticks", "6000")), every = int.Parse(Arg(args, "--every", "1000"));
-        int jobs = int.Parse(Arg(args, "--jobs", Math.Max(1, Environment.ProcessorCount / 3).ToString()));
+        int jobs = int.Parse(Arg(args, "--jobs", PerformanceCores().ToString()));
         double extinct = double.Parse(Arg(args, "--extinct", "10"), Inv), boom = double.Parse(Arg(args, "--boom", "20000"), Inv);
         string dir = Arg(args, "--out", "batch_out");
         Directory.CreateDirectory(dir);
@@ -207,8 +266,31 @@ public static class Batch
         if (Array.IndexOf(args, "--audit") >= 0) pass.Add("--audit");
         pass.AddRange(laws.Forward);
 
-        var runs = seeds.SelectMany(s => Enumerable.Range(0, reps).Select(r => (seed: s, rep: r))).ToList();
-        Console.WriteLine($"batch: {runs.Count} runs (seeds {string.Join(",", seeds)} × {reps} reps), {ticks} ticks, every {every}, {jobs} at a time → {dir}; laws {laws.Describe()}");
+        string machine = Clean(Arg(args, "--machine", MachineId())), version = CodeVersion();
+        // What a finished run must match to be skipped by --resume: everything that changes its rows.
+        string signature = string.Join(" ", pass) + " --code-version " + version + (Array.IndexOf(args, "--server-gc") >= 0 ? " --server-gc" : "");
+        pass.AddRange(new[] { "--machine", machine, "--code-version", version });
+        var all = seeds.SelectMany(s => Enumerable.Range(0, reps).Select(r => (seed: s, rep: r))).ToList();
+        var runs = all;
+        string shard = Arg(args, "--shard", null);
+        if (shard != null)
+        {
+            var kn = shard.Split('/');
+            int k = int.Parse(kn[0]), n = int.Parse(kn[1]);
+            if (n < 1 || k < 1 || k > n) throw new ArgumentException("--shard K/N with 1 ≤ K ≤ N");
+            runs = all.Where((r, i) => i % n == k - 1).ToList();
+        }
+        bool resume = Array.IndexOf(args, "--resume") >= 0;
+        string Done(int s, int r) => Path.Combine(dir, "runs", $"s{s}_r{r}.done");
+        var queue = runs.Where(r => !(resume && File.Exists(Done(r.seed, r.rep)) && File.ReadAllText(Done(r.seed, r.rep)).Trim() == signature)).ToList();
+        File.WriteAllText(Path.Combine(dir, "batch.txt"), string.Join("\n", new[]
+        {
+            "signature " + signature, "seeds " + string.Join(",", seeds), "reps " + reps, "shard " + (shard ?? "all"),
+            "machine " + machine, "code_version " + version, "started " + DateTime.Now.ToString("s", Inv),
+        }) + "\n");
+        Console.WriteLine($"batch: {runs.Count} runs (seeds {string.Join(",", seeds)} × {reps} reps{(shard != null ? $", shard {shard} of {all.Count}" : "")}), {ticks} ticks, every {every}, {jobs} at a time → {dir}; laws {laws.Describe()}");
+        Console.WriteLine(Loc.T($"  machine {machine}, code {version}", $"  машина {machine}, код {version}")
+            + (resume ? Loc.T($"; resuming: {runs.Count - queue.Count} finished, {queue.Count} to run", $"; продолжение: готово {runs.Count - queue.Count}, осталось {queue.Count}") : ""));
         string host = Environment.ProcessPath, dll = typeof(Batch).Assembly.Location;
         bool viaDotnet = Path.GetFileNameWithoutExtension(host) == "dotnet";
         bool serverGc = Array.IndexOf(args, "--server-gc") >= 0;
@@ -219,7 +301,7 @@ public static class Batch
         double cpuTotal = 0, peakMax = 0;
         object resLock = new();
         var gate = new SemaphoreSlim(jobs);
-        var tasks = runs.Select(async run =>
+        var tasks = queue.Select(async run =>
         {
             await gate.WaitAsync();
             try
@@ -243,14 +325,18 @@ public static class Batch
                 var (cpu, peak) = ParseResources(text);
                 lock (resLock) { if (!double.IsNaN(cpu)) cpuTotal += cpu; if (!double.IsNaN(peak)) peakMax = Math.Max(peakMax, peak); }
                 int n = Interlocked.Increment(ref done);
-                if (p.ExitCode != 0) { Interlocked.Increment(ref failed); Console.WriteLine($"  [{n}/{runs.Count}] seed {run.seed} rep {run.rep} FAILED (exit {p.ExitCode}), see {logPath}"); }
-                else Console.WriteLine($"  [{n}/{runs.Count}] seed {run.seed} rep {run.rep} done in {t0.Elapsed.TotalSeconds:F0} s"
+                bool complete = p.ExitCode == 0 && LastTick(csv) == ticks;
+                if (complete) File.WriteAllText(Done(run.seed, run.rep), signature + "\n");
+                else File.Delete(Done(run.seed, run.rep));
+                if (!complete) { Interlocked.Increment(ref failed); Console.WriteLine($"  [{n}/{queue.Count}] seed {run.seed} rep {run.rep} FAILED (exit {p.ExitCode}), see {logPath}"); }
+                else Console.WriteLine($"  [{n}/{queue.Count}] seed {run.seed} rep {run.rep} done in {t0.Elapsed.TotalSeconds:F0} s"
                     + (double.IsNaN(cpu) ? "" : string.Create(Inv, $" (cpu {cpu:F0} s, peak {peak:F0} MB)")));
             }
             finally { gate.Release(); }
         }).ToArray();
         Task.WaitAll(tasks);
-        Console.WriteLine($"batch finished in {total.Elapsed.TotalMinutes:F1} min, {failed} failed" + string.Create(Inv, $"; cpu {cpuTotal:F0} s in all, largest peak working set {peakMax:F0} MB"));
+        Console.WriteLine($"batch finished in {total.Elapsed.TotalMinutes:F1} min, {failed} failed" + string.Create(Inv, $"; cpu {cpuTotal:F0} s in all, largest peak working set {peakMax:F0} MB")
+            + (failed > 0 ? Loc.T("; run again with --resume to redo only the failed ones", "; запустите снова с --resume — переделаются только неудачные") : ""));
 
         var rows = new List<string[]>();
         foreach (var run in runs)
@@ -265,6 +351,76 @@ public static class Batch
         WriteSummary(table, Path.Combine(dir, "summary.csv"), extinct, boom);
         PrintTable(table, extinct, boom);
         Console.WriteLine($"wrote {runsPath} and {Path.Combine(dir, "summary.csv")}");
+    }
+
+    // The tick of the last row of a run's CSV (−1 if none): a run is finished when it reached --ticks.
+    static int LastTick(string csv)
+    {
+        if (!File.Exists(csv)) return -1;
+        var last = File.ReadLines(csv).Skip(1).LastOrDefault(l => l.Length > 0);
+        if (last == null) return -1;
+        var f = last.Split(',');
+        return f.Length > 2 && int.TryParse(f[2], out int t) ? t : -1;
+    }
+
+    // ---- merging batches from several machines ----
+
+    public static void Merge(string[] args)
+    {
+        int i = Array.IndexOf(args, "--merge");
+        if (i + 2 >= args.Length) throw new ArgumentException("--merge outdir a/runs.csv b/runs.csv …");
+        string outDir = args[i + 1];
+        var inputs = args.Skip(i + 2).TakeWhile(a => !a.StartsWith("--")).Select(a => Directory.Exists(a) ? Path.Combine(a, "runs.csv") : a).ToList();
+        double extinct = double.Parse(Arg(args, "--extinct", "10"), Inv), boom = double.Parse(Arg(args, "--boom", "20000"), Inv);
+        var columns = RunColumns.ToList();
+        var merged = new Dictionary<(string seed, string rep, string tick, string param), string[]>();
+        var order = new List<(string, string, string, string)>();
+        int dup = 0, agree = 0;
+        var disagree = new List<string>();
+        foreach (var path in inputs)
+        {
+            var lines = File.ReadAllLines(path).Where(l => l.Length > 0).ToList();
+            var cols = lines[0].Split(',');
+            if (cols.Length < 4 || cols[0] != "seed" || cols[2] != "tick") throw new ArgumentException($"{path}: not a runs.csv of --batch");
+            foreach (var c in cols) if (!columns.Contains(c)) columns.Add(c);
+            int rows = 0;
+            var machines = new HashSet<string>();
+            foreach (var line in lines.Skip(1))
+            {
+                var f = line.Split(',');
+                string Get(string c) { int k = Array.IndexOf(cols, c); return k >= 0 && k < f.Length ? f[k] : ""; }
+                var row = columns.Select(Get).ToArray();
+                var key = (Get("seed"), Get("rep"), Get("tick"), Get("params"));
+                machines.Add(Get("machine") is { Length: > 0 } m ? m : "?");
+                rows++;
+                if (merged.TryGetValue(key, out var had))
+                {
+                    dup++;
+                    string h0 = had[columns.IndexOf("hash")], h1 = Get("hash");
+                    if (h0 == h1) agree++;
+                    else disagree.Add($"seed {key.Item1} rep {key.Item2} tick {key.Item3}: {h0} ({had[columns.IndexOf("machine")]}, {had[columns.IndexOf("code_version")]}) vs {h1} ({Get("machine")}, {Get("code_version")})");
+                    continue;
+                }
+                merged[key] = row;
+                order.Add(key);
+            }
+            Console.WriteLine(Loc.T($"  {path}: {rows} rows, machines {string.Join(" ", machines)}", $"  {path}: {rows} строк, машины {string.Join(" ", machines)}"));
+        }
+        // Rows read before a later file added columns are padded.
+        int pc = columns.IndexOf("params");
+        var all = order.Select(k => { var r = merged[k]; return r.Length < columns.Count ? r.Concat(Enumerable.Repeat("", columns.Count - r.Length)).ToArray() : r; })
+            .OrderBy(r => int.TryParse(r[0], out int s) ? s : 0).ThenBy(r => int.TryParse(r[1], out int x) ? x : 0).ThenBy(r => r[pc], StringComparer.Ordinal).ThenBy(r => int.TryParse(r[2], out int t) ? t : 0).ToList();
+        Directory.CreateDirectory(outDir);
+        string runsPath = Path.Combine(outDir, "runs.csv");
+        var cols2 = columns.ToArray();
+        File.WriteAllLines(runsPath, new[] { string.Join(",", cols2) }.Concat(all.Select(r => string.Join(",", r))));
+        Console.WriteLine(Loc.T($"merged {inputs.Count} files: {all.Count} rows; {dup} rows met twice ({agree} with the same hash)", $"объединено файлов: {inputs.Count}, строк {all.Count}; повторов {dup} (с тем же хешем {agree})"));
+        foreach (var d in disagree.Take(10)) Console.WriteLine(Loc.T("  DIFFERENT HASH ", "  РАЗНЫЙ ХЕШ ") + d);
+        if (disagree.Count > 0) Console.WriteLine(Loc.T($"  {disagree.Count} checkpoints disagree: the first file's row is kept", $"  расходятся {disagree.Count} точек: оставлена строка первого файла"));
+        var table = RunTable.From(cols2, all);
+        WriteSummary(table, Path.Combine(outDir, "summary.csv"), extinct, boom);
+        PrintTable(table, extinct, boom);
+        Console.WriteLine($"wrote {runsPath} and {Path.Combine(outDir, "summary.csv")}");
     }
 
     // ---- the runs table ----

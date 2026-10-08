@@ -9,7 +9,8 @@ using Primordium;
 //   [--life N]: perturb only life (first bodies and agents' random streams) of the seed's world.
 //   Laws: [--preset path.json] [--set Name=value ...] (alias --param) [--param-at TICK:Name=value ...] — see ParamHook.
 //   [--load path] continue a saved world, [--save path] save it at the end.
-//   Batches, comparisons and the long test (--batch, --compare, --run-one, --long-test): see Batch.cs.
+//   Batches, comparisons, merging and the long test (--batch, --compare, --merge, --run-one, --long-test): see Batch.cs;
+//   punctuated equilibrium after catastrophes (--punctuated): Punctuated.cs.
 //   [--chronicle]: print the world's chronicle as events happen (World.Chronicle).
 //   [--lang ru]: text from the game (law descriptions, chronicle) in Russian; English by default.
 //   Observation and speed modes: --invade [design.json] (Geochem.cs), --export-designs dir, --tournament (Tournament.cs),
@@ -58,6 +59,8 @@ catch (Exception e) when (e is ArgumentException || e is System.IO.IOException |
 if (Array.IndexOf(args, "--long-test") >= 0) { World.RunLongTest(args); return; }
 if (Array.IndexOf(args, "--batch") >= 0) { Batch.Run(args, laws); return; }
 if (Array.IndexOf(args, "--compare") >= 0) { Batch.Compare(args); return; }
+if (Array.IndexOf(args, "--merge") >= 0) { Batch.Merge(args); return; }   // batches from several machines or shards into one (Batch.cs)
+if (Array.IndexOf(args, "--punctuated") >= 0) { Punctuated.Run(args); return; }   // tempo of evolution after catastrophes vs outside (Punctuated.cs)
 if (Array.IndexOf(args, "--run-one") >= 0) { Batch.RunOne(args, laws); return; }
 if (Array.IndexOf(args, "--geochem") >= 0) { World.GeochemReport(args); return; }   // strata by depth, what bodies need (World.Geochem)
 if (Array.IndexOf(args, "--resources") >= 0) { World.ResourceReport(args); return; }   // gas and loose food by region (World.Resources)
