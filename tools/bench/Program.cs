@@ -37,6 +37,7 @@ if (Array.IndexOf(args, "--self-test-population") >= 0) { World.PopulationRegres
 if (Array.IndexOf(args, "--self-test-water") >= 0) { World.WaterwaysRegression(); return; }   // just currents, floating ice and cave water (also in --self-test)
 if (Array.IndexOf(args, "--self-test-climate") >= 0) { World.ClimateCyclesRegression(); return; }   // just the climate cycles test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-region") >= 0) { World.RegionRegression(); return; }   // just the regions test (also in --self-test)
+if (Array.IndexOf(args, "--self-test-life") >= 0) { World.LifeModelRegression(); return; }   // just the life models test (also in --self-test)
 if (Array.IndexOf(args, "--list-params") >= 0)
 {
     foreach (var p in ParamRegistry.All)

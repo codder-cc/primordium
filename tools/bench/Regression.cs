@@ -95,6 +95,7 @@ public sealed partial class World
         AsmRegression();
         DesignRegression();
         PopulationRegression();
+        LifeModelRegression();
         ChronicleRegression();
         EvolutionRegression();
         for (int seed = -3; seed <= 100; seed++)
