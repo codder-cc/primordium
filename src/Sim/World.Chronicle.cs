@@ -122,8 +122,9 @@ public sealed partial class World
         if (child.Bio != null) BioNote(child, Tick, BioKind.Born, parent.Id, mate?.Id ?? 0);
         if (parent.Bio != null && (parent.NChildren == 1 || parent.NChildren % 10 == 0)) BioNote(parent, Tick, BioKind.Child, child.Id, parent.NChildren);
         if (mate?.Bio != null) BioNote(mate, Tick, BioKind.Child, child.Id, 0);   // as the second parent
-        if (parent.InfectedBy != 0 && parent.InfectedBy != parent.Lineage)
-            Propose(EvType.FirstParasite, Chronicle.OnceKey(EvType.FirstParasite), child, parent, parent.InfectedBy);
+        InheritForeign(parent, child, mate);
+        if (child.Foreign != null && child.ForeignFrom != child.Lineage)
+            Propose(EvType.FirstParasite, Chronicle.OnceKey(EvType.FirstParasite), child, child.Foreign == parent.Foreign ? parent : mate, child.ForeignFrom);
     }
 
     static void StartTracking(Agent a, byte why)
@@ -203,6 +204,10 @@ public sealed partial class World
             case EvType.FirstParasite:
                 Add(c.Type, Loc.Both($"first parasite: code of lineage #{(long)c.Value} passed to #{a.Id}, offspring of #{c.B?.Id} (lineage #{a.Lineage})",
                                      $"первый паразит: код линии #{(long)c.Value} передан потомку #{a.Id} тела #{c.B?.Id} (линия #{a.Lineage})"), a, c.Value, true, c.B);
+                break;
+            case EvType.ParasiteSpread:
+                Add(c.Type, Loc.Both($"parasite spread: code of lineage #{(long)c.Value} written into #{c.B?.Id} (lineage #{c.B?.Lineage}) was copied on by it into #{a.Id} (lineage #{a.Lineage})",
+                                     $"паразит распространился: код линии #{(long)c.Value}, вписанный в #{c.B?.Id} (линия #{c.B?.Lineage}), тот переписал дальше в #{a.Id} (линия #{a.Lineage})"), a, c.Value, true, c.B);
                 break;
         }
     }

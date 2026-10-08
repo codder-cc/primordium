@@ -165,6 +165,13 @@ public static class ParamRegistry
         F("CostMine", "Действия", "Attempt to gnaw rock (base)", "Попытка грызть породу (базовая)", 0, 0.5, 0.001);
         F("CostDig", "Действия", "Digging: moving a whole block", "Рытьё: сдвинуть блок целиком", 0, 20, 0.1);
         F("CostPile", "Действия", "Piling a block from solid molecules", "Сложить блок из твёрдых молекул", 0, 20, 0.1);
+        F("BodyHold", "Действия", "How firmly a living body holds its molecules: tearing one out (attack, take) costs this times the work of gnawing it out of a face of the same disordered aggregate", "Насколько крепко живое тело держит свои молекулы: вырвать одну (attack, take) стоит столько раз работу выгрызть её из грани такого же беспорядочного агрегата", 0.05, 4, 0.05);
+        F("StrikeUnit", "Действия", "Work of an attack per unit of its argument", "Работа удара на единицу его аргумента", 0.01, 1, 0.01);
+        F("ShareUnit", "Действия", "Energy handed over by share per unit of its argument", "Энергия, передаваемая share, на единицу аргумента", 0.01, 1, 0.005);
+        F("MateShare", "Действия", "Share of each parent's energy and molecules that goes into a mated child", "Доля энергии и молекул каждого родителя, уходящая в ребёнка от спаривания", 0.05, 0.5, 0.01);
+        I("AlarmTicks", "Действия", "How long an attack in a cell can be noticed (hurt), ticks", "Сколько тиков удар в клетке ещё заметен (hurt)", 1, 128, 1);
+        I("HandshakeTicks", "Действия", "Window in which both sides must want to mate or link, ticks", "Окно, в котором обе стороны должны захотеть спаривания или связи, тиков", 1, 64, 1);
+        F("TornStore", "Действия", "Share of a body's stored energy that goes with molecules torn or pulled out of it (attack, take), in proportion to the molecules taken (0: the store stays behind)", "Доля запаса энергии тела, которая уходит с вырванными из него молекулами (attack, take), пропорционально числу молекул (0 — запас остаётся в теле)", 0, 1, 0.05);
         F("CostInjectBase", "Действия", "Gene injection: base", "Вставка генов: основа", 0, 2, 0.01);
         F("CostInjectByte", "Действия", "Gene injection: per byte", "Вставка генов: за байт", 0, 1, 0.005);
         F("CostCutBase", "Действия", "Gene excision: base", "Вырезание генов: основа", 0, 2, 0.01);

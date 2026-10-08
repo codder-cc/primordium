@@ -13,7 +13,7 @@ using Primordium;
 //   [--chronicle]: print the world's chronicle as events happen (World.Chronicle).
 //   [--lang ru]: text from the game (law descriptions, chronicle) in Russian; English by default.
 //   Observation and speed modes: --invade [design.json] (Geochem.cs), --export-designs dir, --tournament (Tournament.cs),
-//   --food-chain (FoodChain.cs), --perf-baseline [--make] (PerfBaseline.cs).
+//   --food-chain (FoodChain.cs), --predation and --osc runs.csv (Predation.cs), --perf-baseline [--make] (PerfBaseline.cs).
 //   Population templates: --plant-population file.json [--at x,y] [--local] [--local-energy], --copy-population out.json (PopulationTool.cs).
 //   Regions before the run: --copy-region x,y,w,h file, --paste-region file --at x,y [--rotate k] [--paste-mode above] [--no-bodies] [--dz n] (RegionBench.cs).
 {
@@ -26,6 +26,7 @@ if (Array.IndexOf(args, "--self-test-sun") >= 0) { World.SkyRegression(); return
 if (Array.IndexOf(args, "--self-test-cave") >= 0) { World.CaveClimateRegression(); return; }   // just the cave climate test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-evolution") >= 0) { World.RunEvolutionRegression(); return; }
 if (Array.IndexOf(args, "--self-test-resources") >= 0) { World.ResourcesRegression(); return; }   // just the resources test (also in --self-test)
+if (Array.IndexOf(args, "--self-test-predation") >= 0) { World.PredationRegression(); return; }   // just the bodies-against-bodies test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-wear") >= 0) { World.WearRegression(); return; }   // just the photodamage and wear test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-react") >= 0) { World.ReactRegression(); World.MatterLibraryRegression(); return; }   // just the reactive-damage and matter library tests (also in --self-test)
 if (Array.IndexOf(args, "--self-test-leach") >= 0) { World.LeachRegression(); return; }   // just the leaching test (also in --self-test)
@@ -74,6 +75,8 @@ if (Array.IndexOf(args, "--invade") >= 0) { World.InvasionProbe(args); return; }
 }
 if (Array.IndexOf(args, "--tournament") >= 0) { World.Tournament(args); return; }   // ancestors against moderns in the same world (Tournament.cs)
 if (Array.IndexOf(args, "--food-chain") >= 0) { World.FoodChainReport(args); return; }   // who eats whom, trophic levels (FoodChain.cs)
+if (Array.IndexOf(args, "--predation") >= 0) { World.PredationReport(args); return; }   // predation audit, defence, parasites, territory (Predation.cs)
+if (Array.IndexOf(args, "--osc") >= 0) { Oscillation.FromRuns(args); return; }   // Lotka–Volterra test on a batch's runs.csv (Predation.cs)
 if (Array.IndexOf(args, "--perf-baseline") >= 0) { PerfBaseline.Run(args); return; }   // fixed boom save, ms/tick by stage (PerfBaseline.cs)
 if (Array.IndexOf(args, "--sun") >= 0) { World.SunReport(args); return; }
 if (Array.IndexOf(args, "--climate") >= 0) { World.ClimateReport(args); return; }   // the climate cycles' schedule by seed (World.ClimateCycles)   // the sky: day length, climate by latitude, photon supply (World.Sky)

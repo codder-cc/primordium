@@ -436,27 +436,27 @@ public sealed partial class World
     }
 
     // Two bodies that both signalled readiness within a few ticks make a child that carries the start
-    // of one genome and the end of the other; each gives a quarter of its energy and molecules.
+    // of one genome and the end of the other; each gives P.MateShare (a quarter) of its energy and molecules.
     void Mate(Agent a, int cell)
     {
         Dissipate(a, P.CostSocial);
         a.MateTick = Tick;
         var t = Partner(a, cell);
-        if (t == null || Tick - t.MateTick > 8 || t.Energy < P.MateMinEnergy || a.Energy < P.MateMinEnergy) return;
-        if (!Fits(cell, a.Z, (a.Volume + t.Volume) / 4) || a.InvTotal < 2 * P.MinBody || t.InvTotal < 2 * P.MinBody) return;
+        if (t == null || Tick - t.MateTick > P.HandshakeTicks || t.Energy < P.MateMinEnergy || a.Energy < P.MateMinEnergy) return;
+        if (!Fits(cell, a.Z, (a.Volume + t.Volume) * P.MateShare) || a.InvTotal < 2 * P.MinBody || t.InvTotal < 2 * P.MinBody) return;
         var (g0, p0) = Genome.Cross(a, t, Rng);
         var (g, p) = Genome.Mutate(g0, p0, Rng);
         var child = new Agent(NewId(), a.Lineage, Math.Max(a.Gen, t.Gen) + 1, g, p) { Tb = a.Tb };
         Looks.Inherit(child, Rng.NextDouble() < 0.5 ? a : t, Rng);
         foreach (var parent in new[] { a, t })
         {
-            double e = parent.Energy * 0.25;
+            double e = parent.Energy * P.MateShare;
             parent.Energy -= e;
             parent.LifeKids += (float)e;
             child.Energy += e;
             for (int s = 0; s < Chemistry.S; s++)
             {
-                int k = parent.Inv[s] / 4;
+                int k = (int)(parent.Inv[s] * P.MateShare);
                 for (int j = 0; j < k && parent.InvTotal > P.MinBody; j++) { RemoveMol(parent, s); AddMol(child, s); }
             }
         }

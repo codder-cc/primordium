@@ -116,6 +116,21 @@ public static class P
     // protein aimed at the material's bond (with its local lattice barrier)
     // takes up to this share of the barrier away.
     public static float CatalysisMax = 0.92f;
+    // A living body holds its molecules like a disordered aggregate of the same molecules (World.Predation):
+    // tearing one out (attack, take) is work against that hold, BodyHold times the work of gnawing it out
+    // of a face of that aggregate (FaceWork·e^(barrier − FaceBarrier)).
+    // Must be > 0 (a body with no hold at all would be torn apart by any touch).
+    public static float BodyHold = 1f;
+    // What an argument of a social instruction is worth: attack strikes with argument × StrikeUnit of
+    // work, share hands over argument × ShareUnit of energy. Signals live AlarmTicks (an attack in a
+    // cell, read by `hurt`) and HandshakeTicks (mate and link want both sides within it). Mating
+    // takes MateShare of each parent's energy and of every kind of molecule.
+    public static float StrikeUnit = 0.1f, ShareUnit = 0.125f, MateShare = 0.25f;
+    public static int AlarmTicks = 16, HandshakeTicks = 8;
+    // A body's free energy is held in its matter: molecules torn or pulled out of it carry this share of
+    // their part of its store (store × share × molecules taken / molecules it had) to the body that took
+    // them. 0: the store stays behind whatever is torn out.
+    public static float TornStore = 1f;
     public static float CostInjectBase = 0.05f, CostInjectByte = 0.02f;
     public static float CostCutBase = 0.1f, CostCutByte = 0.08f;
     public static float CostGrow = 0.2f, CostPush = 0.015f, CostFall = 0.3f, CostLook = 0.0015f;

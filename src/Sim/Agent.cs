@@ -103,6 +103,11 @@ public sealed class Agent
     public long ParentId;            // the body that divided (or the first mate); 0 for a founder
     public long TrackedAncestor;     // the nearest tracked ancestor (a chain of them leads to the founder)
     public long InfectedBy;          // the lineage that last wrote code into it (inject from another lineage), 0 none
+    // The piece of code another lineage wrote into it (or into an ancestor, while the piece is still in the
+    // genome as it was), and that lineage: how a parasite's code is followed (World.Predation). Never read
+    // by the simulation; the array is shared by every body that carries the same piece, never changed.
+    public byte[] Foreign;
+    public long ForeignFrom;
     public int CaveAge = -1;         // its age when it went under a roof (checked every 64 ticks), -1 in the open
     public bool Tracked;             // keeps a biography (Bio) and is fossilised when it dies
     public bool Established;         // its lineage had ≥ 10 bodies at the last survey (derived, not saved): only those make "firsts"

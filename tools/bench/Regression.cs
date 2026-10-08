@@ -174,6 +174,7 @@ public sealed partial class World
         ReachRegression();
         DepositRegression();
         EnergyRegression();
+        PredationRegression();
         foreach (int seed in new[] { 1, 7 })
         {
             var w = new World(seed, 800, true) { TrackHeat = true };

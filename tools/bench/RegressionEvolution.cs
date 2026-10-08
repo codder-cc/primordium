@@ -124,6 +124,7 @@ public sealed partial class World
         a.SkyFromOldFile();   // nor the sky (version 8): its fields are rebuilt at the load
         a.ClimateFromOldFile();   // nor the climate cycles (version 10): neutral from the load
         a.WaterwaysFromOldFile();   // nor currents, drift and cave water (version 12)
+        a.PressureFromOldFile();   // nor the parasite counters and foreign code (version 13)
         a.EnergyToFloat();    // nor energies as doubles (version 9)
         a.Save(old, "v5", System.IO.Compression.CompressionLevel.Fastest, 5); old.Position = 0;
         var o = Load(old);

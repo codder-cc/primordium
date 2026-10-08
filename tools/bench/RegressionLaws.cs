@@ -187,12 +187,13 @@ public sealed partial class World
                 // then the loaded world is the same world and goes on the same way. Version 2 keeps
                 // the ledger; version 1 has none: it starts from zero and closes from the load.
                 // Newest first: each older version drops what the newer ones still kept (the original
-                // is brought to it step by step), so 11 and 10 check that the later blocks are read only
-                // from their own versions on.
-                foreach (int version in new[] { 11, 10, 8, 4, 2, 1 })
+                // is brought to it step by step), so 12, 11 and 10 check that the later blocks are read
+                // only from their own versions on.
+                foreach (int version in new[] { 12, 11, 10, 8, 4, 2, 1 })
                 {
                     double[] exact = a.ElementBudget();
-                    a.WaterwaysFromOldFile();   // they hold no currents, drift and cave water (version 12)
+                    a.PressureFromOldFile();   // they hold no parasite counters and foreign code (version 13)
+                    if (version < 12) a.WaterwaysFromOldFile();   // nor currents, drift and cave water (version 12)
                     if (version < 11) foreach (var x in a.Agents) x.LightQuota = 0;   // nor the canopy's stores (version 11)
                     if (version < 10) a.ClimateFromOldFile();   // nor the climate cycles (version 10): neutral phase from the load, nothing running
                     if (version < 9) a.EnergyToFloat();     // nor energies as doubles (version 9)

@@ -49,7 +49,9 @@ public sealed partial class World
     // stores start empty.
     // 12: the waterways block (SyncWaterways, World.Waterways) after the climate cycles: currents, the
     // water standing in caves, the drift of every body. Older files load with still water and dry caves.
-    public const int SaveVersion = 12, OldestSaveVersion = 1;
+    // 13: the chronicle block gains the ParasiteSpread event type (its count), the parasite counters and
+    // every body's foreign piece of code (Agent.Foreign, World.Predation).
+    public const int SaveVersion = 13, OldestSaveVersion = 1;
     static readonly byte[] SaveMagic = Encoding.ASCII.GetBytes("PRIMSAVE");
     const int EndMarker = 0x21444E45;   // "END!"
 
@@ -591,8 +593,9 @@ public sealed partial class World
     {
         var c = Chronicle;
         s.V(ref c.NextSeq);
-        s.A<long>(c.Counts);
+        s.A<long>(s.Version >= 13 ? c.Counts : c.Counts.AsSpan(0, CountsV12));   // version 13 added ParasiteSpread
         s.A<bool>(c.Seen);
+        if (s.Version >= 13) { s.V(ref ParasiteInherited); s.V(ref ParasiteSpreads); }
         s.V(ref c.DepthBest); s.V(ref c.DepthShown); s.V(ref c.DominantLineage); s.V(ref c.DominantCount);
         s.A<float>(c.RecordBest);
         SyncEvents(s, c.Important);
@@ -645,6 +648,7 @@ public sealed partial class World
         foreach (var a in Agents)
         {
             s.V(ref a.ParentId); s.V(ref a.TrackedAncestor); s.V(ref a.InfectedBy); s.V(ref a.CaveAge);
+            if (s.Version >= 13) SyncForeign(s, a);
             s.V(ref a.Tracked); s.V(ref a.TrackWhy); s.V(ref a.BioSeen); s.V(ref a.BioN);
             bool bio = a.Bio != null;
             s.V(ref bio);
@@ -653,6 +657,29 @@ public sealed partial class World
             SyncBio(s, a.Bio);
         }
         if (s.Reading) { MarkEstablished(); c.Version++; }
+    }
+
+    // A body's foreign piece of code (World.Predation): bodies that share one piece share the array, but
+    // each is written on its own (it is short and rare).
+    static void SyncForeign(Sync s, Agent a)
+    {
+        int n = a.Foreign?.Length ?? -1;
+        s.V(ref n);
+        if (n < 0) return;
+        if (s.Reading) a.Foreign = new byte[n];
+        s.A<byte>(a.Foreign);
+        s.V(ref a.ForeignFrom);
+    }
+
+    const int CountsV12 = (int)EvType.ParasiteSpread;   // event types before version 13
+
+    // What a file before version 13 holds: no ParasiteSpread count, no parasite counters, no foreign
+    // code (a loaded world starts them empty; the old-version save tests bring the original to the same).
+    internal void PressureFromOldFile()
+    {
+        Chronicle.Counts[(int)EvType.ParasiteSpread] = 0;
+        ParasiteInherited = ParasiteSpreads = 0;
+        foreach (var a in Agents) { a.Foreign = null; a.ForeignFrom = 0; }
     }
 
     static void SyncEvents(Sync s, List<ChronicleEvent> list)

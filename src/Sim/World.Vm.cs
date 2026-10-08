@@ -370,6 +370,7 @@ public sealed partial class World
             a.GainPhoto += gain;
             a.TickPhoto += gain;
             Flows[FPhoto] += gain;
+            if (PredProbe != null) PredationProbe.Add(ref PredProbe.Photo, gain);
             caught++;
             if (damage > 0) PhotoDamageAfter(a, p, damage);
         }
@@ -490,6 +491,7 @@ public sealed partial class World
         a.Volume -= Chem.BodyVolume[s];
         AddMol(a, s);
         FoodProbe?.Env(a);
+        PredProbe?.EnvGain(Chem.E[s], cell);
         a.NIntake++;
         Note(EvKind.Intake);
         Act(a, ActEat, -1);
@@ -525,6 +527,7 @@ public sealed partial class World
         a.GainMine += Chem.E[s];
         a.NMines++;
         FoodProbe?.Env(a);
+        PredProbe?.EnvGain(Chem.E[s]);
         a.NMinedTier[0]++;
         var ctx = cur;
         if (ctx != null) ctx.Mined[0]++;
@@ -564,43 +567,52 @@ public sealed partial class World
     {
         var x = lastAttacker[cell];
         long ago = Tick - lastAttack[cell];
-        if (x == null || x.Dead || x == a || ago > 16 || !Near(a, x)) { Push(a, -1); return; }
+        if (x == null || x.Dead || x == a || ago > P.AlarmTicks || !Near(a, x)) { Push(a, -1); return; }
         a.Target = x;
         Push(a, (int)ago);
     }
 
-    // How hard a body hits: its size and how well fed it is.
-    static float Strength(Agent a) => MathF.Sqrt(a.Mass + 1) * (0.4f + 0.6f * (float)Math.Clamp(a.Energy / a.Store, 0, 1));
-
-    // Tear molecules out of another body and keep them (if there is room); its proteins get damaged
-    // too. A big, well-fed body hits hard and is hard to hurt; a small one is cheaper to move and can
-    // run. A body that falls apart dies.
+    // Strike another body and tear molecules out of it. The strike is work the attacker pays (its
+    // argument × P.StrikeUnit, as much as it can afford). That work goes into the victim's hold on its
+    // molecules (P.BodyHold, World.Predation): each molecule torn out takes TearWork of it — a body of
+    // strong, well-fitting molecules gives up fewer per blow, a protein for the victim's main molecule
+    // lowers the barrier as it does in rock — and that work ends as heat where they are. What is left of
+    // the strike goes into the victim's body as heat (HeatHeld; it warms by the same heat capacity as
+    // reaction heat, so a big body warms less): a hot body's proteins unfold (LiveBody), nothing else
+    // about injury is built in. Torn molecules carry their share of the victim's store (P.TornStore).
+    // A body that falls apart dies.
     void Attack(Agent a, int cell, int p)
     {
-        float power = (float)Math.Min(Math.Max(0, p) * 0.1f, Math.Max(0, a.Energy - 1));   // as hard as it can afford
+        float power = (float)Math.Min(Math.Max(0, p) * P.StrikeUnit, Math.Max(0, a.Energy - 1));   // as hard as it can afford
         if (power <= 0) return;
         var t = Partner(a, cell);
-        if (t == null) { Dissipate(a, P.CostSocial); return; }
-        Dissipate(a, power + P.CostSocial);
-        
+        Dissipate(a, P.CostSocial);
+        if (t == null) return;
+
         int tc = t.Y * W + t.X;
         lastAttacker[tc] = a;
         lastAttack[tc] = Tick;
-        float sa = Strength(a), st = MathF.Sqrt(t.Mass + 1);
-        float dmg = power * 2 * sa / (sa + st);
-        int units = (int)(dmg * 0.5f + Rng.NextDouble());
+        var pred = PredProbe;   // observation only
+        float tear = TearWork(BodyBarrier(a, t, out float coh)) * P.BodyHold;
+        int units = (int)Math.Min(t.InvTotal, power / tear + Rng.NextDouble());
         if (t.Bio != null && (t.BioN == 0 || t.Bio[(t.BioN - 1) % t.Bio.Length] is not { Kind: BioKind.Killed } last || last.Other != a.Id))
             BioNote(t, Tick, BioKind.Killed, a.Id, units);   // attacked (once per attacker in a row)
         var food = FoodProbe;   // observation only
+        int torn = 0;
         for (int k = 0; k < units && t.InvTotal > 0; k++)
         {
             int s = RandomMol(t);
             RemoveMol(t, s);
             AddMol(a, s);
             food?.Prey(a, t, Chem.E[s]);
+            pred?.Tear(a, t, s, Chem);
+            torn++;
         }
-        for (int k = 0; k < t.EnzN; k++) WearProtein(t, k, Math.Max(0, 1 - 0.06f * dmg));
-        Dissipate(t, dmg * 0.3f);
+        if (torn > 0) CarryStore(t, a, torn);
+        float broke = torn > 0 ? Math.Min(power, torn * tear) : 0;   // the last molecule may come out on less than its full work
+        Dissipate(a, broke);
+        StrikeHeat(a, t, power - broke);
+        pred?.Attack(a, t, power + P.CostSocial, power - broke, coh, torn);
         a.NAttacks++;
         a.TickAttack += 1;
         Note(EvKind.Attack);
@@ -608,6 +620,7 @@ public sealed partial class World
         AddFlash(t.X, t.Y, FlashAttack, tc == cell ? -1 : Neighbour4(cell, tc));
         if (t.InvTotal < P.MinBody || t.Energy <= 0)
         {
+            pred?.Kill(a, t, tc, Chem);
             Die(t, tc, CauseKilled);
             food?.Kill(a, t);
             a.NKills++;
@@ -618,14 +631,24 @@ public sealed partial class World
         }
     }
 
+    // Pull one molecule of a kind out of another body. The pull is work against the
+    // body's hold on it (the same as tearing it out in an attack), paid whether or not it lets go; a
+    // linked partner does not resist, an unlinked one keeps it with a chance by mass.
     void Take(Agent a, int cell, int s)
     {
         Dissipate(a, P.CostSocial);
         var t = Partner(a, cell);
         if (t == null || t.Inv[s] == 0) return;
-        if (!a.Links.Contains(t) && Rng.NextDouble() > (a.Mass + 1) / (a.Mass + t.Mass + 2)) return;
+        float work = TearWork(BodyBarrier(a, t, out _)) * P.BodyHold;
+        if (a.Energy < work + 1) return;   // it cannot pull that hard
+        Dissipate(a, work);
+        var pred = PredProbe;   // observation only
+        bool got = a.Links.Contains(t) || Rng.NextDouble() <= (a.Mass + 1) / (a.Mass + t.Mass + 2);
+        pred?.Take(a, t, s, P.CostSocial + work, got, Chem);
+        if (!got) return;
         RemoveMol(t, s);
         AddMol(a, s);
+        CarryStore(t, a, 1);
         FoodProbe?.Prey(a, t, Chem.E[s]);
         a.NTakes++;
         if (BitOperations.IsPow2(a.NTakes)) BioNote(a, Tick, BioKind.Theft, t.Id, a.NTakes);
@@ -650,7 +673,7 @@ public sealed partial class World
     {
         Dissipate(a, P.CostSocial);
         var t = Partner(a, cell);
-        float e = (float)Math.Min(Math.Clamp(amount, 0, 255) / 8f, a.Energy - 1);
+        float e = (float)Math.Min(Math.Clamp(amount, 0, 255) * P.ShareUnit, a.Energy - 1);
         if (t == null || e <= 0) return;
         a.Energy -= e;
         t.Energy += e;
@@ -669,7 +692,7 @@ public sealed partial class World
         if (a.Links.Remove(t)) { t.Links.Remove(a); return; }
         a.LinkWant = t;
         a.LinkTick = Tick;
-        if (t.LinkWant != a || Tick - t.LinkTick > 8) return;   // any number of links; each costs upkeep (P.CostLink)
+        if (t.LinkWant != a || Tick - t.LinkTick > P.HandshakeTicks) return;   // any number of links; each costs upkeep (P.CostLink)
         a.Links.Add(t);
         t.Links.Add(a);
         Note(EvKind.Link);
@@ -688,8 +711,9 @@ public sealed partial class World
         var (src, dst) = pull ? (t, a) : (a, t);
         len = Math.Min(Math.Abs(len), src.G.Length);   // at most a whole genome; every byte costs
         Dissipate(a, P.CostInjectBase + P.CostInjectByte * len);
+        if (!pull) PredProbe?.Inject(a, t);
         if (dst.G.Length + len > Genome.MaxLen) return;
-        if (Rng.NextDouble() > (a.Mass + 2) / (a.Mass + t.Mass + 4) * 1.5) return;
+        if (Rng.NextDouble() > (a.Mass + 1) / (a.Mass + t.Mass + 2)) return;   // the host keeps it out with a chance by mass, as in take
         var g = src.G;
         int n = g.Length;
         start = Mod(start, n);
@@ -706,6 +730,7 @@ public sealed partial class World
         a.NInjects++;
         if (!pull)
         {
+            ForeignCode(a, t, ng.AsSpan(at, len));   // observation only: following a parasite's code
             t.NInfected++;
             if (a.Lineage != t.Lineage)
             {
@@ -735,6 +760,7 @@ public sealed partial class World
         if (a.Ip > start) a.Ip = Math.Max(start, a.Ip - len);
         a.Cp = 0;
         a.SetGenome(ng, np);
+        if (a.Foreign != null && ng.AsSpan().IndexOf(a.Foreign) < 0) { a.Foreign = null; a.ForeignFrom = 0; }   // the parasite's code is cut out
         a.NCuts++;
         Note(EvKind.Cut);
     }
@@ -796,6 +822,7 @@ public sealed partial class World
         a.GainMine += Chem.E[s];
         a.NMines++;
         FoodProbe?.Env(a);
+        PredProbe?.EnvGain(Chem.E[s]);
         a.NMinedTier[tier]++;
         var ctx = cur;
         if (ctx != null) { ctx.Mined[tier]++; if (cat >= 0.5f) ctx.MinedCat[tier]++; }

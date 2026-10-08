@@ -19,13 +19,14 @@ public enum EvType : byte
     FirstSwimmer,   // the first body afloat in water
     FirstBottom,    // the first body on the bottom of deep water
     FirstPredator,  // the first kill that took the victim's matter
-    FirstParasite,  // the first body carrying another lineage's injected code to have offspring
+    FirstParasite,  // the first child that inherited another lineage's code injected into its parent
     Speciation,     // a lineage split into two distant clusters of kin
     Extinction,     // a large (or once dominant) lineage died out
     NewDominant,    // another lineage is now the largest
     Record,         // largest, oldest, most children, longest genome
     Climate,        // strikes from space, new vents (later: ice ages, flares, eclipses)
     Player,         // designs planted, laws changed, saves and loads
+    ParasiteSpread, // the first time a host copied another lineage's injected code on into a third body
     Count,
 }
 
@@ -153,13 +154,13 @@ public sealed class Chronicle
     {
         "first protein", "first reaction", "rock discovery", "diet shift", "depth record", "cave dweller",
         "first swimmer", "first on the bottom", "first predator", "first parasite", "speciation", "extinction",
-        "new dominant", "record", "climate and sky", "player",
+        "new dominant", "record", "climate and sky", "player", "parasite spread",
     };
     static readonly string[] TypeNamesRu =
     {
         "первый белок", "первая реакция", "открытие породы", "смена питания", "рекорд глубины", "житель пещер",
         "первый пловец", "первый на дне", "первый хищник", "первый паразит", "видообразование", "вымирание",
-        "новый доминант", "рекорд", "климат и небо", "игрок",
+        "новый доминант", "рекорд", "климат и небо", "игрок", "паразит распространился",
     };
     public static string[] TypeNames => Loc.T(TypeNamesEn, TypeNamesRu);
 
