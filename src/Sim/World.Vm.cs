@@ -461,6 +461,7 @@ public sealed partial class World
         a.Mass -= Chem.Mass[s];
         a.Volume -= Chem.BodyVolume[s];
         AddMol(a, s);
+        FoodProbe?.Env(a);
         a.NIntake++;
         Note(EvKind.Intake);
         Act(a, ActEat, -1);
@@ -495,6 +496,7 @@ public sealed partial class World
         a.TickMine += Chem.E[s];
         a.GainMine += Chem.E[s];
         a.NMines++;
+        FoodProbe?.Env(a);
         a.NMinedTier[0]++;
         var ctx = cur;
         if (ctx != null) ctx.Mined[0]++;
@@ -561,11 +563,13 @@ public sealed partial class World
         int units = (int)(dmg * 0.5f + Rng.NextDouble());
         if (t.Bio != null && (t.BioN == 0 || t.Bio[(t.BioN - 1) % t.Bio.Length] is not { Kind: BioKind.Killed } last || last.Other != a.Id))
             BioNote(t, Tick, BioKind.Killed, a.Id, units);   // attacked (once per attacker in a row)
+        var food = FoodProbe;   // observation only
         for (int k = 0; k < units && t.InvTotal > 0; k++)
         {
             int s = RandomMol(t);
             RemoveMol(t, s);
             AddMol(a, s);
+            food?.Prey(a, t, Chem.E[s]);
         }
         for (int k = 0; k < t.EnzN; k++) WearProtein(t, k, Math.Max(0, 1 - 0.06f * dmg));
         Dissipate(t, dmg * 0.3f);
@@ -577,6 +581,7 @@ public sealed partial class World
         if (t.InvTotal < P.MinBody || t.Energy <= 0)
         {
             Die(t, tc, CauseKilled);
+            food?.Kill(a, t);
             a.NKills++;
             if (BitOperations.IsPow2(a.NKills)) BioNote(a, Tick, BioKind.Kill, t.Id, a.NKills);
             if (units > 0) Propose(EvType.FirstPredator, Chronicle.OnceKey(EvType.FirstPredator), a, t, units);
@@ -593,6 +598,7 @@ public sealed partial class World
         if (!a.Links.Contains(t) && Rng.NextDouble() > (a.Mass + 1) / (a.Mass + t.Mass + 2)) return;
         RemoveMol(t, s);
         AddMol(a, s);
+        FoodProbe?.Prey(a, t, Chem.E[s]);
         a.NTakes++;
         if (BitOperations.IsPow2(a.NTakes)) BioNote(a, Tick, BioKind.Theft, t.Id, a.NTakes);
         Note(EvKind.Take);
@@ -761,6 +767,7 @@ public sealed partial class World
         a.TickMine += Chem.E[s];
         a.GainMine += Chem.E[s];
         a.NMines++;
+        FoodProbe?.Env(a);
         a.NMinedTier[tier]++;
         var ctx = cur;
         if (ctx != null) { ctx.Mined[tier]++; if (cat >= 0.5f) ctx.MinedCat[tier]++; }

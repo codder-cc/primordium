@@ -18,3 +18,5 @@ Screenshot*
 *.log
 # agent tooling
 .claude/
+# perf baseline fixture (made by --perf-baseline --make)
+/tools/bench/fixtures/

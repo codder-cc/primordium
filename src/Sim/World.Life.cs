@@ -8,8 +8,10 @@ public sealed class Census
 {
     public int Pop, Idle, Plants, Eaters, Miners, Hunters, Linked, OldestAge, Crowded, Big, MaxCells;
     public int InWater, Afloat, AtSurface;   // in a flooded column; of them off the bottom; of them at the surface
-    public float AvgLen, AvgEnergy, AvgAge, AvgCycles, AvgEnz, AvgProt, AvgTb;
-    public readonly float[] EnzKind = new float[4];   // average amount per body, by kind
+    // Sums over tens of thousands of bodies, then averages: double, so a big census does not round
+    // (observation only; the simulation never reads a Census).
+    public double AvgLen, AvgEnergy, AvgAge, AvgCycles, AvgEnz, AvgProt, AvgTb;
+    public readonly float[] EnzKind = new float[4];   // average amount per body, by kind (summed in double by TakeCensus)
 }
 
 public sealed partial class World
@@ -600,6 +602,7 @@ public sealed partial class World
     public Census TakeCensus()
     {
         var c = new Census();
+        var enzKind = new double[4];
         foreach (var a in Agents)
         {
             if (a.Dead) continue;
@@ -620,11 +623,11 @@ public sealed partial class World
                 if (!OnFloor(a)) c.Afloat++;
                 if (AtSurface(a, a.Y * W + a.X)) c.AtSurface++;
             }
-            for (int k = 0; k < a.EnzN; k++) c.EnzKind[a.Enz[k].Kind] += a.Enz[k].Amount;
+            for (int k = 0; k < a.EnzN; k++) enzKind[a.Enz[k].Kind] += a.Enz[k].Amount;
             c.AvgEnz += a.EnzN;
             int prot = 0;
             foreach (var b in a.Prot) if (b > 20) prot++;
-            c.AvgProt += prot / (float)a.Prot.Length;
+            c.AvgProt += prot / (double)a.Prot.Length;
             switch (Diet(a))
             {
                 case DietPlant: c.Plants++; break;
@@ -638,7 +641,7 @@ public sealed partial class World
         {
             c.AvgLen /= c.Pop; c.AvgEnergy /= c.Pop; c.AvgAge /= c.Pop; c.AvgCycles /= c.Pop;
             c.AvgTb /= c.Pop; c.AvgEnz /= c.Pop; c.AvgProt /= c.Pop;
-            for (int k = 0; k < 4; k++) c.EnzKind[k] /= c.Pop;
+            for (int k = 0; k < 4; k++) c.EnzKind[k] = (float)(enzKind[k] / c.Pop);
         }
         return c;
     }

@@ -92,6 +92,11 @@ dotnet run -c Release --project tools/bench -- --seed 1 --ticks 10000 --every 10
 dotnet run -c Release --project tools/bench -- --list-params               # all 183 world laws
 dotnet run -c Release --project tools/bench -- --batch --seeds 1-16 --reps 3 --ticks 6000 --out runs/base
 dotnet run -c Release --project tools/bench -- --compare runs/base/runs.csv runs/try/runs.csv
+dotnet run -c Release --project tools/bench -- --invade my_design.json --seeds 1-6   # plant a creature-designer file, follow its lineage
+dotnet run -c Release --project tools/bench -- --tournament --seed 2 --ticks 8000    # ancestors vs moderns in a copy of the world
+dotnet run -c Release --project tools/bench -- --food-chain --seeds 1-2              # who eats whom: trophic levels, chain length
+dotnet run -c Release --project tools/bench -- --perf-baseline --make                # once: make the reference boom save
+dotnet run -c Release --project tools/bench -- --perf-baseline --ticks 2000          # ms/tick by stage on it, end hash
 ```
 
 Decide on laws with batches, not single runs: `--compare` reports medians with bootstrap intervals, Mann–Whitney, a sign test across seeds and Fisher's test for extinctions and booms. Add `--lang ru` for Russian output. The full flag reference is in [README.ru.md](README.ru.md) and [docs/SIMULATION.md](docs/SIMULATION.md).

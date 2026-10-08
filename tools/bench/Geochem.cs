@@ -47,24 +47,30 @@ public sealed partial class World
     // depend on them).
     static CreatureDesign FindExample(string name)
     {
-        bool en = Loc.En;
-        try
-        {
-            foreach (var lang in new[] { Loc.Code, "ru", "en" })
-            {
-                Loc.Set(lang);
-                var all = CreatureExamples.All;
-                int i = Enumerable.Range(0, all.Count).FirstOrDefault(k => string.Equals(all[k].Name, name, StringComparison.OrdinalIgnoreCase), -1);
-                if (i >= 0) { Loc.Set(en ? "en" : "ru"); return CreatureExamples.All[i]; }
-            }
-        }
-        finally { Loc.Set(en ? "en" : "ru"); }
-        throw new ArgumentException($"--design: no example design '{name}'");
+        // Example names are stable keys (Russian); CreatureExamples.Key maps an English name to its key.
+        string key = CreatureExamples.Key(name);
+        var found = CreatureExamples.All.FirstOrDefault(d => string.Equals(d.Name, key, StringComparison.OrdinalIgnoreCase));
+        if (found != null) return found;
+        throw new ArgumentException(Loc.T($"--design: no example design '{name}'", $"--design: нет примера «{name}»"));
     }
 
-    // --invade [--seeds 1-6] [--at 2000] [--ticks 8000] [--every 2000] [--count 5] [--spots 6] [--pop N] [--noabio]
-    //   [--design Крот] (laws as usual, e.g. --set GeoProfile=0 for the other arm).
-    // An invasion probe: at tick `at` the example design is planted (matter and energy brought from outside,
+    // A design for the probe: a JSON file (CreatureDesign, as the game's creature designer writes it)
+    // when the argument names a file or ends in .json, otherwise a built-in example by name.
+    public static bool IsDesignFile(string nameOrPath) =>
+        nameOrPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || System.IO.File.Exists(nameOrPath);
+
+    public static CreatureDesign FindDesign(string nameOrPath)
+    {
+        if (!IsDesignFile(nameOrPath)) return FindExample(nameOrPath);
+        if (!System.IO.File.Exists(nameOrPath))
+            throw new ArgumentException(Loc.T($"design file not found: {nameOrPath}", $"файл дизайна не найден: {nameOrPath}"));
+        return CreatureLibrary.Load(nameOrPath);
+    }
+
+    // --invade [design.json] [--seeds 1-6] [--at 2000] [--ticks 8000] [--every 2000] [--count 5] [--spots 6] [--pop N] [--noabio]
+    //   [--design Крот | --design path.json] (laws as usual, e.g. --set GeoProfile=0 for the other arm).
+    // An invasion probe: at tick `at` the design (a built-in example by name, or a design file written by
+    // the game's creature designer, given right after --invade or with --design) is planted (matter and energy brought from outside,
     // the same in every world) in `spots` lowland places, `count` bodies each, as one lineage; the probe then
     // follows that lineage: bodies alive, how deep they are under the ground the world was made with, how
     // many under a roof, the deep element's share of their atoms and of all that has been mined.
@@ -75,14 +81,32 @@ public sealed partial class World
         int at = int.Parse(Arg("--at", "2000")), ticks = int.Parse(Arg("--ticks", "8000")), every = int.Parse(Arg("--every", "2000"));
         int count = int.Parse(Arg("--count", "5")), spots = int.Parse(Arg("--spots", "6")), pop = int.Parse(Arg("--pop", P.InitialPop.ToString()));
         bool abio = Array.IndexOf(args, "--noabio") < 0;
-        string name = Arg("--design", "Крот");
-        var design = FindExample(name);
-        name = design.Name;
-        Console.WriteLine($"invasion probe: «{name}», {spots}×{count} bodies at tick {at}, profile {(P.GeoProfile != 0 ? "on" : "off")}, {ticks} ticks");
+        // The design: `--invade file.json` (the word right after the flag, unless it is another flag) or --design.
+        string name = Arg("--design", null), after = Arg("--invade", null);
+        if (name == null && after != null && !after.StartsWith("--")) name = after;
+        name ??= "Крот";
+        CreatureDesign design;
+        try { design = FindDesign(name); }
+        catch (Exception e) when (e is ArgumentException || e is System.IO.IOException || e is System.Text.Json.JsonException || e is System.IO.InvalidDataException)
+        {
+            Console.Error.WriteLine("--invade: " + e.Message);
+            Environment.Exit(2);
+            return;
+        }
+        string source = IsDesignFile(name) ? Loc.T($" from {name}", $" из {name}") : "";
+        name = CreatureExamples.DisplayName(design.Name);
+        Console.WriteLine(Loc.T($"invasion probe: «{name}»{source}, {spots}×{count} bodies at tick {at}, profile {(P.GeoProfile != 0 ? "on" : "off")}, {ticks} ticks",
+                                $"проба вторжения: «{name}»{source}, {spots}×{count} тел на тике {at}, профиль {(P.GeoProfile != 0 ? "вкл" : "выкл")}, {ticks} тиков"));
         Console.WriteLine("seed  tick  pop    probe  depth_mean depth_max roof1  deep_share  mined_depth deep_mined");
         foreach (int seed in seeds)
         {
             var w = new World(seed, pop, abio);
+            var problems = design.Check(w.Chem);   // molecule names resolve per seed (the chemistry is generated)
+            if (problems.Count > 0)
+            {
+                Console.WriteLine(Loc.T($"  seed {seed}: the design cannot be planted: ", $"  сид {seed}: дизайн нельзя посадить: ") + string.Join("; ", problems));
+                continue;
+            }
             long lineage = 0;
             for (int t = 1; t <= ticks; t++)
             {
@@ -97,7 +121,7 @@ public sealed partial class World
                         if (!r.Ok) continue;
                         lineage = r.Lineage; planted += r.Made; k++;
                     }
-                    Console.WriteLine($"  seed {seed}: planted {planted} bodies, lineage #{lineage}");
+                    Console.WriteLine(Loc.T($"  seed {seed}: planted {planted} bodies, lineage #{lineage}", $"  сид {seed}: посажено {planted} тел, линия #{lineage}"));
                 }
                 w.Step();
                 if (t < at || (t - at) % every != 0 && t != ticks) continue;

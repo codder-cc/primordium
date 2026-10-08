@@ -12,6 +12,8 @@ using Primordium;
 //   Batches, comparisons and the long test (--batch, --compare, --run-one, --long-test): see Batch.cs.
 //   [--chronicle]: print the world's chronicle as events happen (World.Chronicle).
 //   [--lang ru]: text from the game (law descriptions, chronicle) in Russian; English by default.
+//   Observation and speed modes: --invade [design.json] (Geochem.cs), --export-designs dir, --tournament (Tournament.cs),
+//   --food-chain (FoodChain.cs), --perf-baseline [--make] (PerfBaseline.cs).
 {
     int li = Array.IndexOf(args, "--lang");
     if (li >= 0 && li + 1 < args.Length) Loc.Set(args[li + 1]);
@@ -51,7 +53,21 @@ if (Array.IndexOf(args, "--compare") >= 0) { Batch.Compare(args); return; }
 if (Array.IndexOf(args, "--run-one") >= 0) { Batch.RunOne(args, laws); return; }
 if (Array.IndexOf(args, "--geochem") >= 0) { World.GeochemReport(args); return; }   // strata by depth, what bodies need (World.Geochem)
 if (Array.IndexOf(args, "--resources") >= 0) { World.ResourceReport(args); return; }   // gas and loose food by region (World.Resources)
-if (Array.IndexOf(args, "--invade") >= 0) { World.InvasionProbe(args); return; }   // plant a design, follow its lineage (World.Geochem probe)
+if (Array.IndexOf(args, "--invade") >= 0) { World.InvasionProbe(args); return; }   // plant a design (example name or design .json), follow its lineage (World.Geochem probe)
+{
+    // --export-designs dir: the built-in example designs as JSON files (the creature designer's format), to edit and --invade with.
+    int ei = Array.IndexOf(args, "--export-designs");
+    if (ei >= 0)
+    {
+        string dir = ei + 1 < args.Length ? args[ei + 1] : "designs";
+        int n = CreatureLibrary.ExportExamples(dir, overwrite: true);
+        Console.WriteLine(Loc.T($"{n} example designs written to {dir}", $"{n} примеров дизайнов записано в {dir}"));
+        return;
+    }
+}
+if (Array.IndexOf(args, "--tournament") >= 0) { World.Tournament(args); return; }   // ancestors against moderns in the same world (Tournament.cs)
+if (Array.IndexOf(args, "--food-chain") >= 0) { World.FoodChainReport(args); return; }   // who eats whom, trophic levels (FoodChain.cs)
+if (Array.IndexOf(args, "--perf-baseline") >= 0) { PerfBaseline.Run(args); return; }   // fixed boom save, ms/tick by stage (PerfBaseline.cs)
 if (Array.IndexOf(args, "--sun") >= 0) { World.SunReport(args); return; }
 if (Array.IndexOf(args, "--climate") >= 0) { World.ClimateReport(args); return; }   // the climate cycles' schedule by seed (World.ClimateCycles)   // the sky: day length, climate by latitude, photon supply (World.Sky)
 if (Array.IndexOf(args, "--bites") >= 0) { foreach (int s in new[] { 1, 2, 3, 5, 7 }) World.BiteReport(s); return; }

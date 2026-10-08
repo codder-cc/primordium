@@ -12,7 +12,7 @@ namespace Primordium;
 // Many runs instead of one: a change of a constant is judged against how much worlds vary anyway.
 //
 //   --batch --seeds 1-16 --reps 3 --ticks 6000 --every 1000 [--pop N] [--noabio] [--tile N] [--audit]
-//           [--jobs J] [--out dir] [--extinct N] [--boom N]
+//           [--jobs J] [--out dir] [--extinct N] [--boom N] [--server-gc [--gc-heaps H]]
 //           [--preset path.json] [--set Name=value ...] [--param-at TICK:Name=value ...]   (laws: ParamHook)
 // Every (seed, rep) is its own process (`--run-one`) and gets the batch's law flags as given: laws are
 // process-wide, so all runs of a batch see the same values and nothing is shared between worlds. Rep 0 is the seed's own world;
@@ -20,7 +20,10 @@ namespace Primordium;
 // streams; terrain, chemistry, vents, water stay). Writes dir/runs.csv (a row per run and
 // checkpoint), dir/summary.csv (per seed and overall: n, median, quartiles, min, max of every
 // column at every checkpoint, plus extinction and boom rates) and a table. Runs share the machine,
-// so ms/tick is for comparing batches run the same way, not for profiling.
+// so ms/tick is for comparing batches run the same way, not for profiling. --server-gc runs every
+// process with the server garbage collector (DOTNET_gcServer=1; --gc-heaps H caps its heaps,
+// DOTNET_GCHeapCount): the trajectory is the same, each process holds more memory. Every run reports
+// its processor time and peak working set (the `resources:` line of its log), the batch the totals.
 //
 //   --compare a/runs.csv b/runs.csv
 // Distributions side by side at the last common checkpoint (population also at the quartiles of
@@ -146,6 +149,41 @@ public static class Batch
             births = w.Births; deaths = w.Deaths;
             last = sw.Elapsed.TotalMilliseconds;   // sampling is not the simulation's time
         }
+        Console.WriteLine(ResourcesLine());
+    }
+
+    // Peak resident memory of this process, MB (getrusage: Process.PeakWorkingSet64 is 0 on macOS).
+    [System.Runtime.InteropServices.DllImport("libc", EntryPoint = "getrusage")]
+    static extern int GetRusage(int who, long[] usage);
+
+    public static double PeakRssMb()
+    {
+        try
+        {
+            var u = new long[18];   // struct rusage on 64-bit macOS and Linux: two timevals, then ru_maxrss
+            if (GetRusage(0, u) != 0) return double.NaN;
+            return OperatingSystem.IsMacOS() ? u[4] / 1048576.0 : u[4] / 1024.0;   // bytes on macOS, KB on Linux
+        }
+        catch (Exception) { return Process.GetCurrentProcess().PeakWorkingSet64 / 1048576.0; }
+    }
+
+    // What the process used: processor time, peak working set, the collector (read back by Run).
+    public static string ResourcesLine()
+    {
+        var p = Process.GetCurrentProcess();
+        p.Refresh();
+        return string.Create(Inv, $"resources: cpu {p.TotalProcessorTime.TotalSeconds:F1} s, peak working set {PeakRssMb():F0} MB, gc {(System.Runtime.GCSettings.IsServerGC ? "server" : "workstation")}, collections {GC.CollectionCount(0)}/{GC.CollectionCount(1)}/{GC.CollectionCount(2)}, pause {GC.GetTotalPauseDuration().TotalSeconds:F1} s");
+    }
+
+    static (double cpu, double peak) ParseResources(string log)
+    {
+        int i = log.LastIndexOf("resources: cpu ", StringComparison.Ordinal);
+        if (i < 0) return (double.NaN, double.NaN);
+        var parts = log[i..].Split(' ');
+        double cpu = double.TryParse(parts[2], NumberStyles.Float, Inv, out var c) ? c : double.NaN;
+        int k = Array.IndexOf(parts, "set");
+        double peak = k >= 0 && k + 1 < parts.Length && double.TryParse(parts[k + 1], NumberStyles.Float, Inv, out var m) ? m : double.NaN;
+        return (cpu, peak);
     }
 
     public static void Run(string[] args, ParamHook.Laws laws)
@@ -172,8 +210,13 @@ public static class Batch
         Console.WriteLine($"batch: {runs.Count} runs (seeds {string.Join(",", seeds)} × {reps} reps), {ticks} ticks, every {every}, {jobs} at a time → {dir}; laws {laws.Describe()}");
         string host = Environment.ProcessPath, dll = typeof(Batch).Assembly.Location;
         bool viaDotnet = Path.GetFileNameWithoutExtension(host) == "dotnet";
+        bool serverGc = Array.IndexOf(args, "--server-gc") >= 0;
+        string gcHeaps = Arg(args, "--gc-heaps", null);
+        if (serverGc) Console.WriteLine(Loc.T($"  server GC in every run{(gcHeaps != null ? $", {gcHeaps} heaps" : "")}", $"  серверный сборщик мусора в каждом прогоне{(gcHeaps != null ? $", куч: {gcHeaps}" : "")}"));
         var total = Stopwatch.StartNew();
         int done = 0, failed = 0;
+        double cpuTotal = 0, peakMax = 0;
+        object resLock = new();
         var gate = new SemaphoreSlim(jobs);
         var tasks = runs.Select(async run =>
         {
@@ -183,21 +226,30 @@ public static class Batch
                 string csv = Path.Combine(dir, "runs", $"s{run.seed}_r{run.rep}.csv"), logPath = Path.Combine(dir, "runs", $"s{run.seed}_r{run.rep}.log");
                 var psi = new ProcessStartInfo { FileName = host, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
                 if (viaDotnet) psi.ArgumentList.Add(dll);
+                if (serverGc)
+                {
+                    psi.Environment["DOTNET_gcServer"] = "1";
+                    if (gcHeaps != null) psi.Environment["DOTNET_GCHeapCount"] = int.Parse(gcHeaps).ToString("x");   // the runtime reads it as hex
+                }
                 foreach (var a in new[] { "--run-one", "--seed", run.seed.ToString(), "--rep", run.rep.ToString(), "--csv", csv }.Concat(pass)) psi.ArgumentList.Add(a);
                 var t0 = Stopwatch.StartNew();
                 using var p = Process.Start(psi);
                 var outText = p.StandardOutput.ReadToEndAsync();
                 var errText = p.StandardError.ReadToEndAsync();
                 await p.WaitForExitAsync();
-                File.WriteAllText(logPath, await outText + await errText);
+                string text = await outText + await errText;
+                File.WriteAllText(logPath, text);
+                var (cpu, peak) = ParseResources(text);
+                lock (resLock) { if (!double.IsNaN(cpu)) cpuTotal += cpu; if (!double.IsNaN(peak)) peakMax = Math.Max(peakMax, peak); }
                 int n = Interlocked.Increment(ref done);
                 if (p.ExitCode != 0) { Interlocked.Increment(ref failed); Console.WriteLine($"  [{n}/{runs.Count}] seed {run.seed} rep {run.rep} FAILED (exit {p.ExitCode}), see {logPath}"); }
-                else Console.WriteLine($"  [{n}/{runs.Count}] seed {run.seed} rep {run.rep} done in {t0.Elapsed.TotalSeconds:F0} s");
+                else Console.WriteLine($"  [{n}/{runs.Count}] seed {run.seed} rep {run.rep} done in {t0.Elapsed.TotalSeconds:F0} s"
+                    + (double.IsNaN(cpu) ? "" : string.Create(Inv, $" (cpu {cpu:F0} s, peak {peak:F0} MB)")));
             }
             finally { gate.Release(); }
         }).ToArray();
         Task.WaitAll(tasks);
-        Console.WriteLine($"batch finished in {total.Elapsed.TotalMinutes:F1} min, {failed} failed");
+        Console.WriteLine($"batch finished in {total.Elapsed.TotalMinutes:F1} min, {failed} failed" + string.Create(Inv, $"; cpu {cpuTotal:F0} s in all, largest peak working set {peakMax:F0} MB"));
 
         var rows = new List<string[]>();
         foreach (var run in runs)
