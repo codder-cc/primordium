@@ -112,7 +112,7 @@ dotnet run -c Release --project tools/bench -- --perf-baseline --ticks 2000 --re
 dotnet run -c Release --project tools/bench -- --seed 4 --audit --paste-region valley.region --at 100,40 --rotate 1   # paste a region file (made by the game or --copy-region x,y,w,h file)
 ```
 
-`--batch` runs as many processes as there are performance cores by default (macOS: `hw.perflevel0.physicalcpu`); every row of `runs.csv` carries the `machine` and the `code_version` (git commit). The evolution metrics also cover depth (`roofed_share`, `body_depth_*`, `mine_depth`), spatial heterogeneity over 32×32 regions (`pop_moran`, `diet_moran`, `diet_beta_rel`) and oscillation of diet shares against shuffled surrogates (`osc_*`, `hunt_*`; sample with `--every 100`–`250`).
+`--batch` runs as many processes as there are performance cores by default (macOS: `hw.perflevel0.physicalcpu`), each world single-threaded (`--threads 1`, i.e. `DOTNET_PROCESSOR_COUNT=1`; same trajectory); every row of `runs.csv` carries the `machine` and the `code_version` (git commit). The evolution metrics also cover depth (`roofed_share`, `body_depth_*`, `mine_depth`), spatial heterogeneity over 32×32 regions (`pop_moran`, `diet_moran`, `diet_beta_rel`) and oscillation of diet shares against shuffled surrogates (`osc_*`, `hunt_*`; sample with `--every 100`–`250`).
 
 Decide on laws with batches, not single runs: `--compare` reports medians with bootstrap intervals, Mann–Whitney, a sign test across seeds and Fisher's test for extinctions and booms. Add `--lang ru` for Russian output. The full flag reference is in [README.ru.md](README.ru.md) and [docs/SIMULATION.md](docs/SIMULATION.md).
 
