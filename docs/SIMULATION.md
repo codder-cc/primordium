@@ -16,6 +16,7 @@ Current as of 2026-10-08 (leaching of loose matter; wear of body matter, exact b
 | `World.Hand.cs` | Player brush: pour (one species or a library recipe), flood, dig, kill; accounting of matter brought in and taken out; one chronicle line per stroke |
 | `World.Region.cs`, `Region.cs` | Regions: copy a rectangle of columns over a range of levels (with bodies), paste it turned here or in another world, booked as the hand's; chemistry mapping; `.region` / `.region.json` files |
 | `World.Water.cs` | Bodies in water: height above the bottom, buoyancy, stroke cost by depth, light and food access by position |
+| `World.Waterways.cs` | Water as a fluid: currents and the drift of swimmers, water in caves (flooding, draining, following the rock), save block 12, `WaterCensus` |
 | `World.Geochem.cs` | Depth geochemistry: element biases from the seed, strata profile, veins, composition of volcanic output; mining counters by depth (observation only) |
 | `World.Resources.cs` | Resources: gas locality laws (`GasDiffK`) and gas under a roof (`CaveGasK`); probe of gas and loose-matter fluxes per 32×32 region and resource census (observation only) |
 | `World.Leach.cs` | Leaching: water carries loose matter below the top block by mobility (`LeachK`, off by default) — a sink that is still booked |
@@ -27,6 +28,7 @@ Current as of 2026-10-08 (leaching of loose matter; wear of body matter, exact b
 | `tools/bench/RegressionWear.cs` | Wear test (`--self-test`, separately `--self-test-wear`) |
 | `tools/bench/RegressionSky.cs`, `Sky.cs` | Sky test (`--self-test`, separately `--self-test-sun`), `--sun` tables |
 | `World.ClimateCycles.cs` | Non-stationary climate: axial tilt, eccentricity and precession, solar drift, hemispheric glaciation, mega-eruption ash, droughts; player catastrophes; water budget |
+| `tools/bench/RegressionWaterways.cs` | Currents, floating ice and cave water test (`--self-test`, separately `--self-test-water`) |
 | `tools/bench/RegressionClimate.cs`, `Climate.cs` | Cycles and catastrophes test (`--self-test`, separately `--self-test-climate`), per-seed schedule `--climate` |
 | `src/Ui/CatastropheWindow.cs` | "Catastrophes" window (F11) |
 | `World.Cave.cs` | Cave and depth climate: roof above a body, shelter, annual mean temperature, body heat in a cavity; census of underground bodies (observation only) |

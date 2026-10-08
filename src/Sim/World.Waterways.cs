@@ -31,6 +31,7 @@ public sealed partial class World
     public readonly float[] CurX = new float[N], CurY = new float[N];   // the water's speed, cells a tick (east, south)
     bool currentsOn = true;                                              // whether CurX/CurY may hold anything (cleared once the law is off)
     public long Drifted;                                                 // steps bodies were carried by a current (diagnostics)
+    public double CaveFlowMs;                                            // time spent in CaveFlow (diagnostics, not saved)
     const float FlowShare = 0.2f;                                        // of the difference in level that runs through a face per env step (World.Out)
 
     // ---- currents ----
@@ -132,6 +133,13 @@ public sealed partial class World
 
     // Between ticks, after the surface water ran (World.Hydro).
     void CaveFlow()
+    {
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        CaveFlowStep();
+        CaveFlowMs += System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
+    }
+
+    void CaveFlowStep()
     {
         if (!CaveWaterLaw)
         {

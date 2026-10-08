@@ -277,6 +277,8 @@ for (int t = 1; t <= ticks; t++)
         int gassy = wet.Count(a => a.Inv[w.Chem.Gas] > 0), photo = wet.Count(a => World.Diet(a) == World.DietPlant);
         Console.WriteLine($"   water: {wetCells * 100.0 / World.N:F0}% of cells, {c.InWater} bodies in it ({c.Afloat} afloat, {c.AtSurface} at the surface, {photo} plants, {gassy} hold gas)" +
                           (wet.Count > 0 ? $", density {wet.Average(a => a.Density):F2}, depth under surface {wet.Average(a => w.Below(a, a.Y * World.W + a.X)):F1}" : ""));
+        var ww = w.WaterCensus();
+        Console.WriteLine($"   waterways: current mean {ww[0]:E1} max {ww[1]:F3} cells/tick, drifted {ww[2]:F0}, afloat {ww[3]:P1}; caves {ww[4]:F1} water in {ww[5]:F0} runs, {ww[6]:F0} bodies in it; sea under ice {ww[7]:P1}, {ww[8]:F0} bodies under ice; cave flow {w.CaveFlowMs:F1} ms in all");
     }
     Array.Copy(w.Mined, prevMined, 6);
     Array.Copy(w.MinedCat, prevCat, 6);
