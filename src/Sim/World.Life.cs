@@ -86,6 +86,7 @@ public sealed partial class World
         if (a.Target?.Dead == true) a.Target = null;
         if (a.LinkWant?.Dead == true) a.LinkWant = null;
         double e0 = a.Energy;
+        float kids0 = a.LifeKids, spent0 = a.LifeUpkeep + a.LifeHarm + a.LifeSpill;   // the energy probe (observation)
         a.TickPhoto = a.TickChem = a.TickMine = a.TickAttack = a.TickHeat = 0;
         long restStart = ProfileOps ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         Exec(a, cell);
@@ -213,6 +214,7 @@ public sealed partial class World
         }
         // Thermal ageing of everything it holds (World.Wear; draws random numbers only with the law on).
         if (WearLaw) Wear(a, cell);
+        if (EnergyProbe != null) EpLive(a, e0, kids0, spent0);
 
         if (a.Energy <= 0)
         {
@@ -321,6 +323,7 @@ public sealed partial class World
         if (a.Dead) return;
         cell = a.Y * W + a.X;   // where it actually is: its own deeds may have pushed it elsewhere this tick
         if (burialVoxel < 0 && InCave(a)) burialVoxel = cell * Z + Math.Max(1, a.Z - 1);
+        EpDeath(a);   // the energy probe (observation)
         Qty[] buried = burialVoxel >= 0 ? BurialAt(burialVoxel).Matter : null;
         for (int s = 0; s < Chemistry.S; s++)
         {

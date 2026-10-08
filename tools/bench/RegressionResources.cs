@@ -72,6 +72,18 @@ public sealed partial class World
         for (int t = 0; t < 300; t++) { w1.Step(); w2.Step(); }
         Require(w1.StateHash() == w2.StateHash(), "the resource probe changed the world");
         Require(w2.ResProbe.Ticks == 300 && w2.ResProbe.SpeciesIntake.Sum() > 0, "the probe booked nothing");
+        // The energy-economy probe and the audit's read-outs (World.EnergyProbe, --energy-audit) watch only too.
+        var w4 = new World(3, 600, true);
+        w4.EnergyProbe = new EnergyEconomyProbe(w4);
+        var downhill = EnergyEconomyProbe.Downhill(w4.Chem);
+        for (int t = 0; t < 300; t++)
+        {
+            w4.Step();
+            if (t % 100 == 99) { _ = w4.GroundLines(w4.Ground(downhill)).ToList(); _ = w4.BodyLines(downhill).ToList(); }
+        }
+        Require(w1.StateHash() == w4.StateHash(), "the energy probe changed the world");
+        var booked = w4.EnergyProbe.Sum();
+        Require(booked[EnergyEconomyProbe.IntakeCalls] > 0 && booked[EnergyEconomyProbe.DietBase] + booked[EnergyEconomyProbe.DietBase + EnergyEconomyProbe.DietKeys] > 0, "the energy probe booked nothing");
         var w3 = new World(2, 800, true) { TrackHeat = true };
         var atoms0 = w3.ElementBudget(); var e0 = w3.AuditEnergy();
         string note = "";

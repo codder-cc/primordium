@@ -567,7 +567,7 @@ public sealed partial class World
             if (weathering[i])
             {
                 int molecule = TakeVoxelMolecule(i * Z + Height[i] - 1);
-                if (molecule >= 0) C[molecule][i] += 1;
+                if (molecule >= 0) { C[molecule][i] += 1; EpMol(EnergyEconomyProbe.WeatherMol, molecule); }
             }
         }
         foreach (var v in Vents)

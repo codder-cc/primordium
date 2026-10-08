@@ -307,6 +307,7 @@ public sealed partial class World
         }
         if (done == 0) return;
         if (de != bond) Flows[FScale] += done * ((double)de - bond);   // P.EnergyK ≠ 1 (see World.Energy)
+        if (EnergyProbe != null) { EpAdd(de > 0 ? EnergyEconomyProbe.BindExoN : EnergyEconomyProbe.BindUpN, done); EpAdd(de > 0 ? EnergyEconomyProbe.BindExoE : EnergyEconomyProbe.BindUpE, (double)done * de); }
         a.NBind += done;
         if (slot >= 0) ChronReaction(a, Enzyme.Bind, s1, s2);
         Worked(a, slot, ip);
@@ -331,6 +332,7 @@ public sealed partial class World
         }
         if (done == 0) return;
         if (de != bond) Flows[FScale] += done * ((double)de - bond);
+        if (EnergyProbe != null) { EpAdd(de > 0 ? EnergyEconomyProbe.SplitExoN : EnergyEconomyProbe.SplitUpN, done); EpAdd(de > 0 ? EnergyEconomyProbe.SplitExoE : EnergyEconomyProbe.SplitUpE, (double)done * de); }
         a.NSplit += done;
         if (slot >= 0) ChronReaction(a, Enzyme.Split, s, 0);
         Worked(a, slot, ip);
@@ -371,6 +373,7 @@ public sealed partial class World
             a.TickPhoto += gain;
             Flows[FPhoto] += gain;
             if (PredProbe != null) PredationProbe.Add(ref PredProbe.Photo, gain);
+            if (EnergyProbe != null) { EpAdd(EnergyEconomyProbe.PhotoCaught, 1); EpAdd(EnergyEconomyProbe.PhotoGain, gain); }
             caught++;
             if (damage > 0) PhotoDamageAfter(a, p, damage);
         }
@@ -398,6 +401,7 @@ public sealed partial class World
             a.GainPhoto += gain;
             a.TickPhoto += gain;
             Flows[FPhoto] += gain;
+            if (EnergyProbe != null) { EpAdd(EnergyEconomyProbe.PhotoCaught, 1); EpAdd(EnergyEconomyProbe.PhotoGain, gain); }
             caught++;
             if (damage > 0) PhotoDamageAfter(a, p, damage);
         }
@@ -477,6 +481,7 @@ public sealed partial class World
         // Taking in costs more the more crammed the body already is.
         float packing = a.Packing;
         Dissipate(a, P.CostIntake * (1 + packing * packing));
+        if (EnergyProbe != null) { EpAdd(EnergyEconomyProbe.IntakeCalls, 1); EpAdd(EnergyEconomyProbe.IntakeCost, P.CostIntake * (1 + packing * packing)); }
         if (a.Cells > 1) cell = RichestFor(a, s);
         Qty m = Qty.Min(1 - a.Pend[s], LooseAmount(a, cell, s));   // the same amount leaves the floor and enters
         if (m <= 0) return;
@@ -490,6 +495,7 @@ public sealed partial class World
         a.Mass -= Chem.Mass[s];
         a.Volume -= Chem.BodyVolume[s];
         AddMol(a, s);
+        EpMol(EnergyEconomyProbe.IntakeMol, s);
         FoodProbe?.Env(a);
         PredProbe?.EnvGain(Chem.E[s], cell);
         a.NIntake++;
@@ -505,7 +511,13 @@ public sealed partial class World
         float total = 0;
         var fb = FloorBurial(a, cell);
         for (int s = 0; s < Chemistry.S; s++) total += Loose(a, cell, fb, s);
-        if (total < 0.5f) { Dissipate(a, P.CostIntake * (1 + a.Packing * a.Packing)); SoakAggregate(a, cell); return; }
+        if (total < 0.5f)
+        {
+            Dissipate(a, P.CostIntake * (1 + a.Packing * a.Packing));
+            if (EnergyProbe != null) { EpAdd(EnergyEconomyProbe.SoakCalls, 1); EpAdd(EnergyEconomyProbe.SoakCost, P.CostIntake * (1 + a.Packing * a.Packing)); }
+            SoakAggregate(a, cell);
+            return;
+        }
         double r = Rng.NextDouble() * total;
         int q = 0;
         for (; q < Chemistry.S - 1 && r >= Loose(a, cell, fb, q); q++) r -= Loose(a, cell, fb, q);
@@ -522,6 +534,7 @@ public sealed partial class World
         if (barrier > 0.5f || !TakeBite(v, barrier, P.CostIntake)) return;   // a gentle soak: little work into the face
         int s = TakeVoxelMolecule(v);
         AddMol(a, s);
+        EpMol(EnergyEconomyProbe.SoakMol, s);
         NoteMined(s, Height0[cell] - h);
         a.TickMine += Chem.E[s];
         a.GainMine += Chem.E[s];
@@ -541,6 +554,7 @@ public sealed partial class World
         if (a.Inv[s] == 0) return;
         RemoveMol(a, s);
         if (ResProbe != null) ResExpel(s);
+        EpMol(EnergyEconomyProbe.ExpelMol, s);
         // It lands on the floor next door it can reach (level, a step up, or down into a hollow),
         // never inside a wall or in the air of a cave; against a wall it drops at the body's feet.
         int n = nb[cell * 4 + d], level = n == cell ? -1 : WalkLevel(n, a.Z);
@@ -587,6 +601,7 @@ public sealed partial class World
         if (power <= 0) return;
         var t = Partner(a, cell);
         Dissipate(a, P.CostSocial);
+        if (EnergyProbe != null) { EpAdd(EnergyEconomyProbe.AttackCalls, 1); EpAdd(EnergyEconomyProbe.AttackCost, P.CostSocial + (t != null ? power : 0)); }
         if (t == null) return;
 
         int tc = t.Y * W + t.X;
@@ -604,11 +619,17 @@ public sealed partial class World
             int s = RandomMol(t);
             RemoveMol(t, s);
             AddMol(a, s);
+            EpMol(EnergyEconomyProbe.TornMol, s);
             food?.Prey(a, t, Chem.E[s]);
             pred?.Tear(a, t, s, Chem);
             torn++;
         }
-        if (torn > 0) CarryStore(t, a, torn);
+        if (torn > 0)
+        {
+            double before = EnergyProbe != null ? a.Energy : 0;
+            CarryStore(t, a, torn);
+            if (EnergyProbe != null) EpAdd(EnergyEconomyProbe.TornStore, a.Energy - before);
+        }
         float broke = torn > 0 ? Math.Min(power, torn * tear) : 0;   // the last molecule may come out on less than its full work
         Dissipate(a, broke);
         StrikeHeat(a, t, power - broke);
@@ -621,6 +642,7 @@ public sealed partial class World
         if (t.InvTotal < P.MinBody || t.Energy <= 0)
         {
             pred?.Kill(a, t, tc, Chem);
+            EpKilled(t);
             Die(t, tc, CauseKilled);
             food?.Kill(a, t);
             a.NKills++;
@@ -642,13 +664,17 @@ public sealed partial class World
         float work = TearWork(BodyBarrier(a, t, out _)) * P.BodyHold;
         if (a.Energy < work + 1) return;   // it cannot pull that hard
         Dissipate(a, work);
+        if (EnergyProbe != null) { EpAdd(EnergyEconomyProbe.TakeCalls, 1); EpAdd(EnergyEconomyProbe.TakeCost, P.CostSocial + work); }
         var pred = PredProbe;   // observation only
         bool got = a.Links.Contains(t) || Rng.NextDouble() <= (a.Mass + 1) / (a.Mass + t.Mass + 2);
         pred?.Take(a, t, s, P.CostSocial + work, got, Chem);
         if (!got) return;
         RemoveMol(t, s);
         AddMol(a, s);
+        EpMol(EnergyEconomyProbe.TakenMol, s);
+        double had = EnergyProbe != null ? a.Energy : 0;
         CarryStore(t, a, 1);
+        if (EnergyProbe != null) EpAdd(EnergyEconomyProbe.TakenStore, a.Energy - had);
         FoodProbe?.Prey(a, t, Chem.E[s]);
         a.NTakes++;
         if (BitOperations.IsPow2(a.NTakes)) BioNote(a, Tick, BioKind.Theft, t.Id, a.NTakes);
@@ -803,7 +829,12 @@ public sealed partial class World
         byte m = z >= 0 ? Mat[v] : Chemistry.Air;
         int tier = Chem.MatTier[m];
         // Out of reach: a neighbouring floor more than one step down (as far as a body could walk).
-        if (z < 0 || z < at - 2 || (!OnFloor(a) && z < at - 1) || Units[v] == 0 || tier > 4) { Dissipate(a, P.CostMine); return; }
+        if (z < 0 || z < at - 2 || (!OnFloor(a) && z < at - 1) || Units[v] == 0 || tier > 4)
+        {
+            Dissipate(a, P.CostMine);
+            if (EnergyProbe != null) { EpAdd(EnergyEconomyProbe.MineTries, 1); EpAdd(EnergyEconomyProbe.MineCost, P.CostMine); }
+            return;
+        }
         float cat = Catalysis(a, m, out int slot);
         // The effort of a try grows with how hard and high-grade the rock is; solid molecules in the
         // body (teeth, a shell) do part of it, so the same effort costs the body less energy.
@@ -812,11 +843,13 @@ public sealed partial class World
         if (a.Energy < work + 1) return;
         Dissipate(a, work);
         a.LifeMineCost += work;
+        if (EnergyProbe != null) { EpAdd(EnergyEconomyProbe.MineTries, 1); EpAdd(EnergyEconomyProbe.MineCost, work); }
         // The work goes into the face and stays there; a molecule comes out once enough has gathered
         // (from this body, others gnawing here, and time).
         if (!TakeBite(v, VoxelBarrier(v) * (1 - cat), effort)) return;
         int s = TakeVoxelMolecule(v);
         AddMol(a, s);
+        EpMol(EnergyEconomyProbe.MineMol, s);
         NoteMined(s, Height0[c] - 1 - z);
         a.TickMine += Chem.E[s];
         a.GainMine += Chem.E[s];
@@ -870,7 +903,7 @@ public sealed partial class World
         float cost = P.CostDig * Chem.MatHard[m] / (1 + 0.25f * a.Solids) + VoxelMass(v) * P.Gravity * (1 + lift);
         if (a.Energy < cost + 1) return;
         Dissipate(a, cost);
-        
+        if (EnergyProbe != null) { EpAdd(EnergyEconomyProbe.DigCalls, 1); EpAdd(EnergyEconomyProbe.DigCost, cost); }
         int w = to * Z + Height[to];
         impactSource = 3;
         DropVoxel(v, w);

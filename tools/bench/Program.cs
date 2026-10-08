@@ -14,7 +14,8 @@ using Primordium;
 //   [--chronicle]: print the world's chronicle as events happen (World.Chronicle).
 //   [--lang ru]: text from the game (law descriptions, chronicle) in Russian; English by default.
 //   Observation and speed modes: --invade [design.json] (Geochem.cs), --export-designs dir, --tournament (Tournament.cs),
-//   --food-chain (FoodChain.cs), --predation and --osc runs.csv (Predation.cs), --perf-baseline [--make] (PerfBaseline.cs).
+//   --food-chain (FoodChain.cs), --predation and --osc runs.csv (Predation.cs), --perf-baseline [--make] (PerfBaseline.cs),
+//   --energy-audit (EnergyAudit.cs).
 //   Population templates: --plant-population file.json [--at x,y] [--local] [--local-energy], --copy-population out.json (PopulationTool.cs).
 //   Regions before the run: --copy-region x,y,w,h file, --paste-region file --at x,y [--rotate k] [--paste-mode above] [--no-bodies] [--dz n] (RegionBench.cs).
 {
@@ -78,7 +79,8 @@ if (Array.IndexOf(args, "--invade") >= 0) { World.InvasionProbe(args); return; }
 }
 if (Array.IndexOf(args, "--tournament") >= 0) { World.Tournament(args); return; }   // ancestors against moderns in the same world (Tournament.cs)
 if (Array.IndexOf(args, "--food-chain") >= 0) { World.FoodChainReport(args); return; }   // who eats whom, trophic levels (FoodChain.cs)
-if (Array.IndexOf(args, "--predation") >= 0) { World.PredationReport(args); return; }   // predation audit, defence, parasites, territory (Predation.cs)
+if (Array.IndexOf(args, "--predation") >= 0) { World.PredationReport(args); return; }
+if (Array.IndexOf(args, "--energy-audit") >= 0) { World.EnergyAuditReport(args); return; }   // the energy economy, observed (EnergyAudit.cs, docs/ENERGY-AUDIT.md)   // predation audit, defence, parasites, territory (Predation.cs)
 if (Array.IndexOf(args, "--osc") >= 0) { Oscillation.FromRuns(args); return; }   // Lotka–Volterra test on a batch's runs.csv (Predation.cs)
 if (Array.IndexOf(args, "--perf-baseline") >= 0) { PerfBaseline.Run(args); return; }   // fixed boom save, ms/tick by stage (PerfBaseline.cs)
 if (Array.IndexOf(args, "--sun") >= 0) { World.SunReport(args); return; }

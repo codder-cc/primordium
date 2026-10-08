@@ -506,6 +506,7 @@ public sealed partial class World
             int n = Math.Min((int)(C[s][c] * share), ushort.MaxValue);   // what is not pressed in stays loose
             if (n <= 0) continue;
             C[s][c] -= n; add[s] = (ushort)n; moved += n;
+            EpMol(EnergyEconomyProbe.SettleMol, s, n);   // the energy probe (observation)
         }
         if (moved == 0) return;
         LooseVolume[c] = Math.Max(0, LooseVolume[c] - (volume - limit));
