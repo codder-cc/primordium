@@ -25,7 +25,7 @@ Every world is grown from a seed: its own artificial elements, its own molecules
 - 🌦 **Living climate and sky.** Seasons, day length by latitude, Milankovitch-style cycles (obliquity, precession, eccentricity), ice ages, eclipses, solar flares, volcanoes, cave microclimates.
 - 📈 **Open-endedness metrics.** Bedau-style neutral shadow, novelty, complexity, ecology, tempo and phylogeny tracks, with an honest "progressing / stagnating / regressing" hint.
 - 📜 **A chronicle of the world.** First proteins, first swimmers, the first predator, speciation and extinction, plus fossils you can resurrect.
-- 🛠 **Play god, carefully.** Tune the 205 world laws live, design your own creatures in genome assembly, trigger catastrophes, save and load. Nothing appears for free: whatever you add is booked in the ledger.
+- 🛠 **Play god, carefully.** Tune the 210 world laws live, design your own creatures in genome assembly, trigger catastrophes, save and load. Nothing appears for free: whatever you add is booked in the ledger.
 - ⚙️ **Deterministic and fast.** Multithreaded checkerboard stepping with a reproducible trajectory: the same seed and laws give the same world on any run. A headless bench runs long experiments and statistical comparisons.
 
 ## Screenshots
@@ -95,7 +95,7 @@ The simulation core (`src/Sim`) does not depend on Godot. `tools/bench` runs it 
 ```sh
 dotnet run -c Release --project tools/bench -- --self-test                 # conservation, determinism, save/load, laws
 dotnet run -c Release --project tools/bench -- --seed 1 --ticks 10000 --every 1000 --audit
-dotnet run -c Release --project tools/bench -- --list-params               # all 205 world laws
+dotnet run -c Release --project tools/bench -- --list-params               # all 210 world laws
 dotnet run -c Release --project tools/bench -- --batch --seeds 1-16 --reps 3 --ticks 6000 --out runs/base
 dotnet run -c Release --project tools/bench -- --compare runs/base/runs.csv runs/try/runs.csv
 dotnet run -c Release --project tools/bench -- --batch ... --resume                  # after a crash: only the unfinished runs
