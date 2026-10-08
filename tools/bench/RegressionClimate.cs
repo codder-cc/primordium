@@ -82,7 +82,7 @@ public sealed partial class World
         Require(iw.WaterHand > 1000 && Math.Abs(w2 - w0 - iw.WaterHand) < 2e-5 * w2, $"flood not booked: total {w2:F1}, start {w0:F1}, from outside {iw.WaterHand:F1}");
         // The ice age ends: the glaciation retreats with the forcing gone and the law's summers (the cycles start neutral: above the threshold).
         for (int t = 0; t < 3 * P.DayLen && iw.IceAgeNow; t++) iw.Step();
-        Require(!iw.IceAgeNow && iw.Chronicle.All().Count(e => e.Type == EvType.Climate && e.Text.Contains("ледниковье")) == 2, "the ice age did not end in the chronicle");
+        Require(!iw.IceAgeNow && iw.Chronicle.All().Count(e => e.Type == EvType.Climate && Ru(e.Text).Contains("ледниковье")) == 2, "the ice age did not end in the chronicle");
         ParamRegistry.ResetDefaults();
 
         // A mega-eruption under the balances.
@@ -104,7 +104,7 @@ public sealed partial class World
         float sun1 = m.Sun.Average(), temp1 = m.MeanTemp();
         Require(vent > 0 && m.VeilTransMean < 0.8f && m.VolcanicWinterNow, $"the eruption: vent input {vent:F0}, light through the ash {m.VeilTransMean:P0}");
         Require(temp1 < temp0 - 2, $"the volcanic winter did not cool: {temp0:F1} → {temp1:F1} °C");
-        Require(m.Chronicle.Since(ev0 - 1).Any(x => x.Text.Contains("мегаизвержение")) && m.Chronicle.Since(ev0 - 1).Any(x => x.Text.Contains("вулканическая зима")), "the eruption or the winter is not in the chronicle");
+        Require(m.Chronicle.Since(ev0 - 1).Any(x => Ru(x.Text).Contains("мегаизвержение")) && m.Chronicle.Since(ev0 - 1).Any(x => Ru(x.Text).Contains("вулканическая зима")), "the eruption or the winter is not in the chronicle");
         string eruption = $"mega-eruption: vent input {vent:F0}, after 1.25 days light through the ash {m.VeilTransMean:P0}, sun at the surface {sun0:F3} → {sun1:F3}, {temp0:F1} → {temp1:F1} °C, atoms exact, {energy}";
         ParamRegistry.ResetDefaults();
 
@@ -129,7 +129,7 @@ public sealed partial class World
             a.Step();
         }
         Require(a.CatastropheCount == (poison ? 6 : 5) && a.ParamLog.Count(p => p.Name.StartsWith("catastrophe ")) == a.CatastropheCount, "catastrophes not logged");
-        Require(a.Chronicle.All().Count(e => e.Type == EvType.Player && e.Text.StartsWith("катастрофа игрока")) == a.CatastropheCount, "catastrophes not chronicled");
+        Require(a.Chronicle.All().Count(e => e.Type == EvType.Player && Ru(e.Text).StartsWith("катастрофа игрока")) == a.CatastropheCount, "catastrophes not chronicled");
         string path = Path.Combine(TestDir(), "climate.sav");
         a.Save(path, "climate self-test");
         ParamRegistry.ResetDefaults();

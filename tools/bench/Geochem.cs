@@ -43,6 +43,25 @@ public sealed partial class World
         return string.Join(" ", at.Select(x => t > 0 ? $"{100 * x / t,5:F1}" : "    -"));
     }
 
+    // An example design by its name in either language (names may be localized; the simulation does not
+    // depend on them).
+    static CreatureDesign FindExample(string name)
+    {
+        bool en = Loc.En;
+        try
+        {
+            foreach (var lang in new[] { Loc.Code, "ru", "en" })
+            {
+                Loc.Set(lang);
+                var all = CreatureExamples.All;
+                int i = Enumerable.Range(0, all.Count).FirstOrDefault(k => string.Equals(all[k].Name, name, StringComparison.OrdinalIgnoreCase), -1);
+                if (i >= 0) { Loc.Set(en ? "en" : "ru"); return CreatureExamples.All[i]; }
+            }
+        }
+        finally { Loc.Set(en ? "en" : "ru"); }
+        throw new ArgumentException($"--design: no example design '{name}'");
+    }
+
     // --invade [--seeds 1-6] [--at 2000] [--ticks 8000] [--every 2000] [--count 5] [--spots 6] [--pop N] [--noabio]
     //   [--design Крот] (laws as usual, e.g. --set GeoProfile=0 for the other arm).
     // An invasion probe: at tick `at` the example design is planted (matter and energy brought from outside,
@@ -57,7 +76,8 @@ public sealed partial class World
         int count = int.Parse(Arg("--count", "5")), spots = int.Parse(Arg("--spots", "6")), pop = int.Parse(Arg("--pop", P.InitialPop.ToString()));
         bool abio = Array.IndexOf(args, "--noabio") < 0;
         string name = Arg("--design", "Крот");
-        var design = CreatureExamples.All.First(d => d.Name == name);
+        var design = FindExample(name);
+        name = design.Name;
         Console.WriteLine($"invasion probe: «{name}», {spots}×{count} bodies at tick {at}, profile {(P.GeoProfile != 0 ? "on" : "off")}, {ticks} ticks");
         Console.WriteLine("seed  tick  pop    probe  depth_mean depth_max roof1  deep_share  mined_depth deep_mined");
         foreach (int seed in seeds)

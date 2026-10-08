@@ -107,7 +107,7 @@ public static class Batch
             {
                 foreach (var e in w.Chronicle.Since(evSeen))
                     if (e.Type is EvType.Climate or EvType.Player or EvType.Speciation or EvType.Extinction or EvType.NewDominant or EvType.NewDiet)
-                        ev.WriteLine(string.Join(",", e.Tick.ToString(), e.Type.ToString(), F(e.Value), e.Important ? "1" : "0", "\"" + e.Text.Replace("\"", "'") + "\""));
+                        ev.WriteLine(string.Join(",", e.Tick.ToString(), e.Type.ToString(), F(e.Value), e.Important ? "1" : "0", "\"" + Loc.Show(e.Text).Replace("\"", "'") + "\""));
                 evSeen = w.Chronicle.NextSeq - 1;
             }
             if (t % every != 0 && t != ticks) continue;

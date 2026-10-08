@@ -38,7 +38,8 @@ public sealed partial class World
         {
             Require(p.Min <= p.Default && p.Default <= p.Max, $"law {p.Name}: default {p.Default} outside [{p.Min}, {p.Max}]");
             Require(ParamRegistry.Normalize(p, p.Default) == p.Default && p.Step > 0, $"law {p.Name}: default not representable or no step");
-            Require(!string.IsNullOrWhiteSpace(p.Description) && !string.IsNullOrWhiteSpace(p.Group), $"law {p.Name}: no description");
+            Require(!string.IsNullOrWhiteSpace(p.DescriptionEn) && !string.IsNullOrWhiteSpace(p.DescriptionRu) && !string.IsNullOrWhiteSpace(p.Group) && !string.IsNullOrWhiteSpace(p.GroupTitle),
+                $"law {p.Name}: no description");
         }
         int changes = 0;
         void Count(ParamInfo p, double was, double now) => changes++;

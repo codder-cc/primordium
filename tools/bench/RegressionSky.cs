@@ -103,11 +103,11 @@ public sealed partial class World
         float bright = e2.Sun[cc];
         ParamRegistry.ResetDefaults();
         Require(bright > 0.05f && dark < (P.EclipseDepth + 0.01f) * bright, $"no shadow at the predicted centre: {dark:F4} vs {bright:F4}");
-        Require(e1.EclipseNow && e1.Chronicle.Since(events - 1).Any(x => x.Type == EvType.Climate && x.Text.Contains("затмение")), "the eclipse start is not in the chronicle");
+        Require(e1.EclipseNow && e1.Chronicle.Since(events - 1).Any(x => x.Type == EvType.Climate && Ru(x.Text).Contains("затмение")), "the eclipse start is not in the chronicle");
         long end = t1;
         while (e1.EclipseAt(end, out _, out _)) end += P.LightEvery;
         e1.Tick = end - 1; e1.Step();
-        Require(!e1.EclipseNow && e1.EclipseCount == 1 && e1.Chronicle.Since(events - 1).Count(x => x.Text.Contains("затмение")) == 2, "the eclipse end is not in the chronicle");
+        Require(!e1.EclipseNow && e1.EclipseCount == 1 && e1.Chronicle.Since(events - 1).Count(x => Ru(x.Text).Contains("затмение")) == 2, "the eclipse end is not in the chronicle");
         string eclipse = $"eclipse predicted at tick {next} (moon {e1.MoonPeriodDays:F1} d), lasts {end - next} ticks, centre light {dark / bright:P1}";
 
         // Flares on bodies: noon over x = 128.

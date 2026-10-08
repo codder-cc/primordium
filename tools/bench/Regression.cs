@@ -8,6 +8,16 @@ public sealed partial class World
 {
     static void Require(bool ok, string message) { if (!ok) throw new Exception(message); }
 
+    // The Russian side of a kept text (Loc.Both; a plain string as it is): tests match the Russian
+    // wording, whatever the language of the run.
+    static string Ru(string text)
+    {
+        bool en = Loc.En;
+        Loc.Set("ru");
+        try { return Loc.Show(text); }
+        finally { Loc.Set(en ? "en" : "ru"); }
+    }
+
     // Every living body is in exactly its own cell's list, lists end, and counts match.
     public void CheckCellLists()
     {

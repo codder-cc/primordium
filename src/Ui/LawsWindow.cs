@@ -17,7 +17,7 @@ public static class Presets
         {
             string name = Path.GetFileNameWithoutExtension(path);
             try { var p = ParamRegistry.LoadPreset(path); if (!string.IsNullOrWhiteSpace(p.Name)) name = p.Name; }
-            catch { name += " (не читается)"; }
+            catch { name += Loc.T(" (unreadable)", " (не читается)"); }
             list.Add((name, path));
         }
         return list;
@@ -39,27 +39,31 @@ public partial class LawsWindow : UiWindow
     LineEdit presetName;
     List<(string name, string path)> presetList = new();
 
-    public LawsWindow() : base("laws", "Законы мира", new Vector2(780, 600))
+    public LawsWindow() : base("laws", Loc.T("World laws", "Законы мира"), new Vector2(780, 600))
     {
         MinSize = new Vector2(560, 360);
-        Body.AddChild(UiKit.Text("Меняются между тиками и записываются в историю законов мира (она попадает в сохранение). " +
-                                 "Ползунок применяется, когда его отпускаешь; число — по Enter. Законы с пометкой «только для нового мира» " +
-                                 "задаются в окне «Новый мир» (F4).", 12, UiKit.Dim, null, true));
+        Body.AddChild(UiKit.Text(Loc.T("Laws change between ticks and are recorded in the world's law history (it goes into the save). " +
+                                       "A slider applies when you let go of it; a number on Enter. Laws marked \"new world only\" " +
+                                       "are set in the New world window (F4).",
+                                       "Меняются между тиками и записываются в историю законов мира (она попадает в сохранение). " +
+                                       "Ползунок применяется, когда его отпускаешь; число — по Enter. Законы с пометкой «только для нового мира» " +
+                                       "задаются в окне «Новый мир» (F4)."), 12, UiKit.Dim, null, true));
         editor = new ParamEditor(new LiveParams(() => Main.Sim));
         Body.AddChild(editor);
         Body.AddChild(new HSeparator());
 
         presets = UiKit.Options();
         presets.CustomMinimumSize = new Vector2(180, 0);
-        presets.TooltipText = "наборы законов из user://presets";
-        var apply = UiKit.Button("Применить набор", ApplyPreset, "заменить законы мира набором (не названные в нём — по умолчанию)");
-        var del = new ConfirmButton("Удалить", DeletePreset, "удалить файл набора");
-        var reset = new ConfirmButton("Всё по умолчанию", () => Main.Sim.ResetParams(), "вернуть все законы к умолчаниям");
-        Body.AddChild(UiKit.Row(6, UiKit.Text("Наборы:", 13, UiKit.Dim), presets, apply, del, UiKit.Spacer(), reset));
-        presetName = UiKit.Edit("", "имя нового набора", 220);
+        presets.TooltipText = Loc.T("law presets from user://presets", "наборы законов из user://presets");
+        var apply = UiKit.Button(Loc.T("Apply preset", "Применить набор"), ApplyPreset,
+            Loc.T("replace the world's laws with the preset (laws it does not name go to defaults)", "заменить законы мира набором (не названные в нём — по умолчанию)"));
+        var del = new ConfirmButton(Loc.T("Delete", "Удалить"), DeletePreset, Loc.T("delete the preset file", "удалить файл набора"));
+        var reset = new ConfirmButton(Loc.T("All defaults", "Всё по умолчанию"), () => Main.Sim.ResetParams(), Loc.T("reset every law to its default", "вернуть все законы к умолчаниям"));
+        Body.AddChild(UiKit.Row(6, UiKit.Text(Loc.T("Presets:", "Наборы:"), 13, UiKit.Dim), presets, apply, del, UiKit.Spacer(), reset));
+        presetName = UiKit.Edit("", Loc.T("new preset name", "имя нового набора"), 220);
         presetName.TextSubmitted += _ => SavePreset();
-        var openDir = UiKit.Button("Папка", () => OS.ShellOpen(UiManager.PresetsDir), "открыть папку наборов");
-        Body.AddChild(UiKit.Row(6, UiKit.Text("Сохранить текущие законы как", 13, UiKit.Dim), presetName, UiKit.Button("Сохранить", SavePreset), UiKit.Spacer(), openDir));
+        var openDir = UiKit.Button(Loc.T("Folder", "Папка"), () => OS.ShellOpen(UiManager.PresetsDir), Loc.T("open the presets folder", "открыть папку наборов"));
+        Body.AddChild(UiKit.Row(6, UiKit.Text(Loc.T("Save current laws as", "Сохранить текущие законы как"), 13, UiKit.Dim), presetName, UiKit.Button(Loc.T("Save", "Сохранить"), SavePreset), UiKit.Spacer(), openDir));
     }
 
     protected override void OnOpen() => ListPresets();
@@ -68,7 +72,7 @@ public partial class LawsWindow : UiWindow
     {
         presetList = Presets.List();
         presets.Clear();
-        presets.AddItem("по умолчанию");
+        presets.AddItem(Loc.T("defaults", "по умолчанию"));
         foreach (var (name, _) in presetList) presets.AddItem(name);
         presets.Selected = 0;
     }
@@ -79,33 +83,33 @@ public partial class LawsWindow : UiWindow
         if (k <= 0) { Main.Sim.ResetParams(); return; }
         var (name, path) = presetList[k - 1];
         try { Main.Sim.ApplyPreset(ParamRegistry.LoadPreset(path)); }
-        catch (Exception e) { Ui.Toast($"не прочитать набор «{name}»: {e.Message}", true); }
+        catch (Exception e) { Ui.Toast(Loc.T($"cannot read preset \"{name}\": {e.Message}", $"не прочитать набор «{name}»: {e.Message}"), true); }
     }
 
     void DeletePreset()
     {
         int k = presets.Selected;
-        if (k <= 0) { Ui.Toast("встроенный набор не удаляется", true); return; }
-        try { File.Delete(presetList[k - 1].path); Ui.Toast($"набор «{presetList[k - 1].name}» удалён"); }
-        catch (Exception e) { Ui.Toast("не удалить: " + e.Message, true); }
+        if (k <= 0) { Ui.Toast(Loc.T("the built-in preset cannot be deleted", "встроенный набор не удаляется"), true); return; }
+        try { File.Delete(presetList[k - 1].path); Ui.Toast(Loc.T($"preset \"{presetList[k - 1].name}\" deleted", $"набор «{presetList[k - 1].name}» удалён")); }
+        catch (Exception e) { Ui.Toast(Loc.T("cannot delete: ", "не удалить: ") + e.Message, true); }
         ListPresets();
     }
 
     void SavePreset()
     {
         string name = presetName.Text.Trim();
-        if (name.Length == 0) { Ui.Toast("впишите имя набора", true); presetName.GrabFocus(); return; }
+        if (name.Length == 0) { Ui.Toast(Loc.T("enter a preset name", "впишите имя набора"), true); presetName.GrabFocus(); return; }
         try
         {
             var preset = Presets.FromValues(name, SimRunner.ParamValues);
             string path = Path.Combine(UiManager.PresetsDir, CreatureLibrary.FileName(name));
             ParamRegistry.SavePreset(path, preset);
-            Ui.Toast($"набор «{name}» сохранён: {preset.Values.Count} отличий от умолчаний");
+            Ui.Toast(Loc.T($"preset \"{name}\" saved: {preset.Values.Count} differences from defaults", $"набор «{name}» сохранён: {preset.Values.Count} отличий от умолчаний"));
             presetName.Text = "";
             presetName.ReleaseFocus();
             ListPresets();
             for (int i = 0; i < presetList.Count; i++) if (presetList[i].path == path) presets.Selected = i + 1;
         }
-        catch (Exception e) { Ui.Toast("не сохранить набор: " + e.Message, true); }
+        catch (Exception e) { Ui.Toast(Loc.T("cannot save preset: ", "не сохранить набор: ") + e.Message, true); }
     }
 }

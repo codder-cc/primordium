@@ -62,13 +62,13 @@ public partial class ParamEditor : VBoxContainer
     }
 
     public IParamSource Source;
-    public string LockHint = "только для нового мира";
+    public string LockHint = Loc.T("new world only", "только для нового мира");
     readonly List<Row> rows = new();
     readonly Dictionary<string, Label> groupHeads = new();
     readonly Dictionary<string, Button> groupButtons = new();
     LineEdit search;
     Label summary;
-    string group = "";   // "" — all
+    string group = "";   // "" means all
     long seen = -1;
     bool built;
 
@@ -86,7 +86,7 @@ public partial class ParamEditor : VBoxContainer
     {
         if (built) return;
         built = true;
-        search = UiKit.Edit("", "поиск по имени и описанию…");
+        search = UiKit.Edit("", Loc.T("search by name and description…", "поиск по имени и описанию…"));
         search.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         search.ClearButtonEnabled = true;
         search.TextChanged += _ => Filter();
@@ -99,8 +99,8 @@ public partial class ParamEditor : VBoxContainer
 
         var groups = UiKit.Col(2);
         groups.CustomMinimumSize = new Vector2(132, 0);
-        AddGroupButton(groups, "", "Все");
-        foreach (var g in ParamRegistry.Groups) AddGroupButton(groups, g, g);
+        AddGroupButton(groups, "", Loc.T("All", "Все"));
+        foreach (var g in ParamRegistry.Groups) AddGroupButton(groups, g, ParamRegistry.GroupTitle(g));
         var gs = UiKit.Scroll(groups);
         gs.SizeFlagsHorizontal = SizeFlags.Fill;
         gs.CustomMinimumSize = new Vector2(140, 0);
@@ -109,7 +109,7 @@ public partial class ParamEditor : VBoxContainer
         var list = UiKit.Col(2);
         foreach (var g in ParamRegistry.Groups)
         {
-            var head = UiKit.Title(g, 14);
+            var head = UiKit.Title(ParamRegistry.GroupTitle(g), 14);
             head.AddThemeColorOverride("font_color", UiKit.Acc);
             groupHeads[g] = head;
             list.AddChild(head);
@@ -134,18 +134,20 @@ public partial class ParamEditor : VBoxContainer
 
     Row MakeRow(ParamInfo p)
     {
-        var r = new Row { P = p, Search = (p.Name + " " + p.Description + " " + p.Group).ToLowerInvariant() };
+        var r = new Row { P = p, Search = string.Join(" ", p.Name, p.DescriptionEn, p.DescriptionRu, p.Group, p.GroupTitle).ToLowerInvariant() };
         rows.Add(r);
         r.Box = UiKit.Col(2);
         r.Box.AddThemeConstantOverride("separation", 1);
-        string tip = $"{p.Name} ({p.Group})\n{p.Description}\nпо умолчанию {UiKit.Num(p.Default, p.IsInt)}, диапазон {UiKit.Num(p.Min, p.IsInt)} … {UiKit.Num(p.Max, p.IsInt)}, шаг {UiKit.Num(p.Step, p.IsInt)}" +
-                     (p.Live ? "" : "\nчитается только при создании мира") +
-                     ((p.Effect & ParamEffect.Strength) != 0 ? "\nсмена пересчитывает опору всей карты (один тяжёлый тик)" : "") +
-                     ((p.Effect & ParamEffect.BodyVolume) != 0 ? "\nсмена пересчитывает объём всех тел" : "");
+        string dflt = UiKit.Num(p.Default, p.IsInt), min = UiKit.Num(p.Min, p.IsInt), max = UiKit.Num(p.Max, p.IsInt), step = UiKit.Num(p.Step, p.IsInt);
+        string tip = $"{p.Name} ({p.GroupTitle})\n{p.Description}\n" +
+                     Loc.T($"default {dflt}, range {min} … {max}, step {step}", $"по умолчанию {dflt}, диапазон {min} … {max}, шаг {step}") +
+                     (p.Live ? "" : "\n" + Loc.T("read only when a world is created", "читается только при создании мира")) +
+                     ((p.Effect & ParamEffect.Strength) != 0 ? "\n" + Loc.T("changing it re-solves the support of the whole map (one heavy tick)", "смена пересчитывает опору всей карты (один тяжёлый тик)") : "") +
+                     ((p.Effect & ParamEffect.BodyVolume) != 0 ? "\n" + Loc.T("changing it recomputes the volume of every body", "смена пересчитывает объём всех тел") : "");
 
         r.Name = UiKit.Text(p.Name, 13, UiKit.Fg, UiKit.Bold);
         r.Name.TooltipText = tip;
-        r.Mark = UiKit.Text("изменён", 11, UiKit.Acc);
+        r.Mark = UiKit.Text(Loc.T("changed", "изменён"), 11, UiKit.Acc);
         var desc = UiKit.Text(p.Description, 12, UiKit.Dim);
         desc.TooltipText = tip;
         desc.ClipText = true;
@@ -154,7 +156,8 @@ public partial class ParamEditor : VBoxContainer
         if (Source.Locked(p))
         {
             var lockL = UiKit.Text("· " + LockHint, 11, new Color(0.55f, 0.75f, 1f));
-            lockL.TooltipText = "Этот закон читается только при создании мира. Его можно задать в окне «Новый мир» (F4), в разделе «Дополнительно».";
+            lockL.TooltipText = Loc.T("This law is read only when a world is created. Set it in the New world window (F4), under Advanced.",
+                                     "Этот закон читается только при создании мира. Его можно задать в окне «Новый мир» (F4), в разделе «Дополнительно».");
             head.AddChild(lockL);
         }
         r.Box.AddChild(head);
@@ -180,7 +183,7 @@ public partial class ParamEditor : VBoxContainer
         var range = UiKit.Text($"{UiKit.Num(p.Min, p.IsInt)} … {UiKit.Num(p.Max, p.IsInt)}", 11, UiKit.Dim);
         range.CustomMinimumSize = new Vector2(96, 0);
         range.HorizontalAlignment = HorizontalAlignment.Right;
-        r.Reset = UiKit.Button("↺", () => Commit(r, p.Default), $"вернуть {UiKit.Num(p.Default, p.IsInt)}");
+        r.Reset = UiKit.Button("↺", () => Commit(r, p.Default), Loc.T($"reset to {dflt}", $"вернуть {dflt}"));
         r.Reset.Flat = true;
         r.Reset.CustomMinimumSize = new Vector2(26, 0);
         r.Reset.Disabled = Source.Locked(p);
@@ -249,8 +252,9 @@ public partial class ParamEditor : VBoxContainer
             if (val != r.P.Default) { changed++; changedIn[r.P.Group] = changedIn.GetValueOrDefault(r.P.Group) + 1; }
         }
         foreach (var (g, b) in groupButtons)
-            b.Text = g == "" ? $"Все ({changed})" : changedIn.TryGetValue(g, out int n) ? $"{g} · {n}" : g;
-        summary.Text = changed == 0 ? $"{rows.Count} законов, все по умолчанию" : $"изменено {changed} из {rows.Count}";
+            b.Text = g == "" ? Loc.T($"All ({changed})", $"Все ({changed})") : changedIn.TryGetValue(g, out int n) ? $"{ParamRegistry.GroupTitle(g)} · {n}" : ParamRegistry.GroupTitle(g);
+        summary.Text = changed == 0 ? Loc.T($"{rows.Count} laws, all at defaults", $"{rows.Count} законов, все по умолчанию")
+                                     : Loc.T($"{changed} of {rows.Count} changed", $"изменено {changed} из {rows.Count}");
     }
 
     public override void _Process(double delta)

@@ -46,7 +46,7 @@ public sealed partial class World
             Require(all.Count(e => e.Type == type) <= 1, $"{type} more than once");
         foreach (var type in new[] { EvType.FirstEnzyme, EvType.FirstReaction })
         {
-            var texts = all.Where(e => e.Type == type).Select(e => e.Text.Split(" — ")[0]).ToList();
+            var texts = all.Where(e => e.Type == type).Select(e => Ru(e.Text).Split(" — ")[0]).ToList();
             Require(texts.Distinct().Count() == texts.Count, $"{type}: the same first twice");
         }
         Require(all.Zip(all.Skip(1)).All(p => p.First.Seq < p.Second.Seq && p.First.Tick <= p.Second.Tick), "events out of order");

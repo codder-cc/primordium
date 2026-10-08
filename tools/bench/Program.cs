@@ -11,6 +11,11 @@ using Primordium;
 //   [--load path] continue a saved world, [--save path] save it at the end.
 //   Batches, comparisons and the long test (--batch, --compare, --run-one, --long-test): see Batch.cs.
 //   [--chronicle]: print the world's chronicle as events happen (World.Chronicle).
+//   [--lang ru]: text from the game (law descriptions, chronicle) in Russian; English by default.
+{
+    int li = Array.IndexOf(args, "--lang");
+    if (li >= 0 && li + 1 < args.Length) Loc.Set(args[li + 1]);
+}
 if (Array.IndexOf(args, "--self-test") >= 0) { World.RunRegression(); return; }
 if (Array.IndexOf(args, "--self-test-infra") >= 0) { World.RunInfraRegression(); return; }
 if (Array.IndexOf(args, "--self-test-sun") >= 0) { World.SkyRegression(); return; }   // just the sky test (also in --self-test)
@@ -23,7 +28,7 @@ if (Array.IndexOf(args, "--self-test-climate") >= 0) { World.ClimateCyclesRegres
 if (Array.IndexOf(args, "--list-params") >= 0)
 {
     foreach (var p in ParamRegistry.All)
-        Console.WriteLine($"{p.Group,-12} {p.Name,-20} {p.Value,10:G6}  [{p.Min:G6} … {p.Max:G6}, step {p.Step:G6}]{(p.Live ? "" : " (new world)")}  {p.Description}");
+        Console.WriteLine($"{p.GroupTitle,-12} {p.Name,-20} {p.Value,10:G6}  [{p.Min:G6} … {p.Max:G6}, step {p.Step:G6}]{(p.Live ? "" : " (new world)")}  {p.Description}");
     return;
 }
 // Laws of the world (P): presets, then single laws, before the world is made; --param-at during the run
@@ -133,7 +138,7 @@ for (int t = 1; t <= ticks; t++)
     if (printChronicle && w.Chronicle.NextSeq - 1 > chronicleSeen)
     {
         foreach (var e in w.Chronicle.Since(chronicleSeen))
-            Console.WriteLine($"   chronicle {(e.Important ? "!" : " ")} {e.Tick,7} {Chronicle.TypeNames[(int)e.Type],-16} {e.Text}");
+            Console.WriteLine($"   chronicle {(e.Important ? "!" : " ")} {e.Tick,7} {Chronicle.TypeNames[(int)e.Type],-16} {Loc.Show(e.Text)}");
         chronicleSeen = w.Chronicle.NextSeq - 1;
     }
     if (t % every != 0) continue;
