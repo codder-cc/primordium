@@ -67,6 +67,37 @@ Four elements A–D: masses 0.5–2, valences 1–4 and an affinity parameter ar
 
 `Atoms[s,e]` is the canonical composition. `Mass[s] = Σ Atoms[s,e] × AtomicMass[e]`. Cohesion and packing are derived from element parameters and formula complexity. Hardness and reactivity arise from properties rather than being assigned to rock names. Names, colours, energies and physical parameters are reproducible within a given generator version.
 
+**Energies of the molecules** (`P.ChemEnergyModel`, read when a world is made). Model 1 (default) derives them from composition with an additive bond model in the style of Pauling. Model 0 draws them at random, as before (`E = 2…12` for a ground compound, `+3…8` for its excited state). Both models make the same random draws, so formulas, names, colours and bonds (`Bond`, `Packing`, `Solid`) are identical and only `E` differs.
+- Reference: every element in its own aggregate (each atom bonded to its like) has energy 0. A molecule's atoms are joined by a tree of `n − 1` bonds, and no atom takes more bonds than its valence. The tree is the one the bonds favour most, built greedily from the highest-valence atom.
+- A bond between unlike atoms gives up two half like-bonds for one unlike bond. The difference is Pauling's ionic resonance energy `ChemIonicK·(χi − χj)²`, with `χ = Affinity` as electronegativity. The formation energy is therefore `−Σ_tree ChemIonicK·Δχ²`: compounds of unlike atoms lie below their elements, compounds of one element are neutral, and splits are uphill.
+- An atom the tree cannot reach (every atom that could hold it has used its valence) is *caged* and costs `ChemIonicK·χ·v/2`. Crowded formulas are energy-rich and split by themselves. They are the rare fuel compounds.
+- `E[ground] = round(EnergyZero·atoms + formation)`. `EnergyZero` is the smallest whole per-atom offset that keeps every `E ≥ 0`. A per-atom offset changes no reaction's ΔE, because atoms are conserved. `E` is therefore an energy *above the most stable arrangement*, not a measure of fuel: an element has `E = EnergyZero`. The class keeps `Chemistry.Formation`, `Caged` and `EnergyZero`.
+- Excitation (what a photon brings: the excited state's `E` above its ground) is `max(1, round(ChemExciteK·√(mean affinity of the atoms)))`, which gives 3–8 for affinities 0.2–2. Tightly held electrons need bigger photons, with diminishing returns, so no world is left with photons too small to live on. An excited compound splits downhill when its excitation exceeds the bond it breaks. Light drives the splits, and binds give the energy back.
+- **Rock is relaxed** (model 1). A stratum drawn as an excited state is laid as its ground state: the atoms are the same, and the excitation was shed before the world began (`World.Terrain`). The primordial litter is the energised part: its grains lie in their excited state (the surface under the young sun). Apart from light, the litter is the only fuel the first bodies find. Vents bring up `VentHigh`.
+- Derived sets in model 1:
+  - `Low`: ground states with no downhill split that lie no higher than their elements.
+  - `VentHigh`: the 8 species with the most energy above their elements (excited and crowded ones).
+  - `Chemistry.Downhill`: every exothermic split and bind, most energetic first. Local reactions (abiogenesis) use it.
+- `--chem-table [--seeds 1-12] [--verbose]` (bench) prints a seed's chemistry under the current laws. Seeds 1–12 compared:
+
+  | Seeds 1–12 | Model 0 | Model 1 |
+  |---|---|---|
+  | ground compounds with an exothermic split | 100 of 144 | 12 of 144 |
+  | exothermic splits, all states | 279 of 336 | 179 of 336 (mostly excited states) |
+  | exothermic binds | 537 of 783 | 709 of 783 (uphill: 24) |
+  | r(E above the elements, `Bond`), ground compounds | 0.06 | −0.28 (stronger bonds, lower energy) |
+- In the energy audit (seeds 1–6, ticks 4000–6000), the downhill-split energy (R) of the crust fell from 0.7–1.3·10¹⁰ to 10⁴–2·10⁸, and R of the top blocks to ~0 per molecule. The binding potential of the crust (`all downhill if mixed`, a bound if all its matter could meet) is 1.3–4.1·10⁹. It lies in separate strata, and bodies almost never bind (0–80 energy a day released by binds). Light is 85–99% of the bodies' primary income, against intake and mining R. See CHANGELOG 2026-10-09 for the batches.
+- A save without `ChemEnergyModel` (made before the law) loads with 0, because its chemistry is regenerated from the seed and must have the energies it ran with (`World.LegacyLaws`). The same applies to `AbioModel`. The world uses the value it was created with (`InitialLaws`); changing the law affects only the next world. The save version is unchanged: laws are stored by name.
+
+**Abiogenesis** (`P.AbioModel`; the world's `Abiogenesis` switch turns it on).
+- Model 0 (default, legacy): one try per tick with chance `AbioChance·(1 + 160·max(0, 1 − bodies/200))`, at a random dry cell. The body is made from loose matter or a soft top block (barrier < 2) and powered by the cell's exothermic splits. In chemistry model 1 it is also powered by exothermic binds, because otherwise there is almost nothing to burn.
+- Model 1, local chemistry: no count of bodies. A cell's chance per tick is `AbioCellRate × readiness × TempFactor(T) × wetness`:
+  - `readiness = min(1, energy the cell's loose matter releases by itself through Chemistry.Downhill / SpawnEnergy)`, and 0 while the cell holds fewer than `SpawnBody` loose molecules;
+  - `wetness = (m/d)·e^(1 − m/d)`, with `m` = water depth + rain and `d = SwimDepth`. It is zero on dry ground, highest where the bottom is just covered, and falls e-fold with every further `SwimDepth` of water, because the matter is diluted. This replaces the hard ban under water;
+  - the body is gathered from loose matter only: rock reaches the loose layer by weathering, which replaces the soft-top threshold;
+  - the sum over the planet is estimated by sampling 64 random cells a tick, each taken with chance × N/64. This is an estimator of the same expected rate, not a law.
+- Model 1 is off by default. In the energy audit (seeds 1–6, ticks 4000–6000) it gave 8–40 founders a day, matching the law's own expected rate, against 160–430 from the legacy floor. In the batch 2 of 24 worlds fell to 10 bodies (CHANGELOG 2026-10-09).
+
 - `Combine[a,b] == -1`: no reaction. Otherwise the sum of input atoms equals the atoms of the product.
 - `SplitA[s] == -1`: no decomposition. `SplitB[s] == -1` for a single product, e.g. relaxation of an excited monomer.
 - `PhotoUp[s]` conserves composition and raises energy. The reaction consumes a whole available photon; a fractional probability does not grant free full excitations.
