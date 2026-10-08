@@ -79,7 +79,7 @@ public sealed partial class World
             {
                 Id = a.Id, Lineage = a.Lineage, Parent = a.ParentId, Gen = a.Gen,
                 Dx = Wrap(a.X - ax), Dy = a.Y - ay, Rise = a.Z - Height[cell], Floor = a.Z - top0, Lift = a.Lift,
-                Genome = Convert.ToBase64String(a.G), Prot = Convert.ToBase64String(a.Prot),
+                Genome = Convert.ToBase64String(a.G), Prot = Convert.ToBase64String(a.Prot), Model = LifeModels.KeyFor(a.Model),
                 Energy = Math.Max(0, a.Energy),
                 Hue = a.Hue, Sat = a.Sat, Val = a.Val, Sx = a.Sx, Sy = a.Sy, Sz = a.Sz, Shape = a.Shape, Designed = a.Designed,
             };
@@ -142,7 +142,9 @@ public sealed partial class World
             foreach (var e in prot) volume += e.Matter.F * Chem.Volume[e.Material];
 
             var g = b.GenomeBytes();
-            if (o.RemapGenes && !map.Same) { g = map.RemapGenes(g, out int genes); result.GenesRemapped += genes; }
+            byte model = LifeModels.ByKey(b.Model).Id;
+            // Protein genes name species: model 1's are found and re-pointed (another model's genome is its own).
+            if (o.RemapGenes && !map.Same && model == LifeModels.Vm) { g = map.RemapGenes(g, out int genes); result.GenesRemapped += genes; }
             var protBytes = b.ProtBytes(g.Length);
 
             if (!TakeBody(cell, need, volume, b.Energy, o, result, out double energy, out string why)) { Fail(result, why); continue; }
@@ -161,7 +163,7 @@ public sealed partial class World
             }
             made.TryGetValue(b.Parent, out var parent);
             if (!o.KeepRelations) parent = null;
-            var a = new Agent(id, lineage, o.KeepRelations ? b.Gen : 0, g, protBytes) { Tb = Temp[cell], Z = Height[cell], Designed = true };
+            var a = new Agent(id, lineage, o.KeepRelations ? b.Gen : 0, g, protBytes, model) { Tb = Temp[cell], Z = Height[cell], Designed = true };
             for (int s = 0; s < Chemistry.S; s++) for (int j = 0; j < inv[s]; j++) AddMol(a, s);
             for (int s = 0; s < Chemistry.S; s++)
                 if (pend[s].Raw > 0) { a.Pend[s] = pend[s]; a.Mass += pend[s].F * Chem.Mass[s]; a.Volume += pend[s].F * Chem.BodyVolume[s]; }

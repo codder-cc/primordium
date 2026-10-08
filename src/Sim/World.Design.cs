@@ -177,7 +177,7 @@ public sealed partial class World
         // 4. The body.
         long id = NewId();
         if (lineage <= 0) lineage = id;
-        var a = new Agent(id, lineage, 0, (byte[])genome.Clone()) { Tb = Temp[cell], Z = Height[cell], Designed = true };
+        var a = new Agent(id, lineage, 0, (byte[])genome.Clone(), null, d.Life().Id) { Tb = Temp[cell], Z = Height[cell], Designed = true };
         for (int s = 0; s < Chemistry.S; s++) for (int j = 0; j < counts[s]; j++) AddMol(a, s);
         a.Energy = a.LifeStart = energy;
         // The ledger (World.Energy): what came from outside is an input; local matter and local splits

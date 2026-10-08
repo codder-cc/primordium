@@ -19,9 +19,13 @@ public sealed class Agent
 {
     public readonly long Id, Lineage;
     public readonly int Gen;
+    // Its life model (ILifeModel, LifeModels): what reads the genome and controls the body. The genome
+    // bytes are the model's own; the body (matter, energy, proteins, place) is shared physics.
+    public byte Model { get; private set; } = LifeModels.Vm;
+    public object ModelState;   // a model's controller state if it is not in the fields below (saved by its SyncState)
     public byte[] G { get; private set; }
     public byte[] Prot { get; private set; }   // per genome byte: how much it has proven useful lately
-    public int[] Labels { get; private set; }
+    public int[] Labels { get; internal set; }  // model 1: where its labels are (Genome.Labels)
     // Genome fingerprint for kin recognition — computed on first use (most bodies never need it).
     public ulong Tag { get { if (!tagReady) { tag = Genome.SimHash(G); tagReady = true; } return tag; } }
     ulong tag;
@@ -50,7 +54,8 @@ public sealed class Agent
     public Enzyme[] Enz = new Enzyme[4];   // grows as needed: no limit on how many proteins a body keeps
     public int EnzN;
 
-    // VM state
+    // Model 1 (VM) state. Signal is what others hear (`listen`); LastCycles the steps thought last tick,
+    // each paid at P.CostInstr (another model may use them the same way).
     public int Ip, Sp, Cp, Signal, LastCycles;
     public readonly int[] Stack = new int[P.StackSize];
     public readonly int[] Mem = new int[P.MemSize];
@@ -124,22 +129,33 @@ public sealed class Agent
     public Agent EvoParent;          // its parent, from birth until the birth is merged (for the tree)
     public int EvoMut;               // genome bytes changed against its parent (approximate edit size)
 
-    public Agent(long id, long lineage, int gen, byte[] g, byte[] prot = null)
+    public Agent(long id, long lineage, int gen, byte[] g, byte[] prot = null, byte model = LifeModels.Vm)
     {
         Id = id; Lineage = lineage; Gen = gen;
+        Model = model;
         SetGenome(g, prot ?? new byte[g.Length]);
     }
+
+    public ILifeModel Life => LifeModels.Get(Model);
 
     public void SetGenome(byte[] g, byte[] prot)
     {
         G = g;
         Prot = prot;
-        Labels = Genome.Labels(g);
         tagReady = false;
         Hash = Genome.Hash(g);
-        if (Ip >= g.Length) Ip = 0;
+        LifeModels.Get(Model).GenomeChanged(this);
         // Enzymes whose genes moved or vanished keep working until they decay; just forget the link.
         for (int k = 0; k < EnzN; k++) if (Enz[k].Src + 3 >= g.Length) Enz[k].Src = -1;
+    }
+
+    // Another controller for the same body (a loaded body of another model): its genome is re-read.
+    public void SetModel(byte model)
+    {
+        if (model == Model) return;
+        Model = model;
+        ModelState = null;
+        LifeModels.Get(model).GenomeChanged(this);
     }
 
     // A big body covers several cells: Foot[0] is its own cell (X, Y), the rest around it.

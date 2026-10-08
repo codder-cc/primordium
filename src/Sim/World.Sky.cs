@@ -381,7 +381,7 @@ public sealed partial class World
     }
 
     // The UV a body reads (`uv`, information only): the sun's activity plus the flares, at the body.
-    int UvSense(Agent a) => (int)(100 * (SolarActivity + FlarePower) * SkyExposure(a));
+    public int UvSense(Agent a) => (int)(100 * (SolarActivity + FlarePower) * SkyExposure(a));
 
     // In LiveBody (the agent phase, the body's own state): the dose of this tick and what it does short of
     // mutations (those go with the UV path there). Returns the dose; `harm` is the energy it cost.

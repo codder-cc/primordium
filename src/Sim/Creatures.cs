@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Primordium;
 
@@ -18,7 +19,9 @@ public sealed class CreatureDesign
     public int Version { get; set; } = 1;
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
-    public string Genome { get; set; } = "";   // GenomeAsm text
+    public string Genome { get; set; } = "";   // GenomeAsm text (another life model: that model's text, ILifeModel.Describe)
+    // The life model's key (LifeModels.ByKey); absent (null) for model 1, so older files mean model 1.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string Model { get; set; }
     // Molecule → count. Keys: a species number 0–31, "gas" (the world's volatile species), "any"
     // (whatever is at hand), or a molecule's name or formula in the world's chemistry. Species
     // numbers mean different molecules in different seeds (the chemistry is generated): 0, 2, 4, 6
@@ -33,7 +36,17 @@ public sealed class CreatureDesign
 
     public CreatureDesign Clone() => FromJson(ToJson());
 
-    public byte[] Assemble() => GenomeAsm.Assemble(Genome);
+    public ILifeModel Life() => LifeModels.ByKey(Model);
+
+    public byte[] Assemble()
+    {
+        var life = Life() ?? throw new InvalidDataException(UnknownModel());
+        if (life.Id == LifeModels.Vm) return GenomeAsm.Assemble(Genome);
+        if (!life.TryCompile(Genome, out var g, out var errors)) throw new InvalidDataException(string.Join("; ", errors));
+        return g;
+    }
+
+    string UnknownModel() => Loc.T($"unknown life model '{Model}'", $"неизвестная модель жизни «{Model}»");
 
     public const int AnyMolecule = -1;
 
@@ -70,7 +83,9 @@ public sealed class CreatureDesign
     public List<string> Check(Chemistry chem)
     {
         var errors = new List<string>();
-        if (!GenomeAsm.TryAssemble(Genome, out _, out var asm)) errors.AddRange(asm.Select(e => e.ToString()));
+        var life = Life();
+        if (life == null) errors.Add(UnknownModel());
+        else if (!life.TryCompile(Genome, out _, out var asm)) errors.AddRange(asm);
         var body = ResolveBody(chem, errors);
         int total = body.Values.Sum();
         if (total < P.MinBody) errors.Add(Loc.T($"a body of {total} molecules: fewer than {P.MinBody} cannot hold together", $"тело из {total} молекул: меньше {P.MinBody} не держится"));
@@ -86,7 +101,8 @@ public sealed class CreatureDesign
             Name = name ?? Loc.T($"lineage {a.Lineage} #{a.Id}", $"линия {a.Lineage} #{a.Id}"),
             Description = Loc.T($"Taken from creature #{a.Id} (lineage {a.Lineage}, generation {a.Gen}, world {w.Seed}, tick {w.Tick}).",
                                 $"Снято с существа #{a.Id} (линия {a.Lineage}, поколение {a.Gen}, мир {w.Seed}, тик {w.Tick})."),
-            Genome = GenomeAsm.Disassemble(a.G),
+            Genome = a.Life.Describe(a.G),
+            Model = LifeModels.KeyFor(a.Model),
             Energy = MathF.Round((float)Math.Max(0, a.Energy)),
             Hue = a.Hue, Sat = a.Sat, Val = a.Val, Shape = a.Shape,
         };

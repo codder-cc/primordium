@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Primordium;
 
@@ -76,6 +77,8 @@ public sealed class PopulationBody
     public int Floor { get; set; }        // its floor against the anchor column's top (relative heights)
     public float Lift { get; set; }       // swimming height above its floor
     public string Genome { get; set; } = "";   // base64 of the exact bytes
+    // Its life model's key (LifeModels.ByKey); absent (null) for model 1.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string Model { get; set; }
     public string Prot { get; set; }           // base64: how much each byte has proven useful (optional)
     public double Energy { get; set; }
     public float Hue { get; set; }
@@ -107,6 +110,7 @@ public sealed class PopulationBody
         byte[] g;
         try { g = GenomeBytes(); }
         catch (FormatException) { return Loc.T("the genome is not base64", "геном не в base64"); }
+        if (LifeModels.ByKey(Model) == null) return Loc.T($"unknown life model '{Model}'", $"неизвестная модель жизни «{Model}»");
         if (g.Length < Primordium.Genome.MinLen || g.Length > Primordium.Genome.MaxLen) return Loc.T($"genome of {g.Length} bytes", $"геном из {g.Length} байт");
         if (!string.IsNullOrEmpty(Prot)) { try { Convert.FromBase64String(Prot); } catch (FormatException) { return Loc.T("Prot is not base64", "Prot не в base64"); } }
         if (!(Energy >= 0) || double.IsInfinity(Energy)) return Loc.T("energy must be ≥ 0", "энергия должна быть ≥ 0");

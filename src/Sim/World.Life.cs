@@ -89,7 +89,7 @@ public sealed partial class World
         float kids0 = a.LifeKids, spent0 = a.LifeUpkeep + a.LifeHarm + a.LifeSpill;   // the energy probe (observation)
         a.TickPhoto = a.TickChem = a.TickMine = a.TickAttack = a.TickHeat = 0;
         long restStart = ProfileOps ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
-        Exec(a, cell);
+        LifeModels.Get(a.Model).Think(this, a, cell);   // its controller acts through the body physics (World.BodyOps)
         cell = a.Y * W + a.X;   // a block it laid or shifted may have pushed it to another cell
         if (ProfileOps && cur != null) cur.OpTicks[Genome.OpSlots] -= System.Diagnostics.Stopwatch.GetTimestamp() - restStart;
         if (a.Dead) return;
@@ -386,8 +386,9 @@ public sealed partial class World
     public readonly long[] DivFail = new long[5];   // diagnostics: tries, no energy, no body, no room, uneven split
 
     // Splitting in two: a body that has grown enough gives a share f of its energy and of every
-    // molecule to a child in the cell itself or next to it; the genome is copied with errors.
-    void Divide(Agent a, int cell, int f, int d)
+    // molecule to a child in the cell itself or next to it (d 0–3, 4 here; f ≤ 0 halves, else f/256
+    // within 16–240); the genome is copied with its model's errors (ILifeModel.Mutate).
+    public void Divide(Agent a, int cell, int f, int d)
     {
         float cost = P.DivCostBase + P.DivCostByte * a.G.Length;
         Interlocked.Increment(ref DivFail[0]);
@@ -409,15 +410,16 @@ public sealed partial class World
         if (tot < P.MinBody || a.InvTotal - tot < P.MinBody) { Interlocked.Increment(ref DivFail[4]); return; }
 
         Dissipate(a, cost);
-        var (g, p) = Genome.Mutate(a.G, a.Prot, Rng);
-        var child = new Agent(NewId(), a.Lineage, a.Gen + 1, g, p) { Tb = a.Tb };
+        var life = LifeModels.Get(a.Model);
+        var (g, p) = life.Mutate(a.G, a.Prot, Rng);
+        var child = new Agent(NewId(), a.Lineage, a.Gen + 1, g, p, a.Model) { Tb = a.Tb };
         Looks.Inherit(child, a, Rng);
         child.Energy = a.Energy * frac;
         a.Energy -= child.Energy;
         a.LifeKids += (float)(cost + child.Energy);
         for (int s = 0; s < Chemistry.S; s++)
             for (int k = 0; k < give[s]; k++) { RemoveMol(a, s); AddMol(child, s); }
-        Array.Copy(a.Mem, child.Mem, P.MemSize);
+        life.InheritState(a, child);
         Born(a, child, to);
         Act(a, ActDivide, to == cell ? -1 : Neighbour4(cell, to));
     }
@@ -440,16 +442,18 @@ public sealed partial class World
 
     // Two bodies that both signalled readiness within a few ticks make a child that carries the start
     // of one genome and the end of the other; each gives P.MateShare (a quarter) of its energy and molecules.
-    void Mate(Agent a, int cell)
+    // Only bodies of the same life model mate (their genomes are written in the same code).
+    public void Mate(Agent a, int cell)
     {
         Dissipate(a, P.CostSocial);
         a.MateTick = Tick;
         var t = Partner(a, cell);
-        if (t == null || Tick - t.MateTick > P.HandshakeTicks || t.Energy < P.MateMinEnergy || a.Energy < P.MateMinEnergy) return;
+        if (t == null || t.Model != a.Model || Tick - t.MateTick > P.HandshakeTicks || t.Energy < P.MateMinEnergy || a.Energy < P.MateMinEnergy) return;
         if (!Fits(cell, a.Z, (a.Volume + t.Volume) * P.MateShare) || a.InvTotal < 2 * P.MinBody || t.InvTotal < 2 * P.MinBody) return;
-        var (g0, p0) = Genome.Cross(a, t, Rng);
-        var (g, p) = Genome.Mutate(g0, p0, Rng);
-        var child = new Agent(NewId(), a.Lineage, Math.Max(a.Gen, t.Gen) + 1, g, p) { Tb = a.Tb };
+        var life = LifeModels.Get(a.Model);
+        var (g0, p0) = life.Cross(a, t, Rng);
+        var (g, p) = life.Mutate(g0, p0, Rng);
+        var child = new Agent(NewId(), a.Lineage, Math.Max(a.Gen, t.Gen) + 1, g, p, a.Model) { Tb = a.Tb };
         Looks.Inherit(child, Rng.NextDouble() < 0.5 ? a : t, Rng);
         foreach (var parent in new[] { a, t })
         {

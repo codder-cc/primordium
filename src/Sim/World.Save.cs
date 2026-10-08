@@ -51,13 +51,15 @@ public sealed partial class World
     // water standing in caves, the drift of every body. Older files load with still water and dry caves.
     // 13: the chronicle block gains the ParasiteSpread event type (its count), the parasite counters and
     // every body's foreign piece of code (Agent.Foreign, World.Predation).
-    public const int SaveVersion = 13, OldestSaveVersion = 1;
+    // 14: every body record (SyncAgent, also in regions) ends with its life model (Agent.Model, LifeModels)
+    // and that model's own state (ILifeModel.SyncState; model 1 has none). Older bodies are model 1.
+    public const int SaveVersion = 14, OldestSaveVersion = 1;
     static readonly byte[] SaveMagic = Encoding.ASCII.GetBytes("PRIMSAVE");
     const int EndMarker = 0x21444E45;   // "END!"
 
     // Symmetric field visitor: the same list of fields is walked for writing and for reading, so the
     // two cannot disagree on order.
-    abstract class Sync
+    public abstract class Sync
     {
         public int Version = SaveVersion;   // of the file being read (writing: always the current one)
         public abstract bool Reading { get; }
@@ -582,6 +584,19 @@ public sealed partial class World
         s.V(ref a.LifeSpill); s.V(ref a.LifeUphill); s.V(ref a.LifeMineCost);
         s.A<int>(a.NMinedTier); s.V(ref a.NCatMined); s.V(ref a.LastMeal);
         s.V(ref a.Cells); s.A<int>(a.Foot);
+        if (s.Version < 14)
+        {
+            if (!s.Reading && a.Model != LifeModels.Vm) throw new InvalidOperationException($"save format {s.Version} holds only life model {LifeModels.Vm}");
+            return;
+        }
+        byte model = a.Model;
+        s.V(ref model);
+        if (s.Reading)
+        {
+            if (!LifeModels.Known(model)) throw new InvalidDataException($"a body of life model {model}, unknown to this build");
+            a.SetModel(model);
+        }
+        LifeModels.Get(model).SyncState(s, a);
     }
 
     // ---- the chronicle (save version 2) ----
