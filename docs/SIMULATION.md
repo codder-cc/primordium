@@ -2,7 +2,7 @@
 
 # Simulation model and core contract
 
-Current as of 2026-10-07 (wear of body matter, exact body energy; non-stationary climate and catastrophes; sky; resources; geochemistry). This describes the implemented approximation, not a promise of a complete physical model.
+Current as of 2026-10-08 (leaching of loose matter; wear of body matter, exact body energy; non-stationary climate and catastrophes; sky; resources; geochemistry). This describes the implemented approximation, not a promise of a complete physical model.
 
 ## Files
 
@@ -18,6 +18,8 @@ Current as of 2026-10-07 (wear of body matter, exact body energy; non-stationary
 | `World.Water.cs` | Bodies in water: height above the bottom, buoyancy, stroke cost by depth, light and food access by position |
 | `World.Geochem.cs` | Depth geochemistry: element biases from the seed, strata profile, veins, composition of volcanic output; mining counters by depth (observation only) |
 | `World.Resources.cs` | Resources: gas locality laws (`GasDiffK`) and gas under a roof (`CaveGasK`); probe of gas and loose-matter fluxes per 32×32 region and resource census (observation only) |
+| `World.Leach.cs` | Leaching: water carries loose matter below the top block by mobility (`LeachK`, off by default) — a sink that is still booked |
+| `tools/bench/RegressionLeach.cs` | Leaching test (`--self-test`, separately `--self-test-leach`) |
 | `World.Sky.cs` | Sky: insolation by the cosine law and latitude climate, atmospheric transparency, shading by bodies, eclipses, solar activity and flares; diet census by region (observation only) |
 | `World.Wear.cs` | Wear of body matter: photodamage (photolysis) and thermal wear of body molecules; census of uptake and losses (observation only) |
 | `World.React.cs` | Reactive damage: one law for every species — excited, high-affinity molecules held or lying in the cell wear proteins (no poison class) |
@@ -214,6 +216,25 @@ Laws of the environment, not of behaviour. Both switches are neutral by default:
 - **View.** Map M "food and gas stock": loose matter on the ground — green → yellow, atmospheric gas — blue, black — eaten out.
 - **Saving.** No new state: the laws are saved together with all laws; old files do not have them — neutral values are loaded. The probe is not saved.
 - **Approximations.** Cavity gas is a fraction of the column's gas, not a cavity volume with openings; an entrance open on the side is not accounted for. Gas over water diffuses as over land. Loose matter other than gas does not move (only creep and compaction of sediment).
+
+## Leaching: a sink for loose matter (`World.Leach.cs`)
+
+A law of the environment (water and mass), not of behaviour. Off by default (`LeachK` = 0: the world runs bit for bit as before).
+
+**Why.** With body wear on, matter that leaves a body lands at its feet and is taken back in; the dead and the primordial litter lie on the ground for years. The loose stock is a chemostat with an inflow (weathering of top blocks, deaths, excretion, vents) and no outflow, so nothing can deplete.
+
+**Law.** Once every `MetamorphEvery` ticks, of every loose species `s` lying on the surface of a column (`World.C`) the share `LeachK · MetamorphEvery · wet · Diff[s] / max Diff` soaks into the ground:
+- `wet = min(1, Water + Rain)` of the column: standing water of a block or more (saturated ground) or rain at full strength percolate fully, dry ground under a clear sky not at all. Deserts keep their litter, wet lowlands lose it.
+- `Diff[s] / max Diff` is mobility from mass (`Chemistry.Diff` = 0.13/√mass, the same law that moves the gas), relative to the lightest molecule of the chemistry: light molecules are carried away first. No species is singled out — the air's gas pool is leached like the rest (it is the lightest, so wet ground draws it in fastest); rain adsorption (`EnvChem`) is unchanged.
+- The matter moves (`Qty`, exact) into the burial of the block under the top block, where no body on the surface reaches it. If that level is a void, it drips through onto the cavity floor (reachable from the cave). It comes back only by the ordinary paths: when the top block goes (mined through, dug, weathered, crushed), `RemoveVoxel` moves its burials down and the burial below becomes the floor. Burials keep reacting under pressure as before.
+- Energy: bond energy moves between two reservoirs (loose → burial) — no new flow. Main thread, environment phase: no agent-tile contract involved.
+- Also routed through the registry (defaults unchanged, bit for bit): `LooseDecayK` = 0.0005 (decay of exothermic loose molecules on the ground, formerly a literal) and `WeatherK` = 0.0002 (weathering of the top block, formerly a literal).
+
+**Observation.** `World.Leached` (molecules soaked since the world was made or loaded; not saved), batch column `leached`, `ResProbe.Leach` per region; `--resources` prints food uptake versus leaching and the days a region's loose food would last under uptake alone. Test `leach` (`--self-test`, separately `--self-test-leach`).
+
+**Batches** (CHANGELOG (22)): leaching depletes and patches the loose food (stock ×0.1–0.4, `food_cv` ×3–4), but population, uptake, diets per region, mining depth and the deep element do not change. The diagnosis: in these worlds bodies are limited by energy, not matter (most division attempts fail for lack of energy; at 6000 ticks abiogenesis supplies more bodies than births). See the CHANGELOG for numbers.
+
+**Approximations.** The percolation depth is one block (below the top block), not a soil profile; burials have no volume; there is no dissolved pool in water (water does not carry the matter sideways); frozen ground is not distinguished from wet ground by temperature (only standing liquid water and rain count). Cave floors and the floor burial of the top block are not leached.
 
 ## Sky (`World.Sky.cs`)
 

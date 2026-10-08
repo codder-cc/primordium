@@ -102,6 +102,17 @@ public sealed partial class World
             foreach (var x in rows.OrderByDescending(x => x.I).Take(10))
                 Console.WriteLine($"  ({x.r % RegionsX},{x.r / RegionsX})  {x.pop,8:F0} {x.G,9:F0} {x.A,9:F0} {x.I,9:F3} {x.rel,10:F3} {x.D,+10:F3} {x.E,7:F3} {(x.I > 0 ? x.G / x.I / P.DayLen : double.PositiveInfinity),10:F1}"
                     + $"              {x.F,8:F0} {x.FI,9:F3} {x.FD,10:F3}");
+            // Loose food: is any region eaten out faster than it comes back? (World.Leach soaks litter away.)
+            double leach = p.Leach.Sum() / Q / T;
+            var fed = rows.Where(x => x.FI > 0.01).ToList();
+            Console.WriteLine($"  food: uptake {fI:F2}/tick, leached into the ground {leach:F2}/tick (LeachK {P.LeachK}), env net (decay, weathering, settling, leaching) {rows.Sum(x => x.FD):+0.00;-0.00}/tick, bodies net {rows.Sum(x => x.FB):+0.00;-0.00}/tick;"
+                + $" regions with food uptake > 0.01/tick: {fed.Count} of {Regions}");
+            if (fed.Count > 0)
+            {
+                var ft = fed.Select(x => x.F / x.FI / P.DayLen).OrderBy(v => v).ToList();
+                int falling = fed.Count(x => x.FD + x.FB < 0);
+                Console.WriteLine($"    days to empty a region's loose food by uptake alone: min {ft[0]:F1}, median {ft[ft.Count / 2]:F1}, max {ft[^1]:F1}; of these regions {falling} lose food net (env + bodies < 0)");
+            }
             var occ = rows.Where(x => x.I > 0.01).ToList();
             if (occ.Count > 0)
             {

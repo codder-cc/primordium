@@ -545,9 +545,13 @@ public sealed partial class World
             for (int i = chunk * 8 * W, end = i + 8 * W; i < end; i++) CellChem(i, (int)Tick);
         });
         Lap(1);
+        bool leach = LeachLaw && Tick % P.MetamorphEvery == 0;   // World.Leach: litter soaks into the ground
+        double leachK = Math.Min(1.0, (double)P.LeachK * P.MetamorphEvery);
+        if (leach) LeachPass();
         for (int i = 0; i < N; i++)
         {
             if (LooseVolume[i] > P.CompactShare * P.VoxelSpace) Settle(i, LooseVolume[i]);
+            if (leach) Leach(i, leachK);
             // Precipitation adsorbs existing atmospheric molecules onto the exposed aggregate.
             if (Tick % P.MetamorphEvery == 0 && Rain[i] > 0 && Height[i] > 2 && RainSum > 0)
             {
@@ -581,7 +585,7 @@ public sealed partial class World
             if (s != gas) total += amount * Chem.Volume[s];
             if (Chem.SplitExo[s])
             {
-                Qty m = amount * 0.0005f * f;   // one molecule s → A + B, exactly the same amount each
+                Qty m = amount * P.LooseDecayK * f;   // one molecule s → A + B, exactly the same amount each
                 C[s][i] -= m; C[Chem.SplitA[s]][i] += m;
                 if (Chem.SplitB[s] >= 0) C[Chem.SplitB[s]][i] += m;
                 heatIn[i] += (float)(m * Chem.SplitEnergy(s));
@@ -594,7 +598,7 @@ public sealed partial class World
         int h = Height[i];
         if (h <= 2) return;
         int v = i * Z + h - 1;
-        float weather = 0.0002f * f * (1 + Water[i] + Rain[i]) / (0.1f + VoxelCohesion(v));
+        float weather = P.WeatherK * f * (1 + Water[i] + Rain[i]) / (0.1f + VoxelCohesion(v));
         weathering[i] = Units[v] > 0 && Hash32.F(tick, i) < weather;
     }
 

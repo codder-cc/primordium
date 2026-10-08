@@ -246,6 +246,14 @@ public static class P
     // CaveGasK: blocks of roof for an e-fold less of the column's air reaching a body under a roof
     // (0 — off: under a roof only what lies on the cave floor, as before).
     public static float GasDiffK = 1f, CaveGasK = 0f;
+    // LeachK (World.Leach): share per tick of the lightest loose molecule (any species, the air's gas too) on wet ground (standing water or
+    // full rain) that percolating water carries below the top block, out of reach of bodies on the
+    // surface until the top block goes; heavier molecules by their mobility Diff (0.13/√mass). 0 — off.
+    public static float LeachK = 0f;
+    // Ground chemistry (World.CellChem): an exothermic loose molecule on the ground breaks into its
+    // parts with chance LooseDecayK · TempFactor per environment step; the top block of a column loses a
+    // molecule to weathering with chance WeatherK · TempFactor · (1 + water + rain) / (0.1 + cohesion).
+    public static float LooseDecayK = 0.0005f, WeatherK = 0.0002f;
 
     // Space
     public static int StrikeMin = 2500, StrikeMax = 8000;   // ticks between mutagenic strikes

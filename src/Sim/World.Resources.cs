@@ -26,6 +26,7 @@ public sealed partial class World
         public readonly long[] GasIntake = new long[Regions], FoodIntake = new long[Regions];   // gross uptake by bodies (raw Qty)
         public readonly long[] CaveGasIntake = new long[Regions];                              // ... of it drawn from under a roof
         public readonly long[] Rain = new long[Regions];                                       // gas adsorbed by rain (raw Qty)
+        public readonly long[] Leach = new long[Regions];                                      // loose food soaked into the ground (World.Leach, raw Qty)
         public readonly double[] Pop = new double[Regions];                                    // body-ticks
         public readonly long[,] Species = new long[Phases, Chemistry.S];                       // net change per phase of each loose species, planet-wide
         public readonly long[] SpeciesIntake = new long[Chemistry.S], SpeciesExpel = new long[Chemistry.S];   // gross uptake / expel by species (surface and caves)
@@ -112,7 +113,7 @@ public sealed partial class World
 
     public static readonly string[] ResNames =
     {
-        "gas_share", "region_diets", "diet_beta", "region_pop_cv", "gas_air", "food_loose", "gas_cv", "food_cv",
+        "gas_share", "region_diets", "diet_beta", "region_pop_cv", "gas_air", "food_loose", "gas_cv", "food_cv", "leached",
     };
 
     // gas_share: atoms of bodies in the gas's formula (either state); region_diets: e^H of the diets
@@ -120,7 +121,8 @@ public sealed partial class World
     // diets a body meets nearby); diet_beta: H(planet) − mean H(region), nats — how much the regions'
     // diets differ from each other (0: every region the same mix); region_pop_cv: coefficient of variation
     // of the bodies per region; gas_air / food_loose: air gas and loose food per cell, molecules;
-    // gas_cv / food_cv: coefficient of variation of those stocks across regions (patches).
+    // gas_cv / food_cv: coefficient of variation of those stocks across regions (patches); leached:
+    // molecules of litter soaked into the ground (World.Leach) since the world was made or loaded.
     public double[] ResCensus()
     {
         var v = new double[ResNames.Length];
@@ -169,6 +171,7 @@ public sealed partial class World
         }
         v[4] = gas.Sum() / N; v[5] = food.Sum() / N;
         v[6] = Cv(gas); v[7] = Cv(food);
+        v[8] = Leached;
         return v;
     }
 
