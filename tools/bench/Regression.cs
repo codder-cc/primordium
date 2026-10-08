@@ -87,17 +87,20 @@ public sealed partial class World
 
     public static void RunRegression()
     {
+        long selfTestStart = System.Diagnostics.Stopwatch.GetTimestamp();
         ParamRegistry.ResetDefaults();   // P is shared by every world in the process
-        LawsRegression();
-        LawsEnergyRegression();
-        SaveLoadRegression();
-        LifeSeedRegression();
-        AsmRegression();
-        DesignRegression();
-        PopulationRegression();
-        LifeModelRegression();
-        ChronicleRegression();
-        EvolutionRegression();
+        Timed("LawsRegression", LawsRegression);
+        Timed("LawsEnergyRegression", LawsEnergyRegression);
+        Timed("SaveLoadRegression", SaveLoadRegression);
+        Timed("LifeSeedRegression", LifeSeedRegression);
+        Timed("AsmRegression", AsmRegression);
+        Timed("DesignRegression", DesignRegression);
+        Timed("PopulationRegression", PopulationRegression);
+        Timed("LifeModelRegression", LifeModelRegression);
+        Timed("ChronicleRegression", ChronicleRegression);
+        Timed("EvolutionRegression", EvolutionRegression);
+        Timed("chemistry, fingerprint, labels, mutation", () =>
+        {
         for (int seed = -3; seed <= 100; seed++)
         {
             var ch = new Chemistry(seed);
@@ -148,38 +151,41 @@ public sealed partial class World
             Require(g1.AsSpan().SequenceEqual(g2) && p1.AsSpan().SequenceEqual(p2), "mutation changed");
         }
         Console.WriteLine("PASS mutation: buffer version equals the list version on 20000 genomes");
-        MatterRegression();
-        StructureRegression();
-        CaveRegression();
-        CaveClimateRegression();
-        SkyRegression();
-        ClimateCyclesRegression();
-        GeochemRegression();
-        ResourcesRegression();
-        WearRegression();
-        ReactRegression();
-        MatterLibraryRegression();
-        LeachRegression();
-        VolumeRegression();
-        FaceRegression();
-        WaterRegression();
-        WaterwaysRegression();
-        HandRegression();
-        RegionRegression();
-        RubbleRegression();
-        ConfinementRegression();
-        ClimbRegression();
-        SettleRegression();
-        ReliefRegression();
-        ImpactRegression();
-        FatalActionRegression();
-        RegionalStructureRegression();
-        StackRegression();
-        BiteBankRegression();
-        ReachRegression();
-        DepositRegression();
-        EnergyRegression();
-        PredationRegression();
+        });
+        Timed("MatterRegression", MatterRegression);
+        Timed("StructureRegression", StructureRegression);
+        Timed("CaveRegression", CaveRegression);
+        Timed("CaveClimateRegression", CaveClimateRegression);
+        Timed("SkyRegression", SkyRegression);
+        Timed("ClimateCyclesRegression", ClimateCyclesRegression);
+        Timed("GeochemRegression", GeochemRegression);
+        Timed("ResourcesRegression", ResourcesRegression);
+        Timed("WearRegression", WearRegression);
+        Timed("ReactRegression", ReactRegression);
+        Timed("MatterLibraryRegression", MatterLibraryRegression);
+        Timed("LeachRegression", LeachRegression);
+        Timed("VolumeRegression", VolumeRegression);
+        Timed("FaceRegression", FaceRegression);
+        Timed("WaterRegression", WaterRegression);
+        Timed("WaterwaysRegression", WaterwaysRegression);
+        Timed("HandRegression", HandRegression);
+        Timed("RegionRegression", RegionRegression);
+        Timed("RubbleRegression", RubbleRegression);
+        Timed("ConfinementRegression", ConfinementRegression);
+        Timed("ClimbRegression", ClimbRegression);
+        Timed("SettleRegression", SettleRegression);
+        Timed("ReliefRegression", ReliefRegression);
+        Timed("ImpactRegression", ImpactRegression);
+        Timed("FatalActionRegression", FatalActionRegression);
+        Timed("RegionalStructureRegression", RegionalStructureRegression);
+        Timed("StackRegression", StackRegression);
+        Timed("BiteBankRegression", BiteBankRegression);
+        Timed("ReachRegression", ReachRegression);
+        Timed("DepositRegression", DepositRegression);
+        Timed("EnergyRegression", EnergyRegression);
+        Timed("PredationRegression", PredationRegression);
+        Timed("1200 ticks seeds 1, 7", () =>
+        {
         foreach (int seed in new[] { 1, 7 })
         {
             var w = new World(seed, 800, true) { TrackHeat = true };
@@ -206,6 +212,9 @@ public sealed partial class World
             string energyNote = EnergyWorldCheck(w, energy, $"world seed {seed}");
             Console.WriteLine($"PASS 1200 ticks seed {seed}: population {w.Agents.Count}, max atom drift {before.Zip(after, (a, b) => Math.Abs(a - b)).Max():F6}, {energyNote}, falls {w.CollapsedBlocks}, buried {w.DeathsBuried}");
         }
+        });
+        Timed("determinism", () =>
+        {
         // Repeat independently; thread scheduling must not affect world or population state.
         var one = new World(42, 80, false); var two = new World(42, 80, false);
         for (int t = 0; t < 100; t++) { one.Step(); two.Step(); }
@@ -219,6 +228,16 @@ public sealed partial class World
         Require(big1.Mat.SequenceEqual(big2.Mat) && big1.Units.SequenceEqual(big2.Units), "terrain nondeterminism (crowded)");
         Require(big1.Agents.Select(a => (a.Id, a.X, a.Y, a.Z, a.Energy, a.Mass, a.Hash)).SequenceEqual(big2.Agents.Select(a => (a.Id, a.X, a.Y, a.Z, a.Energy, a.Mass, a.Hash))), "agent nondeterminism (crowded)");
         Console.WriteLine($"PASS determinism: independent worlds with identical seed (also {big1.Agents.Count} agents in parallel tiles)");
+        });
+        Console.WriteLine($"self-test total {(System.Diagnostics.Stopwatch.GetTimestamp() - selfTestStart) / (double)System.Diagnostics.Stopwatch.Frequency:F1} s");
+    }
+
+    // Runs one part of --self-test and prints how long it took (to find the slow ones).
+    static void Timed(string name, Action test)
+    {
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        test();
+        Console.WriteLine($"TIME {name} {(System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency:F0} ms");
     }
 
     // How many blocks' weight a sideways bond of fresh crust can carry (percentiles), for calibration.
