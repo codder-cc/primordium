@@ -40,6 +40,7 @@ public sealed partial class World
     readonly bool[] settleDue = new bool[N];
     readonly List<int> settleList = new();
     public long SettledMolecules, ReboundMolecules, SettleEvents;
+    public long LedgeClimbs;   // bodies that got onto a ledge more than a block up (World.Move)
     static float[] InitElasticSeen() { var a = new float[N]; Array.Fill(a, float.NaN); return a; }
 
     // Elastic strain of a block: σ / (ModulusRatio × strength), never above 1/ModulusRatio (a block loaded

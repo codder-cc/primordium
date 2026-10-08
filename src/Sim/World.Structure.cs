@@ -120,7 +120,11 @@ public sealed partial class World
     }
 
     float OwnLoad(int v) => VoxelMass(v) * P.Gravity + bodyLoad.Get(v);
-    public float CompressionCapacity(int v)
+    public float CompressionCapacity(int v) => CompressionCapacity(v, true);
+
+    // store: false reads a neighbour's strength without filling its cache — for code that runs in parallel
+    // by rows (Metamorphose) and looks into other rows' columns, which may change under it.
+    float CompressionCapacity(int v, bool store)
     {
         if (Mat[v] == Chemistry.Bedrock) return 1e9f;
         if (compressionCache[v] > 0) return compressionCache[v];
@@ -129,7 +133,9 @@ public sealed partial class World
         // heap (fresh sediment, rubble, a poured pile) holds almost only by friction under confinement
         // (Strength), an ordered rock by its bonds. LooseStrength is what is left at order 0.
         float o = Order[v] / 255f;
-        return compressionCache[v] = P.CompressionK * (0.3f + VoxelCohesion(v)) * (P.LooseStrength + (1.5f - P.LooseStrength) * o * o) * fill * fill;
+        float ucs = P.CompressionK * (0.3f + VoxelCohesion(v, store)) * (P.LooseStrength + (1.5f - P.LooseStrength) * o * o) * fill * fill;
+        if (store) compressionCache[v] = ucs;
+        return ucs;
     }
 
     float BondCapacity(int from, int to)
@@ -462,6 +468,7 @@ public sealed partial class World
     const int RowReach = 4;
     [ThreadStatic] static float[] rowK, rowS, rowG, rowP, rowE, rowA, rowB, rowC, rowD, rowU;
     [ThreadStatic] static int[] rowV;
+    [ThreadStatic] static int rowOwn;
 
     float Confinement(int v, int axis)
     {
@@ -473,6 +480,7 @@ public sealed partial class World
             rowA = new float[n]; rowB = new float[n]; rowC = new float[n]; rowD = new float[n]; rowU = new float[n];
         }
         int c0 = v / Z, z = v % Z;
+        rowOwn = v;
         // The row: blocks from `lo` to `hi` (v at RowReach); what lies past each end: free (a void) or held.
         int lo = RowReach, hi = RowReach;
         rowV[RowReach] = v;
@@ -534,7 +542,7 @@ public sealed partial class World
     void Prop(int u, out float p, out float e)
     {
         p = P.LateralK * Pressure[u];
-        e = Math.Max(1e-6f, CompressionCapacity(u) + P.FrictionQ * p);
+        e = Math.Max(1e-6f, CompressionCapacity(u, u == rowOwn) + P.FrictionQ * p);   // a neighbour's cache is not written (parallel rows)
     }
 
     // Two half-blocks in series meet at a face: stiffness 2·E1·E2/(E1 + E2) and, held still, the stress

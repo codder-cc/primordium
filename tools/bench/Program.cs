@@ -24,6 +24,7 @@ using Primordium;
 }
 if (Array.IndexOf(args, "--self-test") >= 0) { World.RunRegression(); return; }
 if (Array.IndexOf(args, "--self-test-mechanics") >= 0) { World.MechanicsRegression(); return; }   // structure, confinement, climbing, settling, relief, impacts (also in --self-test)
+if (Array.IndexOf(args, "--relief-report") >= 0) { World.ReliefReport(args); return; }   // relief ×1 against the current ReliefScale (×4 if it is 1): steps, water, light
 if (Array.IndexOf(args, "--self-test-infra") >= 0) { World.RunInfraRegression(); return; }
 if (Array.IndexOf(args, "--self-test-sun") >= 0) { World.SkyRegression(); return; }   // just the sky test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-cave") >= 0) { World.CaveClimateRegression(); return; }   // just the cave climate test (also in --self-test)
@@ -195,7 +196,7 @@ for (int t = 1; t <= ticks; t++)
         .Select(k => $"{k}={w.Ev[(int)k] - prev[(int)k]}"));
     Array.Copy(w.Ev, prev, prev.Length);
     Console.WriteLine($"   ms/tick: env {w.Prof[0] / every:F2} agents {w.Prof[1] / every:F2} | climate T {cl.MeanT:F1} water {cl.WaterShare:P0} ice {cl.IceShare:P0} snow {cl.SnowShare:P0} strikes {w.StrikeCount}");
-    Console.WriteLine($"   stages ms/tick: sky {w.Prof[4] / every:F3} diffusion {w.Prof[5] / every:F3} chemistry/climate {w.Prof[6] / every:F3} structure {w.Prof[7] / every:F3}; falls {w.CollapsedBlocks}, crushed {w.CrushedBlocks}, buried agents {w.DeathsBuried}, pressure reactions {w.Metamorphoses}");
+    Console.WriteLine($"   stages ms/tick: sky {w.Prof[4] / every:F3} diffusion {w.Prof[5] / every:F3} chemistry/climate {w.Prof[6] / every:F3} structure {w.Prof[7] / every:F3}; falls {w.CollapsedBlocks}, crushed {w.CrushedBlocks}, buried agents {w.DeathsBuried}, pressure reactions {w.Metamorphoses}; ledges climbed {w.LedgeClimbs}, columns settled {w.SettleEvents}");
     Console.WriteLine("   detail ms/tick: " + string.Join(" ", World.DetailNames.Select((n, k) => $"{n} {w.Detail[k] / every:F3}")) + $" | dirty columns last {w.LastStructureColumns}, hanging voxels {w.LastStructureVoxels}; dirt by geometry/weakening/loads/matter {string.Join("/", w.DirtBy)}");
     long alloc = GC.GetTotalAllocatedBytes(false);
     int gen0 = GC.CollectionCount(0) - prevGen0, gen1 = GC.CollectionCount(1) - prevGen1, gen2 = GC.CollectionCount(2) - prevGen2;

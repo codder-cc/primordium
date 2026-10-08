@@ -18,7 +18,7 @@ public sealed partial class World
         reliefScale = 1;
         for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) Height0[y * W + x] = GenHeight(x, y);
         Array.Clear(settleDebt); Array.Fill(elasticSeen, float.NaN); Array.Clear(settleCheck);
-        SettledMolecules = ReboundMolecules = SettleEvents = 0;
+        SettledMolecules = ReboundMolecules = SettleEvents = LedgeClimbs = 0;
         foreach (var a in Agents) { a.Climb = 0; a.ClimbDir = -1; }
     }
 
@@ -203,5 +203,32 @@ public sealed partial class World
             Console.WriteLine($"PASS impact: a 4-level fall tears {mild.lost} of 60 weak molecules; with gravity ×400 a 6-level fall tears {weakHit.lost} weak ({(weakHit.dead ? "dead" : "alive")}) vs {strongHit.lost} strongly bonded ({(strongHit.dead ? "dead" : "alive")}); atoms exact");
         }
         finally { P.Gravity = g; }
+    }
+
+    // --relief-report [--seed N]: the same seed at the first relief and at the current ReliefScale (4 if that is
+    // 1) — steps between neighbouring columns, flooded share and depth, and light over one day (no life).
+    public static void ReliefReport(string[] args)
+    {
+        int si = Array.IndexOf(args, "--seed"), seed = si >= 0 ? int.Parse(args[si + 1]) : 1;
+        float scale = P.ReliefScale;
+        foreach (float k in new[] { 1f, scale != 1 ? scale : 4f })
+        {
+            P.ReliefScale = k;   // the altitude climate follows the scale itself (World.Lapse)
+            var w = new World(new WorldSettings { Seed = seed, InitialPop = 0 });
+            long steps = 0, up2 = 0, up7 = 0; int wet = 0; double depth = 0, light = 0, photons = 0;
+            for (int c = 0; c < N; c++)
+            {
+                for (int d = 0; d < 4; d++) { int n = w.nb[c * 4 + d]; if (n == c) continue; int dh = w.Height[n] - w.Height[c]; steps++; if (dh >= 2) up2++; if (dh >= 7) up7++; }
+                if (w.Submerged(c)) { wet++; depth += w.Water[c]; }
+            }
+            for (int t = 0; t < P.DayLen; t++)
+            {
+                w.Step();
+                if (t % 50 == 0) for (int c = 0; c < N; c++) if (!w.Submerged(c)) { light += w.Light[c]; photons += w.Photon[c]; }
+            }
+            int samples = P.DayLen / 50, land = N - wet;
+            Console.WriteLine($"relief ×{k}: steps up ≥2 levels {up2 / (double)steps:P1}, ≥7 {up7 / (double)steps:P1}; flooded {wet / (double)N:P0}, mean depth {depth / Math.Max(1, wet):F1}; land light {light / samples / land:F3}, photons {photons / samples / land:F3}; mean temp {w.Temp.Average():F1}");
+        }
+        P.ReliefScale = scale;
     }
 }

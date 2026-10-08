@@ -112,7 +112,7 @@ public sealed partial class World
         return mass;
     }
 
-    float CoreCohesion(int v)
+    float CoreCohesion(int v, bool store = true)
     {
         if (Mat[v] < 2) return Mat[v] == Chemistry.Bedrock ? 1e6f : 0;
         if (cohesionCache[v] > 0) return cohesionCache[v];
@@ -127,15 +127,23 @@ public sealed partial class World
                 if (counts[b] > 0) purity += (float)counts[a] * counts[b] * Chem.Contact[a + 2, b + 2];
         }
         float n = Math.Max(1, (int)Units[v]);
-        return cohesionCache[v] = Math.Max(1e-4f, bond / n * purity / (n * n));
+        float coh = Math.Max(1e-4f, bond / n * purity / (n * n));
+        if (store) cohesionCache[v] = coh;
+        return coh;
     }
 
-    public float VoxelCohesion(int v)
+    public float VoxelCohesion(int v, bool store = true)
     {
-        float core = CoreCohesion(v);
+        float core = CoreCohesion(v, store);
         if (Mat[v] < 2 || !BurialOf(v, out var b)) return core;
-        UpdateBurialStats(b);
-        return (core * Units[v] + b.Bonds * b.Order * b.Order) / Math.Max(1, Units[v] + b.Units);
+        if (store || !b.Dirty)
+        {
+            UpdateBurialStats(b);
+            return (core * Units[v] + b.Bonds * b.Order * b.Order) / Math.Max(1, Units[v] + b.Units);
+        }
+        float units = 0, bonds = 0;   // a neighbour's burial, read without touching it (parallel rows)
+        for (int s = 0; s < Chemistry.S; s++) { float m = b.Matter[s].F; units += m; bonds += m * Chem.Bond[s]; }
+        return (core * Units[v] + bonds * b.Order * b.Order) / Math.Max(1, Units[v] + units);
     }
 
     // A block lost part of its cross-section. Its column needs the support solver only if that can
@@ -522,17 +530,23 @@ public sealed partial class World
     static bool[] InitAnnealable() { var a = new bool[N]; Array.Fill(a, true); return a; }
 
     readonly List<int> burialOrder = new();
+    List<int>[] annealRows;
 
     void Metamorphose()
     {
         // Slow lattice annealing has a fixed cadence, independent of whether a body woke a column.
-        // Columns are independent: done in parallel.
+        // Rows in parallel, in two steps: first every block's case is judged on the state as it is
+        // (its confinement looks into the neighbouring rows' columns), then the judged blocks pack. Judging
+        // and packing in one sweep let a row see its neighbours half-packed, depending on thread timing.
+        annealRows ??= new List<int>[H];
         System.Threading.Tasks.Parallel.For(0, H, y =>
         {
+            var list = annealRows[y] ??= new List<int>();
+            list.Clear();
             for (int c = y * W, end = c + W; c < end; c++)
             {
                 if (!annealable[c]) continue;
-                bool more = false;
+                annealable[c] = false;
                 for (int z = 2, h = Height[c]; z < h; z++)
                 {
                     int v = c * Z + z;
@@ -542,14 +556,19 @@ public sealed partial class World
                     // Each step of packing takes exponentially more pressure: a dense lattice hardly packs further.
                     if (Mat[v] >= 2 && Order[v] < 245 && Pressure[v] > P.CompactionPressure * MathF.Exp(P.DensifyK * Order[v] / 255f)
                         && (Pressure[v] <= CompressionCapacity(v) || Pressure[v] <= Strength(v)))
-                    {
-                        float was = VoxelVolume(v);
-                        Order[v]++; compressionCache[v] = 0;   // packs: the block takes a little less room
-                        if (z < grounded[c]) { settleDebt[c] += was - VoxelVolume(v); settleCheck[c] = true; }   // the column above settles into it (World.Settle)
-                        if (Order[v] < 245) more = true;
-                    }
+                        list.Add(v);
                 }
-                annealable[c] = more;
+            }
+        });
+        System.Threading.Tasks.Parallel.For(0, H, y =>
+        {
+            foreach (int v in annealRows[y])
+            {
+                int c = v / Z;
+                float was = VoxelVolume(v);
+                Order[v]++; compressionCache[v] = 0;   // packs: the block takes a little less room
+                if (v % Z < grounded[c]) { settleDebt[c] += was - VoxelVolume(v); settleCheck[c] = true; }   // the column above settles into it (World.Settle)
+                if (Order[v] < 245) annealable[c] = true;
             }
         });
         SettleColumns();   // packed and squeezed room is taken up by the column above (World.Settle)

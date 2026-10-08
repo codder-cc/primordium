@@ -250,7 +250,7 @@ public sealed partial class World
             if (ok)
             {
                 float dh = targetZ + lift - level, cost = 0;
-                if (dh > 1) ledge = !(ok = Lifted(a, dir, dh - 1));
+                if (dh > 1 && !(ledge = !(ok = Lifted(a, dir, dh - 1)))) Interlocked.Increment(ref LedgeClimbs);
                 if (ok && dh > 0) cost = P.CostClimb * dh * (toWet ? Weight(a) : a.Mass);
                 if (wet || toWet) cost += Stroke(a, wet ? Below(a, cell) : Math.Max(0, WaterOver(to, targetZ) - lift));
                 if (ok && cost > 0)

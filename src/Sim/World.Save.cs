@@ -294,7 +294,7 @@ public sealed partial class World
         if (s.Version < 15) return;
         s.V(ref reliefScale);
         s.A<float>(settleDebt); s.A<float>(elasticSeen); s.A<bool>(settleCheck);
-        s.V(ref SettledMolecules); s.V(ref ReboundMolecules); s.V(ref SettleEvents);
+        s.V(ref SettledMolecules); s.V(ref ReboundMolecules); s.V(ref SettleEvents); s.V(ref LedgeClimbs);
         if (s.Reading) System.Threading.Tasks.Parallel.For(0, H, y => { for (int x = 0; x < W; x++) Height0[y * W + x] = GenHeight(x, y); });
     }
 
