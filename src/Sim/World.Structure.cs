@@ -166,6 +166,7 @@ public sealed partial class World
             if (topologyChanged && z >= g && !overhang[v]) { overhang[v] = true; overhangCount[c]++; overhangTotal++; }
         }
         annealable[c] = true;   // its pressures were rewritten: metamorphism looks at it again
+        settleCheck[c] = true;  // and so does settling (World.Settle)
     }
 
     // `iv`: v's index among the hanging voxels; `at`: from's index, or -1 for grounded rock.
@@ -337,7 +338,7 @@ public sealed partial class World
         {
             // Carry horizontal loads down the grounded pier as well, so anchors cannot bear infinity.
             for (int z = root.Key % Z; z >= 2; z--) Pressure[root.Key / Z * Z + z] += root.Value;
-            annealable[root.Key / Z] = true;
+            annealable[root.Key / Z] = settleCheck[root.Key / Z] = true;
         }
         foreach (int c in dirtyWork)
             for (int z = 2; z < grounded[c]; z++)
@@ -440,18 +441,119 @@ public sealed partial class World
     {
         float ucs = CompressionCapacity(v);
         if (Mat[v] < 2) return ucs;
-        float sx = Math.Min(SidePush(v, 0), SidePush(v, 2)), sy = Math.Min(SidePush(v, 1), SidePush(v, 3));
-        return ucs + P.FrictionQ * Math.Min(sx, sy);
+        float sx = Confinement(v, 0);
+        if (sx <= 0) return ucs;
+        return ucs + P.FrictionQ * Math.Min(sx, Confinement(v, 1));
     }
 
-    float SidePush(int v, int d)
+    // The horizontal stress on v along one axis (0: x, 1: y) — the lesser of the two faces — from a small
+    // elastic problem on the row of blocks through v at its level, up to RowReach blocks each way.
+    //
+    // Each block would press sideways with p = LateralK × its vertical stress if it could not move (at
+    // rest); it is a spring as stiff as it is strong (modulus ∝ uniaxial strength + friction under that
+    // confinement: World.Settle's ModulusRatio cancels out), and it is held in place by shear against the
+    // blocks above and below it (shear modulus from the same Poisson ratio ν = K/(1 + K) that gives LateralK).
+    // Two neighbours meet through their contact (same rock 1, seams 0.2–0.4, by the fill of a mined block);
+    // across it the stress is continuous. A void is a free face (no stress); bedrock, the end of the map
+    // and the far end of the row hold their side still. Solved exactly (tridiagonal, ≤ 2·RowReach + 1
+    // unknowns). So the stress at a free face is zero and comes back over a block or two inside — a cliff
+    // edge or tunnel wall is unconfined and the block behind it only partly confined; deep in a stratum it is
+    // the at-rest stress; a block between a tall and a low column gets a stress between theirs.
+    const int RowReach = 4;
+    [ThreadStatic] static float[] rowK, rowS, rowG, rowP, rowE, rowA, rowB, rowC, rowD, rowU;
+    [ThreadStatic] static int[] rowV;
+
+    float Confinement(int v, int axis)
     {
-        int c = v / Z, z = v % Z, n = nb[c * 4 + d];
-        if (n == c) return P.LateralK * Pressure[v];   // the end of the map in y is a wall
-        int u = n * Z + z;
-        if (Mat[u] == Chemistry.Bedrock) return P.LateralK * Pressure[v];
-        if (Mat[u] < 2) return 0;
-        return P.LateralK * Pressure[u] * Chem.Contact[Mat[v], Mat[u]] * Fill(u);
+        const int n = 2 * RowReach + 1;
+        if (rowV == null)
+        {
+            rowV = new int[n]; rowP = new float[n]; rowE = new float[n]; rowG = new float[n];
+            rowK = new float[n + 1]; rowS = new float[n + 1];
+            rowA = new float[n]; rowB = new float[n]; rowC = new float[n]; rowD = new float[n]; rowU = new float[n];
+        }
+        int c0 = v / Z, z = v % Z;
+        // The row: blocks from `lo` to `hi` (v at RowReach); what lies past each end: free (a void) or held.
+        int lo = RowReach, hi = RowReach;
+        rowV[RowReach] = v;
+        bool freeLo = false, freeHi = false;
+        int endLo = -1, endHi = -1;   // the held block past each end (bedrock / wall: -2; a block: its voxel)
+        for (int side = 0; side < 2; side++)
+        {
+            int d = side == 0 ? axis + 2 : axis, c = c0, k = RowReach;
+            while (true)
+            {
+                int m = nb[c * 4 + d];
+                if (m == c) { if (side == 0) endLo = -2; else endHi = -2; break; }   // the end of the map: a wall
+                int u = m * Z + z;
+                if (Mat[u] == Chemistry.Air) { if (side == 0) freeLo = true; else freeHi = true; break; }
+                if (Mat[u] == Chemistry.Bedrock) { if (side == 0) endLo = -2; else endHi = -2; break; }
+                if (k == (side == 0 ? 0 : n - 1)) { if (side == 0) endLo = u; else endHi = u; break; }
+                k += side == 0 ? -1 : 1;
+                rowV[k] = u;
+                c = m;
+            }
+            if (side == 0) lo = k; else hi = k;
+        }
+        float lk = P.LateralK, shear = (1 + lk) / (2 * (1 + 2 * lk));   // G/E for ν = K/(1 + K)
+        for (int i = lo; i <= hi; i++) Prop(rowV[i], out rowP[i], out rowE[i]);
+        for (int i = lo; i <= hi; i++)
+        {
+            int u = rowV[i];
+            int vertical = (z > 0 && Mat[u - 1] != Chemistry.Air ? 1 : 0) + (z + 1 < Z && Mat[u + 1] != Chemistry.Air ? 1 : 0);
+            rowG[i] = shear * rowE[i] * vertical;
+        }
+        // Interfaces: rowK/rowS[i] between block i−1 and i (i = lo … hi + 1).
+        for (int i = lo + 1; i <= hi; i++) Face(rowV[i - 1], rowV[i], rowP[i - 1], rowE[i - 1], rowP[i], rowE[i], out rowK[i], out rowS[i]);
+        EndFace(freeLo, endLo, rowV[lo], rowP[lo], rowE[lo], out rowK[lo], out rowS[lo]);
+        EndFace(freeHi, endHi, rowV[hi], rowP[hi], rowE[hi], out rowK[hi + 1], out rowS[hi + 1]);
+        // k_L u_{i−1} − (k_L + k_R + g) u_i + k_R u_{i+1} = s_R − s_L (u: displacement towards +; held ends u = 0).
+        for (int i = lo; i <= hi; i++)
+        {
+            rowA[i] = i > lo ? rowK[i] : 0;
+            rowC[i] = i < hi ? rowK[i + 1] : 0;
+            rowB[i] = -(rowK[i] + rowK[i + 1] + rowG[i]);
+            rowD[i] = rowS[i + 1] - rowS[i];
+        }
+        for (int i = lo + 1; i <= hi; i++)
+        {
+            float m = rowA[i] / rowB[i - 1];
+            rowB[i] -= m * rowC[i - 1];
+            rowD[i] -= m * rowD[i - 1];
+        }
+        for (int i = hi; i >= lo; i--)
+            rowU[i] = rowB[i] == 0 ? 0 : (rowD[i] - (i < hi ? rowC[i] * rowU[i + 1] : 0)) / rowB[i];
+        float uHere = rowU[RowReach], uLeft = RowReach > lo ? rowU[RowReach - 1] : 0, uRight = RowReach < hi ? rowU[RowReach + 1] : 0;
+        float left = rowK[RowReach] == 0 ? 0 : rowS[RowReach] - rowK[RowReach] * (uHere - uLeft);
+        float right = rowK[RowReach + 1] == 0 ? 0 : rowS[RowReach + 1] - rowK[RowReach + 1] * (uRight - uHere);
+        return Math.Max(0, Math.Min(left, right));
+    }
+
+    // At-rest sideways stress and stiffness of a block (stiffness in units of strength: the modulus ratio
+    // is common to every block and cancels).
+    void Prop(int u, out float p, out float e)
+    {
+        p = P.LateralK * Pressure[u];
+        e = Math.Max(1e-6f, CompressionCapacity(u) + P.FrictionQ * p);
+    }
+
+    // Two half-blocks in series meet at a face: stiffness 2·E1·E2/(E1 + E2) and, held still, the stress
+    // (E2·p1 + E1·p2)/(E1 + E2) at which they balance — both passed on as well as the contact allows.
+    void Face(int a, int b, float pa, float ea, float pb, float eb, out float k, out float s)
+    {
+        float contact = Chem.Contact[Mat[a], Mat[b]] * Math.Min(Fill(a), Fill(b));
+        k = contact * 2 * ea * eb / (ea + eb);
+        s = contact * (eb * pa + ea * pb) / (ea + eb);
+    }
+
+    // The face past an end of the row: a void (free: nothing), bedrock or the map's end (rigid: the block's
+    // own at-rest stress, against a stiffness of 2E), or a block held still at the row's far end.
+    void EndFace(bool free, int end, int u, float pu, float eu, out float k, out float s)
+    {
+        if (free) { k = 0; s = 0; return; }
+        if (end == -2) { k = 2 * eu; s = pu; return; }
+        Prop(end, out float pe, out float ee);
+        Face(u, end, pu, eu, pe, ee, out k, out s);
     }
 
     // Compression failure: the block's lattice is crushed into rubble in place. Same molecules, same
@@ -727,20 +829,23 @@ public sealed partial class World
         if (impact)
         {
             float impactLoad = VoxelMass(from) * P.Gravity * (1 + Math.Max(0, fromZ - targetZ));
+            // Bodies in its path share the blow by the room they take (the rest goes into the ground) and
+            // are torn by it as far as their molecules hold (Crush).
+            int top = Math.Max(fromZ, targetZ);
+            float room = 0;
+            for (var o = Head[c]; o != null; o = o.NextInCell) if (o.Z >= targetZ && o.Z <= top) room += o.Volume;
+            var big = Big[c];
+            bool bigHit = big != null && !big.Dead && big.Z >= targetZ && big.Z <= top;
+            if (bigHit) room += big.Volume / big.Cells;
+            float perRoom = impactLoad / Math.Max(P.VoxelSpace, room);
             var a = Head[c];
             while (a != null)
             {
                 var next = a.NextInCell;
-                if (a.Z >= targetZ && a.Z <= Math.Max(fromZ, targetZ))
-                {
-                    Interlocked.Increment(ref BuriedBy[impactSource]);
-                    Die(a, c, CauseBuried, to);
-                }
+                if (a.Z >= targetZ && a.Z <= top) Crush(a, c, perRoom * a.Volume, to);
                 a = next;
             }
-            var big = Big[c];
-            if (big != null && !big.Dead && big.Z >= targetZ && big.Z <= Math.Max(fromZ, targetZ))
-                Die(big, big.Y * W + big.X, CauseBuried, to);
+            if (bigHit) Crush(big, big.Y * W + big.X, perRoom * big.Volume / big.Cells, to);
             heatIn[c] += impactLoad;
             Flows[FImpact] += impactLoad;
             Interlocked.Increment(ref CollapsedBlocks);
@@ -757,6 +862,33 @@ public sealed partial class World
         TrimColumn(from / Z);
         TerrainChanged(c); TerrainChanged(from / Z);
         if (impact) Dilate(to);   // the shattered part swells
+        // Survivors where the block landed are pushed aside or onto it (the block itself is already there).
+        if (impact) for (var o = Head[c]; o != null; o = o.NextInCell) if (o.Z == targetZ) { DisplaceOccupants(c, targetZ); break; }
+    }
+
+    // A falling block's blow on a body: `energy` (its share of the block's weight × the fall) tears
+    // molecules out of it, each costing the work to tear that molecule out of a disordered lump of the
+    // same molecules — the face work of gnawing (FaceWork · e^(barrier − FaceBarrier), barrier from the
+    // molecule's bond at order 0, World.TypicalBarrier). A body of strongly bonded molecules (a shell)
+    // loses less of itself to the same blow; a big one has more to lose. Torn molecules lie buried where
+    // the block landed; what is left of the blow, too little to tear another, is heat (the impact, outside
+    // the chemical ledger: the torn molecules keep their bond energy). A body left with too little of
+    // itself dies (buried).
+    void Crush(Agent a, int cell, float energy, int at)
+    {
+        if (a.Dead) return;
+        Qty[] buried = null;
+        while (a.InvTotal > 0)
+        {
+            int s = RandomMol(a);
+            float work = P.FaceWork * MathF.Exp(TypicalBarrier(Chem.BuiltMat[s], 0) - P.FaceBarrier);
+            if (work > energy) break;
+            energy -= work;
+            RemoveMol(a, s);
+            (buried ??= BurialAt(at).Matter)[s] += 1;
+        }
+        if (buried != null) MatterChanged(at);
+        if (a.InvTotal < P.MinBody) { Interlocked.Increment(ref BuriedBy[impactSource]); Die(a, cell, CauseBuried, at); }
     }
 
     // Body weight per floor voxel. Nearly every occupied cell has bodies on one floor only: that one

@@ -543,13 +543,16 @@ public sealed partial class World
                     if (Mat[v] >= 2 && Order[v] < 245 && Pressure[v] > P.CompactionPressure * MathF.Exp(P.DensifyK * Order[v] / 255f)
                         && (Pressure[v] <= CompressionCapacity(v) || Pressure[v] <= Strength(v)))
                     {
+                        float was = VoxelVolume(v);
                         Order[v]++; compressionCache[v] = 0;   // packs: the block takes a little less room
+                        if (z < grounded[c]) { settleDebt[c] += was - VoxelVolume(v); settleCheck[c] = true; }   // the column above settles into it (World.Settle)
                         if (Order[v] < 245) more = true;
                     }
                 }
                 annealable[c] = more;
             }
         });
+        SettleColumns();   // packed and squeezed room is taken up by the column above (World.Settle)
         Lap(DMetamorph);
         // Burial remains at depth. Pressure changes lattice order and promotes only legal reactions.
         // In voxel order: the concurrent dictionary's own order depends on the history of its table

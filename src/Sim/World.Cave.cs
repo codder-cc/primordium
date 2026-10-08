@@ -95,7 +95,7 @@ public sealed partial class World
             }
             clim /= Seasons; light /= Seasons * Hours;
             for (int i = y * W, end = i + W; i < end; i++)
-                Tmean[i] = clim + P.TDay * (light - 0.25f) - P.TLapse * (Height[i] - 11 - Crust) + 35f * ventHeat[i] - 4f * Math.Min(1f, Snow[i] * 3);
+                Tmean[i] = clim + P.TDay * (light - 0.25f) - Lapse * (Height[i] - LapseBase) + 35f * ventHeat[i] - 4f * Math.Min(1f, Snow[i] * 3);
         });
         Array.Clear(CaveWarm);
         Array.Clear(caveHeatIn);

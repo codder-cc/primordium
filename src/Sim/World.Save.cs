@@ -53,7 +53,12 @@ public sealed partial class World
     // every body's foreign piece of code (Agent.Foreign, World.Predation).
     // 14: every body record (SyncAgent, also in regions) ends with its life model (Agent.Model, LifeModels)
     // and that model's own state (ILifeModel.SyncState; model 1 has none). Older bodies are model 1.
-    public const int SaveVersion = 14, OldestSaveVersion = 1;
+    // 15: a body's pressing against a ledge (Agent.Climb, ClimbDir) at the end of its record, after its
+    // life model's state; the mechanics block (SyncMechanics: the world's relief scale, settling state,
+    // World.Settle) after the waterways. Before it the relief scale is 1 (worlds were made so), no body
+    // presses against a ledge and settling starts fresh.
+    // (16 is free for the next format change: e.g. chemistry energies / abiogenesis state.)
+    public const int SaveVersion = 15, OldestSaveVersion = 1;
     static readonly byte[] SaveMagic = Encoding.ASCII.GetBytes("PRIMSAVE");
     const int EndMarker = 0x21444E45;   // "END!"
 
@@ -276,6 +281,21 @@ public sealed partial class World
         SyncSky(s);                               // version 8: its own block after the geochemistry (World.Sky)
         SyncClimateCycles(s);                     // version 10: its own block after the sky (World.ClimateCycles)
         SyncWaterways(s);                         // version 12: its own block after the climate cycles (World.Waterways)
+        SyncMechanics(s);                         // version 15: relief scale and settling after the waterways (World.Settle)
+    }
+
+    // ---- mechanics (save version 15) ----
+    // The relief scale the world was made with (the altitude climate and the lowlands follow it, and the
+    // reference relief Height0 is made with it) and the settling state of every column (World.Settle).
+    // Older worlds were made with the first relief; their columns are looked at afresh (the first look
+    // only records their strain).
+    void SyncMechanics(Sync s)
+    {
+        if (s.Version < 15) return;
+        s.V(ref reliefScale);
+        s.A<float>(settleDebt); s.A<float>(elasticSeen); s.A<bool>(settleCheck);
+        s.V(ref SettledMolecules); s.V(ref ReboundMolecules); s.V(ref SettleEvents);
+        if (s.Reading) System.Threading.Tasks.Parallel.For(0, H, y => { for (int x = 0; x < W; x++) Height0[y * W + x] = GenHeight(x, y); });
     }
 
     // ---- cave climate (save version 5, World.Cave) ----
@@ -584,19 +604,25 @@ public sealed partial class World
         s.V(ref a.LifeSpill); s.V(ref a.LifeUphill); s.V(ref a.LifeMineCost);
         s.A<int>(a.NMinedTier); s.V(ref a.NCatMined); s.V(ref a.LastMeal);
         s.V(ref a.Cells); s.A<int>(a.Foot);
-        if (s.Version < 14)
+        if (s.Version >= 14)
         {
-            if (!s.Reading && a.Model != LifeModels.Vm) throw new InvalidOperationException($"save format {s.Version} holds only life model {LifeModels.Vm}");
-            return;
+            byte model = a.Model;
+            s.V(ref model);
+            if (s.Reading)
+            {
+                if (!LifeModels.Known(model)) throw new InvalidDataException($"a body of life model {model}, unknown to this build");
+                a.SetModel(model);
+            }
+            LifeModels.Get(model).SyncState(s, a);
         }
-        byte model = a.Model;
-        s.V(ref model);
-        if (s.Reading)
+        else if (!s.Reading && a.Model != LifeModels.Vm) throw new InvalidOperationException($"save format {s.Version} holds only life model {LifeModels.Vm}");
+        if (s.Version >= 15)
         {
-            if (!LifeModels.Known(model)) throw new InvalidDataException($"a body of life model {model}, unknown to this build");
-            a.SetModel(model);
+            s.V(ref a.Climb);
+            byte dir = (byte)(a.ClimbDir + 1);
+            s.V(ref dir);
+            a.ClimbDir = (sbyte)(dir - 1);
         }
-        LifeModels.Get(model).SyncState(s, a);
     }
 
     // ---- the chronicle (save version 2) ----

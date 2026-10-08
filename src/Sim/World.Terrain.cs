@@ -58,8 +58,19 @@ public sealed partial class World
         float bas = Math.Clamp((Noise.Fbm(ns, u, v, 5, 3, asp) - 0.28f) / 0.44f, 0, 1);
         float rdg = 1 - MathF.Abs(Noise.Fbm(ns + 1, u, v, 4, 5, asp) * 2 - 1);
         float mnt = Smooth(0.35f, 0.7f, Noise.Fbm(ns + 2, u, v, 2, 2, asp));
-        return Math.Clamp((int)MathF.Round(3 + 13 * bas + 15 * rdg * rdg * rdg * mnt) + Crust, 2 + Crust, Z - 14);
+        float k = reliefScale;   // the relief is stretched as a whole (P.ReliefScale): the same map, k times the rise
+        return Math.Clamp((int)MathF.Round(3 + 13 * k * bas + 15 * k * rdg * rdg * rdg * mnt) + Crust, 2 + Crust, Z - 14);
     }
+
+    // The relief scale this world was made with (P.ReliefScale when it was made; 1 for worlds saved
+    // before it existed). Lowlands and the reference height of the altitude climate follow it.
+    float reliefScale = 1;
+    // Top of the lowlands: 9 levels over the lowest ground at the first relief (hot springs open there).
+    int LowlandTop => Crust + 3 + (int)MathF.Round(6 * reliefScale);
+    // The height the altitude climate is measured from (11 over the lowest ground at the first relief).
+    float LapseBase => Crust + 3 + 8 * reliefScale;
+    // Cooling per level: P.TLapse is per level of the first relief, so a stretched relief keeps its span.
+    float Lapse => P.TLapse / reliefScale;
 
     void GenerateTerrain()
     {
@@ -96,9 +107,9 @@ public sealed partial class World
     }
 
     // Ground under the lowest surface (above the two levels of bedrock). The relief on top of it is
-    // what it always was (valleys to mountains ~25 levels: bodies climb one level a step, a steeper
-    // world would be walls); the ground beneath is four times as thick as in the first worlds —
-    // columns ~72 levels deep on average, room for caves, shafts and deep strata.
+    // ~28 levels from valleys to mountains times P.ReliefScale (4: ~115 levels; bodies climb ledges by
+    // their momentum, World.Move); the ground beneath is four times as thick as in the first worlds —
+    // room for caves, shafts and deep strata.
     public const int Crust = 60;
 
     // Removing a voxel leaves a real cavity. Only the support solver can move its roof.
@@ -162,7 +173,7 @@ public sealed partial class World
         for (int t = 0; t < 300; t++)
         {
             int x = Rng.Next(W), y = Rng.Next(H / 8, H - H / 8), i = y * W + x;
-            if (Height[i] > Crust + 9 || Count[i] > 0) continue;   // in the lowlands (up to 9 levels above the lowest ground)
+            if (Height[i] > LowlandTop || Count[i] > 0) continue;   // in the lowlands (9 levels above the lowest ground at the first relief)
             bool far = true;
             foreach (var o in Vents)
             {

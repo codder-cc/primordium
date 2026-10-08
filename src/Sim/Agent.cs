@@ -37,6 +37,11 @@ public sealed class Agent
     public float Vx, Vy;
     public float Lift, Vz;   // in water: how high above its floor it swims (blocks), and how fast it rises
     public float DriftX, DriftY;   // in water: how far the current has carried it towards the next cell (World.Waterways)
+    // Momentum pressed against a ledge too high to step onto (World.Move): kept while the body goes on
+    // pushing the same way, bled by friction like motion; enough of it lifts the body over. ClimbDir: the
+    // direction it presses (−1 none).
+    public float Climb;
+    public sbyte ClimbDir = -1;
     public double Energy;                      // free energy: double, so the energy ledger closes (see World.Energy)
     public float Tb;                           // body temperature, °C
     public int Age;

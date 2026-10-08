@@ -52,7 +52,14 @@ public static class P
     // Uniaxial strength grows with order squared (cement between grains): LooseStrength at order 0, 1.5 at
     // full order (World.CompressionCapacity). A disordered heap stands only by friction under confinement.
     public static float LooseStrength = 0.001f;
+    // Stiffness (World.Settle): a block's modulus is its uniaxial strength × ModulusRatio (E/UCS ≈ 100–500
+    // for rock), so it strains σ / E under load and at most 1/ModulusRatio before it fails. Squeezed and
+    // packed room in a column is taken up by the column above (it settles); unloaded, it springs back.
+    public static float ModulusRatio = 300f;
     public static int StructureEvery = 4, MetamorphEvery = 64;
+    // Time resolution of the support solver (World.Step): one more StructureEvery between passes per
+    // StructureVoxels hanging voxels the last pass visited, at most StructureStretch times. Cost, not physics.
+    public static int StructureVoxels = 5000, StructureStretch = 16;
 
     // Virtual machine
     public static int BaseCycles = 8, MaxCycles = 32;
@@ -195,6 +202,12 @@ public static class P
     public static float SpawnEnergy = 30f;      // burnt out of the cell's own molecules
     public static float InitLitter = 0.5f;       // primordial remains: this many times the top block's makeup (never renewed)
     public static int VentCount = 4;
+    // Relief of a new world (World.GenHeight): the rise from valleys to mountains (~28 levels at 1) is
+    // stretched this many times. 4: mountains ~115 levels over the lowest ground, as tall in proportion to
+    // the 192-level world as the first relief was to 48 levels. Bodies get over ledges by momentum (World.Move).
+    // Default 1: at 4 the generated slopes are steeper than their rock holds (generation does not yet limit
+    // slopes by strength), mountains slump heavily and the population falls ~3×; ×4 stays available as a law.
+    public static float ReliefScale = 1f;
 
     // Geochemistry (World.Geochem): each element has a depth bias from the seed, DepthBias ∈ [−1, 1].
     // A stratum `d` levels under the top of its column favours a molecule by
@@ -208,6 +221,9 @@ public static class P
     public static float DepthScale = 4f, DepthMid = 12f, DeepElementMin = 0.7f, VeinThreshold = 0.72f, VeinGain = 4f;
 
     // Climate (°C): latitude/season climate + daily swing − altitude
+    // TLapse: per level of the first relief (~28 levels from valleys to peaks). A world made with the relief
+    // stretched (ReliefScale) cools TLapse / scale per level (World.Lapse), so its valleys-to-peaks span stays
+    // the same ~18 °C at any scale.
     public static float TEquator = 29f, TPole = -16f, TDay = 12f, TLapse = 0.6f;
     public static float TRelax = 0.008f, TRelaxWater = 0.002f;   // per env step
     // Caves and depth (World.Cave): rock above a body shelters it. With `roof` solid blocks over it in

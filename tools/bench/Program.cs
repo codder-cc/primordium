@@ -23,6 +23,7 @@ using Primordium;
     if (li >= 0 && li + 1 < args.Length) Loc.Set(args[li + 1]);
 }
 if (Array.IndexOf(args, "--self-test") >= 0) { World.RunRegression(); return; }
+if (Array.IndexOf(args, "--self-test-mechanics") >= 0) { World.MechanicsRegression(); return; }   // structure, confinement, climbing, settling, relief, impacts (also in --self-test)
 if (Array.IndexOf(args, "--self-test-infra") >= 0) { World.RunInfraRegression(); return; }
 if (Array.IndexOf(args, "--self-test-sun") >= 0) { World.SkyRegression(); return; }   // just the sky test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-cave") >= 0) { World.CaveClimateRegression(); return; }   // just the cave climate test (also in --self-test)

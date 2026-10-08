@@ -149,8 +149,8 @@ public sealed partial class World
         w.TestBlock(f, 6, food);
         before = w.AuditEnergy();
         w.StepStructure();
-        Require(victim.Dead && w.Mat[f * Z + 2] != 0, "probe slab did not fall on the victim");
-        w.EnergyBalanced(before, "collapse", FImpact, FDeath);
+        Require(w.Mat[f * Z + 2] != 0 && (victim.Dead || !w.IsSolid(victim.Y * W + victim.X, victim.Z)), "probe slab did not fall on the victim (or left it inside the block)");   // the blow tears it as far as its molecules hold (World.Crush)
+        if (victim.Dead) w.EnergyBalanced(before, "collapse", FImpact, FDeath); else w.EnergyBalanced(before, "collapse", FImpact);
 
         // Pressure chemistry in a burial under a tall stack.
         var (px, py, pp, _) = FindBind(ch, de => de > 0);

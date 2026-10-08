@@ -108,8 +108,11 @@ public static class ParamRegistry
         F("Bulking", "Механика", "Bulking: crushed, disordered mass takes (1 + this) times more room than the same molecules in an ordered lattice (by the molecule's looseness)", "Разрыхление: во сколько раз (1 + это) больше места занимает раздробленная, неупорядоченная масса, чем те же молекулы в упорядоченной решётке (по рыхлости молекулы)", 0, 2, 0.05);
         F("DensifyK", "Механика", "Densification: each step of ordering needs pressure CompactionPressure × e^(DensifyK × order) — the denser, the harder", "Уплотнение: каждый шаг упорядочения требует давления CompactionPressure × e^(DensifyK × порядок) — чем плотнее, тем труднее", 0, 10, 0.1);
         F("LooseStrength", "Механика", "Own strength of disordered mass (fill, rubble) with no cement between grains; fully ordered rock has 1.5; in between it goes with the square of order", "Собственная прочность неупорядоченной массы (насыпь, щебень) без цемента между зёрнами; у полностью упорядоченной породы — 1,5; между ними — по квадрату порядка", 0, 1.5, 0.01);
+        F("ModulusRatio", "Механика", "Stiffness: a block's modulus is its uniaxial strength times this (E/UCS, 100–500 for rock); it strains load/modulus, at most 1/this before failing; squeezed and packed room lets the column above settle, unloading lets it spring back", "Жёсткость: модуль блока — его одноосная прочность, умноженная на это (E/UCS, у пород 100–500); блок сжимается на нагрузку/модуль, не больше 1/это до разрушения; сжатое и уплотнённое место даёт столбу над ним осесть, разгрузка — отскочить", 2, 2000, 1);
         F("LateralK", "Механика", "Lateral pressure at rest: share of a neighbour's vertical load with which it props a block from the side (≈0.4)", "Боковое давление в покое: доля вертикальной нагрузки соседа, которой он подпирает блок сбоку (≈0,4)", 0, 1, 0.01);
         I("StructureEvery", "Механика", "Support solve: at most once every N ticks", "Расчёт опоры — не чаще, чем раз в столько тиков", 1, 64, 1);
+        I("StructureVoxels", "Механика", "Support solve resolution: one more StructureEvery between solves per this many hanging voxels the last solve visited (cost, not physics)", "Разрешение расчёта опоры: ещё один StructureEvery между расчётами на столько висящих вокселей прошлого расчёта (цена, не физика)", 100, 100000, 100);
+        I("StructureStretch", "Механика", "Support solve resolution: at most this many times StructureEvery between solves", "Разрешение расчёта опоры: не больше стольких StructureEvery между расчётами", 1, 64, 1);
         I("MetamorphEvery", "Механика", "Metamorphism and rain adsorption: every N ticks", "Метаморфизм и адсорбция дождём — раз в столько тиков", 1, 1024, 1);
         // Rock
         F("BiteRate", "Порода", "Face weathering: fraction of a molecule per tick", "Выветривание грани: доля молекулы за тик", 0, 0.1, 0.001);
@@ -226,6 +229,7 @@ public static class ParamRegistry
         I("SpawnBody", "Среда", "Molecules in an abiogenic body", "Молекул в теле самозарождённого", 1, 64, 1);
         F("SpawnEnergy", "Среда", "Energy of an abiogenic body (from local reactions)", "Энергия самозарождённого (из местных реакций)", 0, 200, 1);
         F("InitLitter", "Среда", "Primordial remains: share of the top block's composition", "Первичные останки: доля состава верхнего блока", 0, 10, 0.1, live: false);
+        F("ReliefScale", "Среда", "Relief: how many times the valleys-to-mountains rise (~28 levels at 1) is stretched in a new world", "Рельеф: во сколько раз растянут перепад от долин до гор (~28 уровней при 1) в новом мире", 0.25, 5, 0.25, live: false);
         I("VentCount", "Среда", "How many volcanoes the world keeps", "Сколько вулканов держит мир", 0, 32, 1);
         // Geochemistry (read when a world is made)
         I("GeoProfile", "Геохимия", "Element profile by depth: strata, veins and volcanic output (1 on, 0 strata by strength only, as before)", "Профиль элементов по глубине: пласты, жилы и выбросы вулканов (1 — вкл, 0 — пласты только по прочности, как раньше)", 0, 1, 1, live: false);
@@ -238,7 +242,7 @@ public static class ParamRegistry
         F("TEquator", "Климат", "Equator temperature, °C", "Температура экватора, °C", -50, 80, 0.5);
         F("TPole", "Климат", "Pole temperature, °C", "Температура полюса, °C", -80, 50, 0.5);
         F("TDay", "Климат", "Daily range from light, °C", "Суточный размах от света, °C", 0, 50, 0.5);
-        F("TLapse", "Климат", "Cooling per level of altitude, °C", "Похолодание на уровень высоты, °C", 0, 5, 0.05);
+        F("TLapse", "Климат", "Cooling per level of altitude at relief scale 1, °C (divided by the world's ReliefScale)", "Похолодание на уровень высоты при рельефе ×1, °C (делится на ReliefScale мира)", 0, 5, 0.01);
         F("TRelax", "Климат", "Rate at which land approaches the climate (per environment step)", "Скорость, с которой суша идёт к климату (за шаг среды)", 0, 0.5, 0.001);
         F("TRelaxWater", "Климат", "The same for water", "То же для воды", 0, 0.5, 0.0005);
         I("CaveClimate", "Климат", "Cave climate: rock above a body softens daily and seasonal swings (1 on, 0 surface temperature everywhere)", "Климат пещер: порода над телом смягчает суточные и сезонные качели (1 — вкл, 0 — везде температура поверхности)", 0, 1, 1);

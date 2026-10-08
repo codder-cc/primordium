@@ -76,7 +76,7 @@ public sealed partial class World
 
     float TempEq(int i)
     {
-        float t = climRow[i / W] + P.TDay * (Light[i] - 0.25f) - P.TLapse * (Height[i] - 11 - Crust) + 35f * ventHeat[i] - 4f * Math.Min(1f, Snow[i] * 3);
+        float t = climRow[i / W] + P.TDay * (Light[i] - 0.25f) - Lapse * (Height[i] - LapseBase) + 35f * ventHeat[i] - 4f * Math.Min(1f, Snow[i] * 3);
         return dryOn ? t + dryT[i] : t;   // a drought is warmer (World.ClimateCycles)
     }
 

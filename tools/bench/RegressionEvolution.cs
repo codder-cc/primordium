@@ -144,6 +144,7 @@ public sealed partial class World
         a.WaterwaysFromOldFile();   // nor currents, drift and cave water (version 12)
         a.PressureFromOldFile();   // nor the parasite counters and foreign code (version 13)
         a.EnergyToFloat();    // nor energies as doubles (version 9)
+        a.MechanicsFromOldFile();   // nor the relief scale, settling and pressing against ledges (version 15)
         a.Save(old, "v5", System.IO.Compression.CompressionLevel.Fastest, 5); old.Position = 0;
         var o = Load(old);
         Require(o.Progress.Samples.Count == 0 && o.Shadow.Ref.Pop.Count == o.Agents.Count && o.Agents.All(x => x.EvoComp != null), "a version 5 save did not start an empty course of evolution");

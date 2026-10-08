@@ -241,15 +241,17 @@ public sealed partial class World
             int to = nb[cell * 4 + dir];
             float level = Level(a);
             int targetZ = WalkLevel(to, (int)level);
+            if (targetZ < 0 && to != cell) targetZ = LedgeLevel(cell, to, (int)level);
             // Room by volume: a body gets in if it fits once everybody smaller has been pushed aside.
             bool ok = to != cell && targetZ >= 0 && Fits(to, targetZ, Share(a), a);
             bool wet = InWater(cell, a.Z), toWet = ok && InWater(to, targetZ);
             float lift = toWet ? Math.Clamp(level - targetZ, 0, WaterTop(to, targetZ)) : 0;
+            bool ledge = false;
             if (ok)
             {
                 float dh = targetZ + lift - level, cost = 0;
-                if (dh > 1) ok = false;
-                else if (dh > 0) cost = P.CostClimb * dh * (toWet ? Weight(a) : a.Mass);
+                if (dh > 1) ledge = !(ok = Lifted(a, dir, dh - 1));
+                if (ok && dh > 0) cost = P.CostClimb * dh * (toWet ? Weight(a) : a.Mass);
                 if (wet || toWet) cost += Stroke(a, wet ? Below(a, cell) : Math.Max(0, WaterOver(to, targetZ) - lift));
                 if (ok && cost > 0)
                 {
@@ -266,13 +268,57 @@ public sealed partial class World
                 cell = to;
                 a.NMoves++; Note(EvKind.Move);
                 Act(a, ActMove, dir);
+                a.Climb = 0; a.ClimbDir = -1;
             }
-            else if (dir % 2 == 0) a.Vx = 0; else a.Vy = 0;
+            else
+            {
+                // Against a ledge it could not get over, the push is not lost at once: it goes on pressing
+                // (Climb, below) while the body keeps pushing that way; anything else just stops it.
+                float v = dir % 2 == 0 ? a.Vx : a.Vy;
+                if (ledge) { a.Climb = (a.ClimbDir == dir ? a.Climb : 0) + MathF.Abs(v) + 1; a.ClimbDir = (sbyte)dir; }
+                if (dir % 2 == 0) a.Vx = 0; else a.Vy = 0;
+            }
         }
         Float(a, cell);
-        if (P.Currents != 0) Drift(a, ref cell);   // the current carries a body off the bottom (World.Waterways)
+        if (P.Currents != 0)
+        {
+            int was = cell;
+            Drift(a, ref cell);   // the current carries a body off the bottom (World.Waterways)
+            if (cell != was) { a.Climb = 0; a.ClimbDir = -1; }   // carried off the ledge it was pressing against
+        }
         float fr = InWater(cell, a.Z) ? P.WaterFriction : P.Friction;
         a.Vx *= fr; a.Vy *= fr;
+        if (a.ClimbDir >= 0 && (a.Climb *= fr) < 0.05f) { a.Climb = 0; a.ClimbDir = -1; }
+    }
+
+    // Getting onto a ledge more than one block up: the body has to lift itself by its own momentum,
+    // a block of rise for each unit of speed — what one push gives along the ground (so stepping one block
+    // up, as always, costs nothing but the climb's energy). `extra` is the rise beyond that first block.
+    // The momentum is what it still carries this step plus what it has been pressing against this ledge
+    // (Climb): a strong push, several pushes in one tick, or a steady push for a few ticks gets it up; the
+    // pressing bleeds away by friction, so a steady full push lifts it about six blocks and no more, and a
+    // weak motor less. The work against gravity is the climb's cost (CostClimb × rise × mass), as for one
+    // block; each push already paid for its momentum (CostPush × mass). Nothing is a set limit.
+    static bool Lifted(Agent a, int dir, float extra)
+    {
+        float v = dir % 2 == 0 ? a.Vx : a.Vy, have = MathF.Abs(v) + (a.ClimbDir == dir ? a.Climb : 0);
+        if (have < extra) return false;
+        float left = Math.Min(MathF.Abs(v), have - extra) * MathF.Sign(v);   // what is left of its speed goes on
+        if (dir % 2 == 0) a.Vx = left; else a.Vy = left;
+        return true;
+    }
+
+    // The floor on top of a ledge in `to` more than one block above `from` — the first free voxel over the
+    // rock rising there — if the body's own column is open up to it (it climbs up along the face, not
+    // through its own roof); else −1. One block up is WalkLevel's.
+    int LedgeLevel(int cell, int to, int from)
+    {
+        int z = from + 1;
+        if (from < 0 || z >= Z || !IsSolid(to, from) || !IsSolid(to, z)) return -1;
+        while (z < Z && IsSolid(to, z)) z++;
+        if (z >= Z) return -1;
+        for (int k = from + 1; k < z; k++) if (IsSolid(cell, k)) return -1;
+        return z;
     }
 
     // Linked agents share energy and momentum; a link snaps when they drift apart.

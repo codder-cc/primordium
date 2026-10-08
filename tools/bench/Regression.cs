@@ -168,6 +168,10 @@ public sealed partial class World
         RegionRegression();
         RubbleRegression();
         ConfinementRegression();
+        ClimbRegression();
+        SettleRegression();
+        ReliefRegression();
+        ImpactRegression();
         FatalActionRegression();
         RegionalStructureRegression();
         StackRegression();
@@ -393,8 +397,12 @@ public sealed partial class World
         before = w.ElementBudget();
         w.StepStructure();
         Require(w.Mat[c * Z + 5] == 0 && w.Mat[c * Z + 2] != 0, "weak interface did not collapse");
-        Require(victim.Dead && victim.Cause == CauseBuried && w.Buried.ContainsKey(c * Z + 2), "victim was not buried at impact depth");
+        // The block's blow tears the body under it as far as its molecules hold (World.Crush): what it tore lies
+        // buried where it landed; a survivor is not left inside the block.
+        Require(victim.Dead ? victim.Cause == CauseBuried && w.Buried.ContainsKey(c * Z + 2) : !w.IsSolid(victim.Y * W + victim.X, victim.Z) && (victim.InvTotal == 8 || w.Buried.ContainsKey(c * Z + 2)),
+            $"the body under the fall: dead {victim.Dead}, {victim.InvTotal} molecules, inside rock {w.IsSolid(victim.Y * W + victim.X, victim.Z)}");
         BudgetEqual(before, w.ElementBudget(), "collapse and crushed body");
+        if (!w.Buried.ContainsKey(c * Z + 2)) { w.BurialAt(c * Z + 2).Matter[0] += 40; w.MatterChanged(c * Z + 2); }   // remains under the fallen block
         w.StepStructure(); w.Metamorphose(); Require(w.Buried[c * Z + 2].Order > 0, "buried organics did not compact");
         // A floating connected slab has no roots and must fall, including across the longitude seam.
         int edge = 20 * W;
@@ -662,33 +670,51 @@ public sealed partial class World
     // The player's brush: what it pours or digs out is exactly what HandInput books; killing leaves
     // remains and sound cell lists; water adds up.
     // Confinement (Mohr–Coulomb, World.Strength): the same block under the same load is strongest inside a
-    // stratum of its own rock, weaker between unlike seams, weakest as a free pillar or at a cliff edge.
+    // stratum of its own rock, weaker between unlike seams, weakest as a free pillar or at a cliff edge. The
+    // sideways stress comes from an elastic row (World.Confinement): zero at a free face, coming back over a
+    // block or two inside, and continuous between a tall and a low column.
     static void ConfinementRegression()
     {
         var w = Fixture();
         int s = Enumerable.Range(0, Chemistry.S).Where(x => x % 2 == 0).OrderByDescending(x => w.Chem.Bond[x]).First();
         int u = Enumerable.Range(0, Chemistry.S).Where(x => x % 2 == 0 && w.Chem.Contact[x + 2, s + 2] < 0.5f).First();
-        float StrengthAt(int c, int[] sides)   // sides: species per direction (−1 air), a 12-block column each
+        const int R = 6;   // wider than the elastic row reaches
+        // A patch of 12-block columns around c (within R): species by position (−1 air), c itself of s.
+        void Patch(int c, Func<int, int, int> kind, int top = 14)
         {
-            for (int d = 0; d < 4; d++)
-                for (int z = 2; z < 14; z++) if (sides[d] >= 0) w.TestBlock(w.Nb(c, d), z, sides[d]);
-            for (int z = 2; z < 14; z++) w.TestBlock(c, z, s);
-            w.RefreshColumn(c);
-            for (int d = 0; d < 4; d++) w.RefreshColumn(w.Nb(c, d));
-            return w.Strength(c * Z + 3);
+            for (int dy = -R; dy <= R; dy++)
+                for (int dx = -R; dx <= R; dx++)
+                {
+                    int q = c + dy * W + dx, k = dx == 0 && dy == 0 ? s : kind(dx, dy);
+                    if (k >= 0) for (int z = 2; z < top; z++) w.TestBlock(q, z, k);
+                }
+            for (int dy = -R; dy <= R; dy++)
+                for (int dx = -R; dx <= R; dx++) w.RefreshColumn(c + dy * W + dx);
         }
-        float ucs = 0;
-        float stratum = StrengthAt(40 * W + 40, new[] { s, s, s, s });
-        float seams = StrengthAt(40 * W + 80, new[] { u, u, u, u });
-        float pillar = StrengthAt(40 * W + 120, new[] { -1, -1, -1, -1 });
-        float edge = StrengthAt(40 * W + 160, new[] { s, s, -1, s });
-        ucs = w.CompressionCapacity((40 * W + 120) * Z + 3);
+        int cs = 40 * W + 40, cm = 40 * W + 80, cp = 40 * W + 120, ce = 40 * W + 160, cg = 100 * W + 40, ct = 100 * W + 100;
+        Patch(cs, (dx, dy) => s);                                              // a stratum of its own rock
+        Patch(cm, (dx, dy) => u);                                              // between unlike seams
+        Patch(cp, (dx, dy) => -1);                                             // a free pillar
+        Patch(ce, (dx, dy) => dx < 0 ? -1 : s);                                // at a cliff edge (open to −x)
+        Patch(cg, (dx, dy) => dx < -1 ? -1 : s);                               // two blocks in from a cliff face
+        float stratum = w.Strength(cs * Z + 3), seams = w.Strength(cm * Z + 3), pillar = w.Strength(cp * Z + 3);
+        float edge = w.Strength(ce * Z + 3), inside = w.Strength(cg * Z + 3);
+        float ucs = w.CompressionCapacity(cp * Z + 3);
         Require(Math.Abs(pillar - ucs) < 1e-3f * ucs, $"a free pillar is confined: {pillar} vs uniaxial {ucs}");
         Require(Math.Abs(edge - ucs) < 1e-3f * ucs, $"a block at a cliff edge is confined along the open axis: {edge} vs {ucs}");
         Require(stratum > seams && seams > pillar, $"confinement order wrong: stratum {stratum}, seams {seams}, pillar {pillar}");
-        float p = w.Pressure[(40 * W + 40) * Z + 3];
+        float p = w.Pressure[cs * Z + 3];
         Require(stratum >= ucs + 0.99f * P.FrictionQ * P.LateralK * p, "a block inside its stratum does not get the full lateral push");
-        Console.WriteLine($"PASS confinement: strength under {p:F2} of load — stratum {stratum:F2}, unlike seams {seams:F2}, free pillar / cliff edge {pillar:F2} (uniaxial)");
+        Require(inside > edge + 0.1f * P.FrictionQ * P.LateralK * p && inside < stratum - 0.05f * P.FrictionQ * P.LateralK * p,
+            $"behind a free face the stress does not come back gradually: edge {edge}, two in {inside}, deep {stratum}");
+        // Between a tall column (c, 24 blocks) and low ones (12): more than the low ones' own at-rest stress.
+        Patch(ct, (dx, dy) => s);
+        for (int z = 14; z < 26; z++) w.TestBlock(ct, z, s);
+        w.RefreshColumn(ct);
+        int vt = ct * Z + 3, vn = (ct + 1) * Z + 3;
+        float sigma = (w.Strength(vt) - w.CompressionCapacity(vt)) / P.FrictionQ, low = P.LateralK * w.Pressure[vn];
+        Require(sigma > 1.05f * low && sigma < P.LateralK * w.Pressure[vt], $"no continuity of sideways stress: {sigma} between {low} and {P.LateralK * w.Pressure[vt]}");
+        Console.WriteLine($"PASS confinement: strength under {p:F2} of load — stratum {stratum:F2}, unlike seams {seams:F2}, two blocks behind a free face {inside:F2}, free pillar / cliff edge {pillar:F2} (uniaxial); tall beside low: σ3 {sigma:F2} (low column at rest {low:F2})");
     }
 
     // A heavy pile slumps like a granular heap, but matter never takes less room than it fills: the

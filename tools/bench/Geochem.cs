@@ -116,7 +116,7 @@ public sealed partial class World
                     for (int k = 0, tries = 0; k < spots && tries < 5000; tries++)
                     {
                         int c = (int)(Hash32.U(seed, tries, 0x1A7) % N);
-                        if (w.Submerged(c) || w.Height[c] > Crust + 9) continue;
+                        if (w.Submerged(c) || w.Height[c] > w.LowlandTop) continue;
                         var r = w.SpawnDesign(design, c % W, c / W, new SpawnOptions { Matter = MatterSource.Import, Energy = EnergySource.Import, Count = count, Lineage = lineage, Radius = 3 });
                         if (!r.Ok) continue;
                         lineage = r.Lineage; planted += r.Made; k++;

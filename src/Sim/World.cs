@@ -178,6 +178,7 @@ public sealed partial class World
         }
 
         Firsts = new Discovery[Chem.MatCount];
+        reliefScale = generate ? P.ReliefScale : 1;   // a loaded world takes its own (World.Save, version 11)
         InitGeochem();   // depth biases from the seed (a loaded world then takes its own, World.Geochem)
         for (int s = 0; s < Chemistry.S; s++) C[s] = new Qty[N];
         if (!generate) return;
@@ -275,11 +276,13 @@ public sealed partial class World
         Lap(DStrikes);
         checkpoint = prof.Elapsed.TotalMilliseconds;
         // The more hanging rock there is, the more each pass costs; passes then come less often
-        // (every 4 ticks with little, up to every 64 with a planet full of caves).
+        // (every StructureEvery ticks with little, up to StructureStretch times as rarely with a planet
+        // full of caves). A resolution of the solver in time, not a law of matter: P.StructureVoxels and
+        // P.StructureStretch (ParamRegistry, Mechanics).
         if (Tick >= nextStructure)
         {
             StepStructure();
-            nextStructure = Tick + P.StructureEvery * Math.Clamp(1 + LastStructureVoxels / 5000, 1, 16);
+            nextStructure = Tick + P.StructureEvery * Math.Clamp(1 + LastStructureVoxels / Math.Max(1, P.StructureVoxels), 1, Math.Max(1, P.StructureStretch));
         }
         LapStart();
         if (Tick % P.MetamorphEvery == 0) Metamorphose();   // laps DMetamorph itself
