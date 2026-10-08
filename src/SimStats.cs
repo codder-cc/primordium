@@ -16,6 +16,8 @@ public sealed class SimStats
     public int KinCount;
 
     const int R = 16;
+    // The record's name in Records stays the Russian text (Main looks records up by it); RecordTitle
+    // shows it in the language of the moment.
     static readonly string[] RecordNames =
     {
         "старейший", "больше всех детей", "самое глубокое поколение", "самый крупный", "занимает больше всех клеток",
@@ -23,6 +25,19 @@ public sealed class SimStats
         "больше всех атак", "распространитель генов", "больше всех спаривался", "в самой тесной клетке",
         "самое горячее тело", "самое холодное тело",
     };
+    static readonly string[] RecordNamesEn =
+    {
+        "oldest", "most children", "deepest generation", "largest", "spans the most cells",
+        "best fed", "most proteins", "most conserved genome", "longest genome", "top killer",
+        "most attacks", "gene spreader", "mated the most", "in the most crowded cell",
+        "hottest body", "coldest body",
+    };
+
+    public static string RecordTitle(string name)
+    {
+        int i = Array.IndexOf(RecordNames, name);
+        return i < 0 || !Loc.En ? name : RecordNamesEn[i];
+    }
     static readonly bool[] NeedPositive = { false, true, false, false, false, false, true, true, false, true, true, true, true, false, false, false };
 
     sealed class Part
@@ -140,20 +155,21 @@ public sealed class SimStats
             if (a == null || (NeedPositive[r] && best[r] <= 0)) continue;
             string value = r switch
             {
-                0 => $"возраст {a.Age:N0}",
-                1 => $"детей {a.NChildren}",
-                2 => $"поколение {a.Gen}",
-                3 => $"масса {a.Mass:0} · {a.Cells} кл.",
-                4 => $"{a.Cells} клеток · масса {a.Mass:0}",
-                5 => $"энергия {a.Energy:0}",
-                6 => $"белков {a.EnzymeTotal:0.0}",
-                7 => $"закреплено {best[r]:P0}",
-                8 => $"{a.G.Length} байт",
-                9 => $"убил {a.NKills}",
-                10 => $"атак {a.NAttacks}",
-                11 => $"вставок {a.NInjects}",
-                12 => $"спариваний {a.NMates}",
-                13 => $"соседей {w.Count[a.Y * World.W + a.X] - 1}",
+                // Both languages: the stats outlive a language switch (shown with Loc.Show).
+                0 => Loc.Both($"age {a.Age:N0}", $"возраст {a.Age:N0}"),
+                1 => Loc.Both($"children {a.NChildren}", $"детей {a.NChildren}"),
+                2 => Loc.Both($"generation {a.Gen}", $"поколение {a.Gen}"),
+                3 => Loc.Both($"mass {a.Mass:0} · {a.Cells} cells", $"масса {a.Mass:0} · {a.Cells} кл."),
+                4 => Loc.Both($"{a.Cells} cells · mass {a.Mass:0}", $"{a.Cells} клеток · масса {a.Mass:0}"),
+                5 => Loc.Both($"energy {a.Energy:0}", $"энергия {a.Energy:0}"),
+                6 => Loc.Both($"proteins {a.EnzymeTotal:0.0}", $"белков {a.EnzymeTotal:0.0}"),
+                7 => Loc.Both($"conserved {best[r]:P0}", $"закреплено {best[r]:P0}"),
+                8 => Loc.Both($"{a.G.Length} bytes", $"{a.G.Length} байт"),
+                9 => Loc.Both($"kills {a.NKills}", $"убил {a.NKills}"),
+                10 => Loc.Both($"attacks {a.NAttacks}", $"атак {a.NAttacks}"),
+                11 => Loc.Both($"insertions {a.NInjects}", $"вставок {a.NInjects}"),
+                12 => Loc.Both($"matings {a.NMates}", $"спариваний {a.NMates}"),
+                13 => Loc.Both($"neighbors {w.Count[a.Y * World.W + a.X] - 1}", $"соседей {w.Count[a.Y * World.W + a.X] - 1}"),
                 _ => $"{a.Tb:+0;-0} °C",
             };
             s.Records.Add((RecordNames[r], a, value));

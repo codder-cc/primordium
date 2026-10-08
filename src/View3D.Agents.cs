@@ -12,7 +12,9 @@ namespace Primordium;
 // chunks); from far away the organ marks are left out and bodies and caps use coarser meshes.
 public partial class View3D
 {
-    public static readonly string[] ColorModeNames = { "родство", "питание", "линия", "энергия", "органы" };
+    static readonly string[] ColorModeNamesEn = { "kinship", "diet", "lineage", "energy", "organs" };
+    static readonly string[] ColorModeNamesRu = { "родство", "питание", "линия", "энергия", "органы" };
+    public static string[] ColorModeNames => Loc.T(ColorModeNamesEn, ColorModeNamesRu);
 
     public Agent Hover;
     public bool KinFocus = true;          // dim everything that isn't kin of the selected agent
