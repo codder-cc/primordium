@@ -53,7 +53,9 @@ public static class Genome
 
     public static string SlotName(int slot) => slot < 64 ? Names[slot] : VariantNames[slot - 64];
 
-    public static readonly string[] EnzymeKind = { "соединение", "расщепление", "захват света", "мотор" };
+    public static readonly string[] EnzymeKindEn = { "binding", "splitting", "light capture", "motor" };
+    public static readonly string[] EnzymeKindRu = { "соединение", "расщепление", "захват света", "мотор" };
+    public static string[] EnzymeKind => Loc.T(EnzymeKindEn, EnzymeKindRu);
 
     public static bool HasImm(int op) => op is Push or Label or Jmp or Jz or Jnz or Call;
 
@@ -300,7 +302,7 @@ public static class Genome
         {
             Enzyme.Bind => $"{e.A}+{e.B}",
             Enzyme.Split => $"{e.A}→",
-            Enzyme.Photo => $"свет+{e.A}",
+            Enzyme.Photo => Loc.T($"light+{e.A}", $"свет+{e.A}"),
             _ => "",
         };
         return $"enzyme {EnzymeKind[e.Kind]} {what} {e.Topt:0}° q{e.Eff * 100:0}";
@@ -314,7 +316,9 @@ public static class Genome
 public static class Looks
 {
     public const int ShapeCount = 8;
-    public static readonly string[] ShapeNames = { "шар", "куб", "конус", "цилиндр", "капсула", "призма", "кольцо", "ромб" };
+    public static readonly string[] ShapeNamesEn = { "sphere", "cube", "cone", "cylinder", "capsule", "prism", "ring", "rhomb" };
+    public static readonly string[] ShapeNamesRu = { "шар", "куб", "конус", "цилиндр", "капсула", "призма", "кольцо", "ромб" };
+    public static string[] ShapeNames => Loc.T(ShapeNamesEn, ShapeNamesRu);
 
     static readonly ulong[] Pat =
     {

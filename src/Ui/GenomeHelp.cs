@@ -5,12 +5,59 @@ using Godot;
 namespace Primordium;
 
 // The command reference of the creature editor, generated from the VM's op table (Genome.Names and the
-// second meanings GenomeAsm knows) with a short Russian description of each; and the colours of the
+// second meanings GenomeAsm knows) with a short description of each (English and Russian); and the colours of the
 // genome text.
 public static class GenomeHelp
 {
     // Stack effect and meaning; "a b → c": pops b then a, pushes c.
-    static readonly Dictionary<string, string> Text = new()
+    static readonly Dictionary<string, string> TextEn = new()
+    {
+        ["nop"] = "does nothing",
+        ["push"] = "→ N: push a number 0–3 (push 2)",
+        ["lit"] = "→ N: push the next byte, 0–255 (lit 60)",
+        ["dup"] = "a → a a", ["drop"] = "a →", ["swap"] = "a b → b a", ["over"] = "a b → a b a", ["rot"] = "a b c → b c a",
+        ["add"] = "a b → a+b", ["sub"] = "a b → a−b", ["mul"] = "a b → a·b", ["div"] = "a b → a/b (by 0: 0)", ["mod"] = "a b → remainder",
+        ["neg"] = "a → −a", ["inc"] = "a → a+1", ["dec"] = "a → a−1", ["lt"] = "a b → 1 if a<b", ["eq"] = "a b → 1 if a=b",
+        ["rand"] = "→ random 0–255",
+        ["label"] = "label N (0–3): a jump target",
+        ["jmp"] = "jump to the next label N",
+        ["jz"] = "a →: jump to label N if a=0",
+        ["jnz"] = "a →: jump to label N if a≠0",
+        ["call"] = "call the block at label N (return with ret)",
+        ["ret"] = "return from call",
+        ["skipz"] = "a →: skip the next byte if a=0",
+        ["yield"] = "end this tick's cycles",
+        ["load"] = "i → memory[i]", ["store"] = "v i →: memory[i] = v",
+        ["energy"] = "→ body energy", ["age"] = "→ age / 64", ["have"] = "m → how many molecules m in the body", ["mass"] = "→ molecules in the body",
+        ["temp"] = "→ cell temperature", ["btemp"] = "→ body temperature",
+        ["light"] = "→ light on the body ×100", ["photons"] = "→ cell photons ×100 (0 under a roof)",
+        ["uv"] = "→ UV at the body ×100: solar activity and flares (light.1; without flares, same as light)",
+        ["sense"] = "m → concentration of m in the cell", ["sensed"] = "m d → concentration of m in neighbour cell d",
+        ["smell"] = "m → smell of m around",
+        ["look"] = "range d →: look in direction d (costs energy); pushes detail, distance, what is seen",
+        ["ground"] = "d → material underfoot (d=4) or height step to neighbour d",
+        ["pick"] = "n → select the n-th neighbour in the cell (n<0: in a neighbour cell); 1 if found",
+        ["count"] = "→ how many candidates around for pick",
+        ["feel"] = "→ energy of the selected (−1: nobody)",
+        ["hurt"] = "→ ticks since the last attack here (−1: quiet); the attacker becomes the target",
+        ["kin"] = "→ kinship with the selected", ["ngene"] = "i → genome byte of the selected", ["gene"] = "i → own genome byte", ["glen"] = "→ genome length",
+        ["listen"] = "→ signal of the selected", ["emit"] = "s →: set own signal",
+        ["enzyme"] = "protein gene: enzyme kind A B t=… q=… (kind: bind, split, photo, motor)",
+        ["intake"] = "m →: take in molecule m from the cell", ["drink"] = "a sip of everything around (or of soft organics underfoot)",
+        ["expel"] = "m d →: expel molecule m toward d (recoil)", ["thrust"] = "d →: motor push toward d (needs a motor protein)",
+        ["bind"] = "a b →: bind molecules a and b (pays if the product is poorer)", ["digest"] = "split a random molecule of the body",
+        ["split"] = "m →: split molecule m (energy if the split is exothermic)", ["photo"] = "m →: catch a photon with molecule m (excitation)",
+        ["divide"] = "share d →: divide (the child's share, side 0–4)", ["mate"] = "mate with the selected (gene exchange)",
+        ["mine"] = "gnaw the block underfoot", ["gnaw"] = "d →: gnaw the wall or floor of neighbour d",
+        ["attack"] = "force →: attack the selected", ["take"] = "m →: take molecule m from the selected", ["give"] = "m →: give molecule m to the selected",
+        ["link"] = "link with the selected (both must agree); again to let go", ["share"] = "e →: pass energy to the selected",
+        ["inject"] = "start length →: write a piece of own genome into the selected (length<0: take theirs)",
+        ["cut"] = "start length →: cut a piece of own genome",
+        ["dig"] = "d →: move a whole block", ["pile"] = "d →: lay a block of identical solid molecules", ["grow"] = "d →: secrete an aggregate of four own molecules",
+        ["swim"] = "stroke up (swim up) or down (swim down), only in water",
+    };
+
+    static readonly Dictionary<string, string> TextRu = new()
     {
         ["nop"] = "ничего не делает",
         ["push"] = "→ N: положить число 0–3 (push 2)",
@@ -57,17 +104,19 @@ public static class GenomeHelp
         ["swim"] = "гребок вверх (swim up) или вниз (swim down) — только в воде",
     };
 
-    static readonly (string title, string[] ops)[] Groups =
+    static Dictionary<string, string> Text => Loc.En ? TextEn : TextRu;
+
+    static readonly (string en, string ru, string[] ops)[] Groups =
     {
-        ("Стек и числа", new[] { "push", "lit", "dup", "drop", "swap", "over", "rot", "add", "sub", "mul", "div", "mod", "neg", "inc", "dec", "lt", "eq", "rand", "nop" }),
-        ("Управление и память", new[] { "label", "jmp", "jz", "jnz", "call", "ret", "skipz", "yield", "load", "store" }),
-        ("Состояние тела", new[] { "energy", "age", "have", "mass", "temp", "btemp", "gene", "glen" }),
-        ("Мир", new[] { "sense", "sensed", "smell", "light", "photons", "uv", "look", "ground" }),
-        ("Внимание и общение", new[] { "pick", "count", "feel", "hurt", "kin", "ngene", "listen", "emit" }),
-        ("Белки и химия", new[] { "enzyme", "bind", "split", "photo", "digest" }),
-        ("Мембрана и движение", new[] { "intake", "drink", "expel", "thrust", "swim" }),
-        ("Жизнь и другие", new[] { "divide", "mate", "attack", "take", "give", "share", "link", "inject", "cut" }),
-        ("Порода", new[] { "mine", "gnaw", "dig", "pile", "grow" }),
+        ("Stack and numbers", "Стек и числа", new[] { "push", "lit", "dup", "drop", "swap", "over", "rot", "add", "sub", "mul", "div", "mod", "neg", "inc", "dec", "lt", "eq", "rand", "nop" }),
+        ("Control and memory", "Управление и память", new[] { "label", "jmp", "jz", "jnz", "call", "ret", "skipz", "yield", "load", "store" }),
+        ("Body state", "Состояние тела", new[] { "energy", "age", "have", "mass", "temp", "btemp", "gene", "glen" }),
+        ("World", "Мир", new[] { "sense", "sensed", "smell", "light", "photons", "uv", "look", "ground" }),
+        ("Attention and communication", "Внимание и общение", new[] { "pick", "count", "feel", "hurt", "kin", "ngene", "listen", "emit" }),
+        ("Proteins and chemistry", "Белки и химия", new[] { "enzyme", "bind", "split", "photo", "digest" }),
+        ("Membrane and movement", "Мембрана и движение", new[] { "intake", "drink", "expel", "thrust", "swim" }),
+        ("Life and others", "Жизнь и другие", new[] { "divide", "mate", "attack", "take", "give", "share", "link", "inject", "cut" }),
+        ("Rock", "Порода", new[] { "mine", "gnaw", "dig", "pile", "grow" }),
     };
 
     // Every mnemonic the assembler takes: the 64 instructions and the second meanings (immediate 2).
@@ -122,12 +171,16 @@ public static class GenomeHelp
         var known = new HashSet<string>();
         foreach (var (n, _, _) in Mnemonics()) known.Add(n);
         var sb = new StringBuilder();
-        sb.Append("[color=#9aa3b5]По команде в строке. «a b → c»: снимает со стека a и b, кладёт c. ")
-          .Append("Вариант байта — суффикс .1/.2/.3 (dup.1). Комментарии: ; // #. ")
-          .Append("Молекулы — номера 0–31 этого мира (0, 2, 4, 6 — одиночные элементы, нечётные — возбуждённые).[/color]\n");
-        foreach (var (title, ops) in Groups)
+        sb.Append("[color=#9aa3b5]").Append(Loc.T(
+              "One instruction per line. 'a b → c': pops a and b off the stack, pushes c. " +
+              "Byte variant: suffix .1/.2/.3 (dup.1). Comments: ; // #. " +
+              "Molecules are this world's numbers 0–31 (0, 2, 4, 6: single elements; odd: excited states).",
+              "По команде в строке. «a b → c»: снимает со стека a и b, кладёт c. " +
+              "Вариант байта — суффикс .1/.2/.3 (dup.1). Комментарии: ; // #. " +
+              "Молекулы — номера 0–31 этого мира (0, 2, 4, 6 — одиночные элементы, нечётные — возбуждённые).")).Append("[/color]\n");
+        foreach (var (en, ru, ops) in Groups)
         {
-            sb.Append("\n[b]").Append(title).Append("[/b]\n");
+            sb.Append("\n[b]").Append(Loc.T(en, ru)).Append("[/b]\n");
             foreach (var name in ops)
             {
                 if (!known.Contains(name)) continue;
@@ -137,9 +190,12 @@ public static class GenomeHelp
                   .Append(Text.TryGetValue(name, out var d) ? d : "").Append('\n');
             }
         }
-        sb.Append("\n[b]Белок[/b]\n[code]enzyme photo 0 0 t=15.0 q=0.9[/code] — вид (bind соединение, split расщепление, photo захват света, motor мотор), ")
-          .Append("молекулы A и B, лучшая температура (−15…35,4 °C) и желаемое качество 0,35–1. Белок стоит энергии и одну молекулу тела.\n")
-          .Append("\n[b]Байты[/b]\n[code]byte 12 200[/code] — сырые байты.\n");
+        sb.Append(Loc.T(
+                "\n[b]Protein[/b]\n[code]enzyme photo 0 0 t=15.0 q=0.9[/code]: kind (bind binding, split splitting, photo light capture, motor motor), " +
+                "molecules A and B, best temperature (−15…35.4 °C) and wanted quality 0.35–1. A protein costs energy and one molecule of the body.\n",
+                "\n[b]Белок[/b]\n[code]enzyme photo 0 0 t=15.0 q=0.9[/code] — вид (bind соединение, split расщепление, photo захват света, motor мотор), " +
+                "молекулы A и B, лучшая температура (−15…35,4 °C) и желаемое качество 0,35–1. Белок стоит энергии и одну молекулу тела.\n"))
+          .Append(Loc.T("\n[b]Bytes[/b]\n[code]byte 12 200[/code]: raw bytes.\n", "\n[b]Байты[/b]\n[code]byte 12 200[/code] — сырые байты.\n"));
         return sb.ToString();
     }
 }

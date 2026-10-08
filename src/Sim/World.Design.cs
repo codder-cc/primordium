@@ -56,8 +56,12 @@ public sealed partial class World
             DesignedLineages[lineage] = design.Name;
             if (result.Made == result.Requested) result.Error = null;
             foreach (var a in result.Agents) TrackNew(a, Chronicle.WhyDesigned);
-            Add(EvType.Player, $"посажен дизайн «{design.Name}»: {result.Made} {Plural(result.Made, "тело", "тела", "тел")}, линия #{lineage}, " +
-                (options.Matter == MatterSource.Import ? "вещество извне" : "вещество местное") + ", " + (options.Energy == EnergySource.Import ? "энергия извне" : "энергия местная"),
+            bool importM = options.Matter == MatterSource.Import, importE = options.Energy == EnergySource.Import;
+            Add(EvType.Player, Loc.Both(
+                    $"design '{CreatureExamples.NameEn(design.Name)}' planted: {result.Made} {(result.Made == 1 ? "body" : "bodies")}, lineage #{lineage}, " +
+                    (importM ? "matter from outside" : "local matter") + ", " + (importE ? "energy from outside" : "local energy"),
+                    $"посажен дизайн «{CreatureExamples.NameRu(design.Name)}»: {result.Made} {Plural(result.Made, "тело", "тела", "тел")}, линия #{lineage}, " +
+                    (importM ? "вещество извне" : "вещество местное") + ", " + (importE ? "энергия извне" : "энергия местная")),
                 result.Agents[0], result.Made, true);
         }
         return result;
@@ -67,7 +71,7 @@ public sealed partial class World
     {
         why = null;
         int level = Height[cell];
-        if (level >= Z - 2) { why = "нет места над столбом"; return null; }
+        if (level >= Z - 2) { why = Loc.T("no room above the column", "нет места над столбом"); return null; }
         var sources = new List<int> { cell };   // loose matter here and next door
         for (int k = 0; k < 4; k++) { int n = nb[cell * 4 + k]; if (!sources.Contains(n)) sources.Add(n); }
         int top = cell * Z + level - 1;
@@ -109,14 +113,14 @@ public sealed partial class World
                             for (int k = 0; k < sources.Count; k++) have += Math.Max(0, Loose(k, q));
                             if (have > most) { most = have; want = q; }
                         }
-                        if (want < 0) { why = $"здесь не хватает вещества: нужно ещё {n - j}"; return null; }
+                        if (want < 0) { why = Loc.T($"not enough matter here: {n - j} more needed", $"здесь не хватает вещества: нужно ещё {n - j}"); return null; }
                     }
-                    if (!TakeOne(want)) { why = $"здесь мало {Chem.Name[want]}: нужно {n}, нашлось {j}"; return null; }
+                    if (!TakeOne(want)) { why = Loc.T($"too little {Chem.NameEn[want]} here: {n} needed, {j} found", $"здесь мало {Chem.NameRu[want]}: нужно {n}, нашлось {j}"); return null; }
                 }
         }
         float volume = 0;
         for (int s = 0; s < Chemistry.S; s++) volume += counts[s] * Chem.BodyVolume[s];
-        if (!Fits(cell, level, volume)) { why = "на этом полу нет места для такого тела"; return null; }
+        if (!Fits(cell, level, volume)) { why = Loc.T("no room on this floor for such a body", "на этом полу нет места для такого тела"); return null; }
 
         // 2. Energy: local reactions are worked out on a copy of the loose matter left after step 1.
         float energy = 0;
@@ -141,7 +145,7 @@ public sealed partial class World
                 energy += take * Chem.SplitEnergy(bs);
                 burn.Add((sources[bk], bs, take));
             }
-            if (energy < d.Energy * 0.999f) { why = $"местные реакции дают {energy:0.#} энергии из {d.Energy:0.#}"; return null; }
+            if (energy < d.Energy * 0.999f) { why = Loc.T($"local reactions give {energy:0.#} of {d.Energy:0.#} energy", $"местные реакции дают {energy:0.#} энергии из {d.Energy:0.#}"); return null; }
         }
 
         // 3. Take it all.

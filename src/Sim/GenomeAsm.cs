@@ -11,7 +11,7 @@ public readonly struct AsmError
     public readonly int Line;        // 1-based
     public readonly string Message;
     public AsmError(int line, string message) { Line = line; Message = message; }
-    public override string ToString() => $"строка {Line}: {Message}";
+    public override string ToString() => Loc.T($"line {Line}: {Message}", $"строка {Line}: {Message}");
 }
 
 public sealed class GenomeAsmException : Exception
@@ -166,8 +166,8 @@ public static class GenomeAsm
             try { AssembleLine(tokens, output); }
             catch (FormatException e) { errors.Add(new AsmError(n + 1, e.Message)); }
         }
-        if (errors.Count == 0 && output.Count < Genome.MinLen) errors.Add(new AsmError(lines.Length, $"геном короче {Genome.MinLen} байт ({output.Count})"));
-        if (errors.Count == 0 && output.Count > Genome.MaxLen) errors.Add(new AsmError(lines.Length, $"геном длиннее {Genome.MaxLen} байт ({output.Count})"));
+        if (errors.Count == 0 && output.Count < Genome.MinLen) errors.Add(new AsmError(lines.Length, Loc.T($"genome shorter than {Genome.MinLen} bytes ({output.Count})", $"геном короче {Genome.MinLen} байт ({output.Count})")));
+        if (errors.Count == 0 && output.Count > Genome.MaxLen) errors.Add(new AsmError(lines.Length, Loc.T($"genome longer than {Genome.MaxLen} bytes ({output.Count})", $"геном длиннее {Genome.MaxLen} байт ({output.Count})")));
         bytes = errors.Count == 0 ? output.ToArray() : null;
         return errors.Count == 0;
     }
@@ -186,20 +186,20 @@ public static class GenomeAsm
         bool ok = token.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
             ? int.TryParse(token[2..], NumberStyles.HexNumber, Inv, out int v)
             : int.TryParse(token, NumberStyles.Integer, Inv, out v);
-        if (!ok) throw new FormatException($"{what}: «{token}» — не число");
-        if (v < min || v > max) throw new FormatException($"{what}: {v} вне {min}…{max}");
+        if (!ok) throw new FormatException(Loc.T($"{what}: '{token}' is not a number", $"{what}: «{token}» — не число"));
+        if (v < min || v > max) throw new FormatException(Loc.T($"{what}: {v} outside {min}…{max}", $"{what}: {v} вне {min}…{max}"));
         return v;
     }
 
     static double Real(string token, string what)
     {
-        if (!double.TryParse(token.Replace(',', '.'), NumberStyles.Float, Inv, out double v)) throw new FormatException($"{what}: «{token}» — не число");
+        if (!double.TryParse(token.Replace(',', '.'), NumberStyles.Float, Inv, out double v)) throw new FormatException(Loc.T($"{what}: '{token}' is not a number", $"{what}: «{token}» — не число"));
         return v;
     }
 
     static void Args(string[] t, int count, string usage)
     {
-        if (t.Length - 1 != count) throw new FormatException($"ожидается «{usage}»");
+        if (t.Length - 1 != count) throw new FormatException(Loc.T($"expected '{usage}'", $"ожидается «{usage}»"));
     }
 
     static void AssembleLine(string[] t, List<byte> output)
@@ -207,7 +207,7 @@ public static class GenomeAsm
         string word = t[0];
         if (word.Equals("byte", StringComparison.OrdinalIgnoreCase) || word.Equals("db", StringComparison.OrdinalIgnoreCase))
         {
-            if (t.Length < 2) throw new FormatException("byte: нужен хотя бы один байт");
+            if (t.Length < 2) throw new FormatException(Loc.T("byte: needs at least one byte", "byte: нужен хотя бы один байт"));
             for (int k = 1; k < t.Length; k++) output.Add((byte)Number(t[k], 0, 255, "byte"));
             return;
         }
@@ -215,36 +215,36 @@ public static class GenomeAsm
         int dot = word.LastIndexOf('.');
         if (dot > 0)
         {
-            imm = Number(word[(dot + 1)..], 0, 3, "вариант");
+            imm = Number(word[(dot + 1)..], 0, 3, Loc.T("variant", "вариант"));
             word = word[..dot];
         }
         int op;
         if (word.Equals("uv", StringComparison.OrdinalIgnoreCase))
         {
-            if (imm >= 0) throw new FormatException("uv: без вариантов (это light.1)");
+            if (imm >= 0) throw new FormatException(Loc.T("uv: takes no variant (it is light.1)", "uv: без вариантов (это light.1)"));
             Args(t, 0, word);
             output.Add((byte)(Genome.LightOp | 1 << 6));
             return;
         }
         if (variantOps.TryGetValue(word, out op))
         {
-            if (imm >= 0 && imm < 2) throw new FormatException($"{word}.{imm}: у второго значения варианты 2 или 3");
+            if (imm >= 0 && imm < 2) throw new FormatException(Loc.T($"{word}.{imm}: the second meaning has variants 2 or 3", $"{word}.{imm}: у второго значения варианты 2 или 3"));
             if (imm < 0) imm = 2;
             if (word.Equals("swim", StringComparison.OrdinalIgnoreCase) && t.Length == 2)
             {
                 if (t[1].Equals("up", StringComparison.OrdinalIgnoreCase)) imm = 2;
                 else if (t[1].Equals("down", StringComparison.OrdinalIgnoreCase)) imm = 3;
-                else throw new FormatException("swim: up или down");
+                else throw new FormatException(Loc.T("swim: up or down", "swim: up или down"));
             }
             else Args(t, 0, word);
             output.Add((byte)(op | imm << 6));
             return;
         }
         if (!baseOps.TryGetValue(word, out op))
-            throw new FormatException(word.Equals("push", StringComparison.OrdinalIgnoreCase) ? "push N (0–3); толчок мотором — thrust" : $"неизвестная команда «{t[0]}»");
+            throw new FormatException(word.Equals("push", StringComparison.OrdinalIgnoreCase) ? Loc.T("push N (0–3); a motor push is thrust", "push N (0–3); толчок мотором — thrust") : Loc.T($"unknown instruction '{t[0]}'", $"неизвестная команда «{t[0]}»"));
         if (Genome.HasImm(op))
         {
-            if (imm >= 0) throw new FormatException($"{word}: число пишется через пробел ({word} N)");
+            if (imm >= 0) throw new FormatException(Loc.T($"{word}: the number goes after a space ({word} N)", $"{word}: число пишется через пробел ({word} N)"));
             Args(t, 1, $"{word} N");
             output.Add((byte)(op | Number(t[1], 0, 3, word) << 6));
             return;
@@ -276,9 +276,9 @@ public static class GenomeAsm
             Args(t, 4, "enzyme raw b1 b2 b3");
             return ((byte)Number(t[2], 0, 255, "b1"), (byte)Number(t[3], 0, 255, "b2"), (byte)Number(t[4], 0, 255, "b3"));
         }
-        if (t.Length < 4) throw new FormatException("ожидается «enzyme bind|split|photo|motor A B t=T q=Q»");
-        if (!kinds.TryGetValue(t[1], out int kind)) throw new FormatException($"неизвестный вид белка «{t[1]}» (bind, split, photo, motor)");
-        int a = Number(t[2], 0, Chemistry.S - 1, "молекула A"), b = Number(t[3], 0, Chemistry.S - 1, "молекула B");
+        if (t.Length < 4) throw new FormatException(Loc.T("expected 'enzyme bind|split|photo|motor A B t=T q=Q'", "ожидается «enzyme bind|split|photo|motor A B t=T q=Q»"));
+        if (!kinds.TryGetValue(t[1], out int kind)) throw new FormatException(Loc.T($"unknown protein kind '{t[1]}' (bind, split, photo, motor)", $"неизвестный вид белка «{t[1]}» (bind, split, photo, motor)"));
+        int a = Number(t[2], 0, Chemistry.S - 1, Loc.T("molecule A", "молекула A")), b = Number(t[3], 0, Chemistry.S - 1, Loc.T("molecule B", "молекула B"));
         double topt = 15, q = 1;
         int alt = -1, positional = 0;
         for (int k = 4; k < t.Length; k++)
@@ -289,14 +289,14 @@ public static class GenomeAsm
             string val = eq > 0 ? tok[(eq + 1)..] : tok;
             switch (key)
             {
-                case "t": topt = Real(val, "температура"); break;
-                case "q": q = Real(val, "качество"); break;
+                case "t": topt = Real(val, Loc.T("temperature", "температура")); break;
+                case "q": q = Real(val, Loc.T("quality", "качество")); break;
                 case "alt": alt = Number(val, 0, 63, "alt"); break;
-                default: throw new FormatException($"лишнее «{tok}» (t=…, q=…, alt=…)");
+                default: throw new FormatException(Loc.T($"unexpected '{tok}' (t=…, q=…, alt=…)", $"лишнее «{tok}» (t=…, q=…, alt=…)"));
             }
         }
-        if (topt < -15.4 || topt > 35.8) throw new FormatException($"температура {topt.ToString(Inv)} вне −15…35.4 °C");
-        if (q < 0 || q > 1.5) throw new FormatException($"качество {q.ToString(Inv)} вне 0.35…1");
+        if (topt < -15.4 || topt > 35.8) throw new FormatException(Loc.T($"temperature {topt.ToString(Inv)} outside −15…35.4 °C", $"температура {topt.ToString(Inv)} вне −15…35.4 °C"));
+        if (q < 0 || q > 1.5) throw new FormatException(Loc.T($"quality {q.ToString(Inv)} outside 0.35…1", $"качество {q.ToString(Inv)} вне 0.35…1"));
         return EnzymeBytes(kind, a, b, (float)topt, q, alt);
     }
 }

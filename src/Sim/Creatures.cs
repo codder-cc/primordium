@@ -44,8 +44,8 @@ public sealed class CreatureDesign
         foreach (var (key, count) in Body ?? new())
         {
             int s = ResolveMolecule(chem, key);
-            if (s == int.MinValue) { errors.Add($"неизвестная молекула «{key}»"); continue; }
-            if (count < 0) { errors.Add($"{key}: отрицательное количество"); continue; }
+            if (s == int.MinValue) { errors.Add(Loc.T($"unknown molecule '{key}'", $"неизвестная молекула «{key}»")); continue; }
+            if (count < 0) { errors.Add(Loc.T($"{key}: negative count", $"{key}: отрицательное количество")); continue; }
             if (count == 0) continue;
             body.TryGetValue(s, out int had);
             body[s] = had + count;
@@ -59,8 +59,8 @@ public sealed class CreatureDesign
         if (key.Equals("any", StringComparison.OrdinalIgnoreCase) || key == "*") return AnyMolecule;
         if (key.Equals("gas", StringComparison.OrdinalIgnoreCase)) return chem.Gas;
         if (int.TryParse(key, NumberStyles.Integer, CultureInfo.InvariantCulture, out int s)) return s >= 0 && s < Chemistry.S ? s : int.MinValue;
-        for (s = 0; s < Chemistry.S; s++)
-            if (chem.Name[s].Equals(key, StringComparison.OrdinalIgnoreCase)) return s;
+        for (s = 0; s < Chemistry.S; s++)   // a name in either language
+            if (chem.NameEn[s].Equals(key, StringComparison.OrdinalIgnoreCase) || chem.NameRu[s].Equals(key, StringComparison.OrdinalIgnoreCase)) return s;
         for (s = 0; s < Chemistry.S; s += 2)   // a formula means its ground state
             if (chem.Formula(s).Equals(key, StringComparison.OrdinalIgnoreCase)) return s;
         return int.MinValue;
@@ -73,8 +73,8 @@ public sealed class CreatureDesign
         if (!GenomeAsm.TryAssemble(Genome, out _, out var asm)) errors.AddRange(asm.Select(e => e.ToString()));
         var body = ResolveBody(chem, errors);
         int total = body.Values.Sum();
-        if (total < P.MinBody) errors.Add($"тело из {total} молекул: меньше {P.MinBody} не держится");
-        if (!(Energy >= 0) || float.IsInfinity(Energy)) errors.Add("энергия должна быть ≥ 0");
+        if (total < P.MinBody) errors.Add(Loc.T($"a body of {total} molecules: fewer than {P.MinBody} cannot hold together", $"тело из {total} молекул: меньше {P.MinBody} не держится"));
+        if (!(Energy >= 0) || float.IsInfinity(Energy)) errors.Add(Loc.T("energy must be ≥ 0", "энергия должна быть ≥ 0"));
         return errors;
     }
 
@@ -83,8 +83,9 @@ public sealed class CreatureDesign
     {
         var d = new CreatureDesign
         {
-            Name = name ?? $"линия {a.Lineage} #{a.Id}",
-            Description = $"Снято с существа #{a.Id} (линия {a.Lineage}, поколение {a.Gen}, мир {w.Seed}, тик {w.Tick}).",
+            Name = name ?? Loc.T($"lineage {a.Lineage} #{a.Id}", $"линия {a.Lineage} #{a.Id}"),
+            Description = Loc.T($"Taken from creature #{a.Id} (lineage {a.Lineage}, generation {a.Gen}, world {w.Seed}, tick {w.Tick}).",
+                                $"Снято с существа #{a.Id} (линия {a.Lineage}, поколение {a.Gen}, мир {w.Seed}, тик {w.Tick})."),
             Genome = GenomeAsm.Disassemble(a.G),
             Energy = MathF.Round((float)Math.Max(0, a.Energy)),
             Hue = a.Hue, Sat = a.Sat, Val = a.Val, Shape = a.Shape,
@@ -182,107 +183,173 @@ public static class CreatureLibrary
 
 // Built-in designs, written as genome text. They use only what every seed has: the single elements
 // (species 0, 2, 4, 6 and their excited states 1, 3, 5, 7), the world's gas and "any" matter.
+// Their Name is a stable key (the Russian name, as in design files and the save's designed lineages:
+// files exported earlier keep matching); DisplayName shows it in the current language. Description
+// and genome comments are written in the language of the moment the design is made.
 public static class CreatureExamples
 {
-    public static CreatureDesign Leaf => new()
+    sealed record Spec(string Key, string En, string DescEn, string DescRu, Dictionary<string, int> Body, float Energy, float Hue, float Sat, float Val,
+                       (string Op, string En, string Ru)[] Lines);
+
+    // Genome text in one language: the instruction, its comment in the column after it.
+    static string Text(Spec s, bool en)
     {
-        Name = "Листок",
-        Description = "Минимальный фотосинтетик: ловит фотон молекулой 0 (одиночный атом A есть в каждом мире), снимает возбуждение 1 → 0 и берёт энергию. Иногда пьёт вещество вокруг, изредка заново собирает белки, сытый делится.",
-        Body = new() { ["0"] = 10, ["any"] = 4 },
-        Energy = 40,
-        Hue = 0.33f, Sat = 0.8f, Val = 0.9f,
-        Genome = @"; Листок — минимальный фотосинтетик
-label 1
-enzyme photo 0 0 t=15.0          ; белок света для молекулы 0
-enzyme split 1 0 t=15.0          ; белок, снимающий возбуждение 1 → 0
-label 0
-push 0
-photo                            ; фотон: 0 → 1
-push 1
-split                            ; 1 → 0, энергия телу
-rand
-lit 4
-lt
-jnz 1                            ; ~1,5% циклов — заново собрать белки
-rand
-lit 12
-lt
-jz 0                             ; чаще всего — снова к свету
-drink                            ; глоток вещества вокруг
-energy
-lit 60
-lt
-jnz 0                            ; голоден — к свету
-push 0                           ; доля ребёнку: половина
-push 1                           ; куда: соседняя клетка
-divide
-jmp 0
-",
+        var sb = new StringBuilder();
+        foreach (var (op, cEn, cRu) in s.Lines)
+        {
+            string c = en ? cEn : cRu;
+            if (op.Length == 0) sb.Append(c);
+            else if (c == null) sb.Append(op);
+            else sb.Append(op.PadRight(33)).Append("; ").Append(c);
+            sb.Append('\n');
+        }
+        return sb.ToString();
+    }
+
+    static CreatureDesign Make(Spec s) => new()
+    {
+        Name = s.Key,
+        Description = Loc.T(s.DescEn, s.DescRu),
+        Body = new(s.Body),
+        Energy = s.Energy,
+        Hue = s.Hue, Sat = s.Sat, Val = s.Val,
+        Genome = Text(s, Loc.En),
     };
 
-    public static CreatureDesign Mole => new()
-    {
-        Name = "Крот",
-        Description = "Шахтёр: грызёт блок под собой и стены рядом, переваривает добытое (распад без белка идёт медленно, но идёт). Сытый делится.",
-        Body = new() { ["any"] = 14 },
-        Energy = 50,
-        Hue = 0.08f, Sat = 0.7f, Val = 0.75f,
-        Genome = @"; Крот — грызёт породу и переваривает добытое
-label 0
-mine                             ; грызть блок под ногами
-digest                           ; расщепить случайную молекулу тела
-mine
-digest
-rand
-gnaw                             ; стену в случайную сторону
-digest
-energy
-lit 80
-lt
-jnz 0                            ; голоден — грызть дальше
-push 0
-rand
-divide                           ; пополам, в случайную сторону
-jmp 0
-",
-    };
+    static readonly Spec LeafSpec = new("Листок", "Leaf",
+        "A minimal photosynthesizer: catches a photon with molecule 0 (a lone atom A exists in every world), relaxes the excitation 1 → 0 and takes the energy. Now and then it drinks the matter around, rarely rebuilds its proteins, divides when fed.",
+        "Минимальный фотосинтетик: ловит фотон молекулой 0 (одиночный атом A есть в каждом мире), снимает возбуждение 1 → 0 и берёт энергию. Иногда пьёт вещество вокруг, изредка заново собирает белки, сытый делится.",
+        new() { ["0"] = 10, ["any"] = 4 }, 40, 0.33f, 0.8f, 0.9f, new (string, string, string)[]
+        {
+            ("", "; Leaf — a minimal photosynthesizer", "; Листок — минимальный фотосинтетик"),
+            ("label 1", null, null),
+            ("enzyme photo 0 0 t=15.0", "light protein for molecule 0", "белок света для молекулы 0"),
+            ("enzyme split 1 0 t=15.0", "protein that relaxes the excitation 1 → 0", "белок, снимающий возбуждение 1 → 0"),
+            ("label 0", null, null),
+            ("push 0", null, null),
+            ("photo", "photon: 0 → 1", "фотон: 0 → 1"),
+            ("push 1", null, null),
+            ("split", "1 → 0, energy to the body", "1 → 0, энергия телу"),
+            ("rand", null, null),
+            ("lit 4", null, null),
+            ("lt", null, null),
+            ("jnz 1", "~1.5% of cycles: rebuild the proteins", "~1,5% циклов — заново собрать белки"),
+            ("rand", null, null),
+            ("lit 12", null, null),
+            ("lt", null, null),
+            ("jz 0", "most often: back to the light", "чаще всего — снова к свету"),
+            ("drink", "a sip of the matter around", "глоток вещества вокруг"),
+            ("energy", null, null),
+            ("lit 60", null, null),
+            ("lt", null, null),
+            ("jnz 0", "hungry: to the light", "голоден — к свету"),
+            ("push 0", "the child's share: half", "доля ребёнку: половина"),
+            ("push 1", "where: the next cell", "куда: соседняя клетка"),
+            ("divide", null, null),
+            ("jmp 0", null, null),
+        });
 
-    public static CreatureDesign Swimmer => new()
-    {
-        Name = "Пловец",
-        Description = "Держит пузырь газа и изредка гребёт к поверхности, где больше света; иногда толкается мотором. Энергию берёт светом, как листок. Каждый гребок дорог: часто грести — умереть с голоду.",
-        Body = new() { ["0"] = 8, ["gas"] = 3, ["any"] = 3 },
-        Energy = 40,
-        Hue = 0.58f, Sat = 0.85f, Val = 0.95f,
-        Genome = @"; Пловец — пузырь газа, мотор и свет
-label 1
-enzyme motor 0 0 t=15.0          ; мотор: толчки и гребки
-enzyme photo 0 0 t=15.0
-enzyme split 1 0 t=15.0
-label 0
-push 0
-photo                            ; фотон: 0 → 1
-push 1
-split                            ; 1 → 0, энергия телу
-rand
-lit 8
-lt
-jz 0                             ; чаще всего — снова к свету (гребок дорог)
-swim up                          ; гребок вверх (только в воде)
-rand
-lit 64
-lt
-jz 2
-rand
-thrust                           ; иногда толчок мотором в случайную сторону
-label 2
-rand
-lit 64
-lt
-jnz 1                            ; изредка — обновить белки
-jmp 0
-",
-    };
+    static readonly Spec MoleSpec = new("Крот", "Mole",
+        "A miner: gnaws the block beneath it and the walls nearby, digests what it mines (splitting without a protein is slow, but it goes). Divides when fed.",
+        "Шахтёр: грызёт блок под собой и стены рядом, переваривает добытое (распад без белка идёт медленно, но идёт). Сытый делится.",
+        new() { ["any"] = 14 }, 50, 0.08f, 0.7f, 0.75f, new (string, string, string)[]
+        {
+            ("", "; Mole — gnaws rock and digests what it mines", "; Крот — грызёт породу и переваривает добытое"),
+            ("label 0", null, null),
+            ("mine", "gnaw the block underfoot", "грызть блок под ногами"),
+            ("digest", "split a random molecule of the body", "расщепить случайную молекулу тела"),
+            ("mine", null, null),
+            ("digest", null, null),
+            ("rand", null, null),
+            ("gnaw", "a wall in a random direction", "стену в случайную сторону"),
+            ("digest", null, null),
+            ("energy", null, null),
+            ("lit 80", null, null),
+            ("lt", null, null),
+            ("jnz 0", "hungry: keep gnawing", "голоден — грызть дальше"),
+            ("push 0", null, null),
+            ("rand", null, null),
+            ("divide", "in half, in a random direction", "пополам, в случайную сторону"),
+            ("jmp 0", null, null),
+        });
+
+    static readonly Spec SwimmerSpec = new("Пловец", "Swimmer",
+        "Holds a gas bubble and now and then strokes toward the surface, where there is more light; sometimes pushes with its motor. Takes energy from light, like the leaf. Every stroke is costly: stroke too often and it starves.",
+        "Держит пузырь газа и изредка гребёт к поверхности, где больше света; иногда толкается мотором. Энергию берёт светом, как листок. Каждый гребок дорог: часто грести — умереть с голоду.",
+        new() { ["0"] = 8, ["gas"] = 3, ["any"] = 3 }, 40, 0.58f, 0.85f, 0.95f, new (string, string, string)[]
+        {
+            ("", "; Swimmer — a gas bubble, a motor and light", "; Пловец — пузырь газа, мотор и свет"),
+            ("label 1", null, null),
+            ("enzyme motor 0 0 t=15.0", "motor: pushes and strokes", "мотор: толчки и гребки"),
+            ("enzyme photo 0 0 t=15.0", null, null),
+            ("enzyme split 1 0 t=15.0", null, null),
+            ("label 0", null, null),
+            ("push 0", null, null),
+            ("photo", "photon: 0 → 1", "фотон: 0 → 1"),
+            ("push 1", null, null),
+            ("split", "1 → 0, energy to the body", "1 → 0, энергия телу"),
+            ("rand", null, null),
+            ("lit 8", null, null),
+            ("lt", null, null),
+            ("jz 0", "most often: back to the light (a stroke is costly)", "чаще всего — снова к свету (гребок дорог)"),
+            ("swim up", "a stroke up (only in water)", "гребок вверх (только в воде)"),
+            ("rand", null, null),
+            ("lit 64", null, null),
+            ("lt", null, null),
+            ("jz 2", null, null),
+            ("rand", null, null),
+            ("thrust", "sometimes a motor push in a random direction", "иногда толчок мотором в случайную сторону"),
+            ("label 2", null, null),
+            ("rand", null, null),
+            ("lit 64", null, null),
+            ("lt", null, null),
+            ("jnz 1", "now and then: renew the proteins", "изредка — обновить белки"),
+            ("jmp 0", null, null),
+        });
+
+    static readonly Spec[] Specs = { LeafSpec, MoleSpec, SwimmerSpec };
+
+    public static CreatureDesign Leaf => Make(LeafSpec);
+    public static CreatureDesign Mole => Make(MoleSpec);
+    public static CreatureDesign Swimmer => Make(SwimmerSpec);
 
     public static IReadOnlyList<CreatureDesign> All => new[] { Leaf, Mole, Swimmer };
+
+    static Spec Find(string name)
+    {
+        name = name?.Trim();
+        foreach (var s in Specs)
+            if (string.Equals(s.Key, name, StringComparison.OrdinalIgnoreCase) || string.Equals(s.En, name, StringComparison.OrdinalIgnoreCase)) return s;
+        return null;
+    }
+
+    // A design name as shown: a built-in example's in the current language, any other as it is.
+    public static string DisplayName(string name)
+    {
+        var s = Find(name);
+        return s == null ? name : Loc.T(s.En, s.Key);
+    }
+
+    // Both languages of a design name (for text kept with Loc.Both).
+    public static string NameEn(string name) => Find(name)?.En ?? name;
+    public static string NameRu(string name) => Find(name)?.Key ?? name;
+
+    // The stable name for one typed by the player: an example's English name maps back to its key.
+    public static string Key(string name) => Find(name)?.Key ?? name;
+
+    // The description as shown: an example's untouched description (in either language) in the
+    // current language, anything else as written.
+    public static string DisplayDescription(CreatureDesign d)
+    {
+        var s = Find(d?.Name);
+        return s != null && (d.Description == s.DescEn || d.Description == s.DescRu) ? Loc.T(s.DescEn, s.DescRu) : d?.Description;
+    }
+
+    // The genome text as shown: an example's untouched genome (in either language) with comments in
+    // the current language, anything else as written.
+    public static string DisplayGenome(CreatureDesign d)
+    {
+        var s = Find(d?.Name);
+        return s != null && (d.Genome == Text(s, true) || d.Genome == Text(s, false)) ? Text(s, Loc.En) : d?.Genome;
+    }
 }

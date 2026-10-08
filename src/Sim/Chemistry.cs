@@ -24,11 +24,15 @@ public sealed class Chemistry
     public readonly float[] BodyVolume = new float[S];   // room it takes held in a body: the gas is a bubble there
     public readonly bool[] SplitExo = new bool[S], Poison = new bool[S], Solid = new bool[S];
     public readonly Rgb[] Col = new Rgb[S];
-    public readonly string[] Name = new string[S];
+    // Molecule names in both languages (built from the same syllable draws, so the language never
+    // touches the random stream); Name gives the current language's.
+    public readonly string[] NameEn = new string[S], NameRu = new string[S];
+    public string[] Name => Loc.En ? NameEn : NameRu;
     public readonly int[] Low, Unstable, Toxic, Solids, VentHigh, VentMid;
     public readonly int Richest, Gas;
     public readonly int MatCount = S + 2;
-    public readonly string[] MatName = new string[S + 2];
+    public readonly string[] MatNameEn = new string[S + 2], MatNameRu = new string[S + 2];
+    public string[] MatName => Loc.En ? MatNameEn : MatNameRu;
     public readonly float[] MatHard = new float[S + 2], MatBarrier = new float[S + 2], MatCohesion = new float[S + 2];
     public readonly bool[] MatLoose = new bool[S + 2];
     public readonly int[] MatTier = new int[S + 2], MatKey = new int[S + 2];
@@ -37,6 +41,7 @@ public sealed class Chemistry
     public readonly byte[] BuiltMat = new byte[S];
     public readonly float[,] Contact = new float[S + 2, S + 2];
     static readonly string[] Syl = { "ка", "зу", "ми", "ро", "те", "ла", "во", "экс", "ши", "ан", "пу", "др", "ом", "ри", "не", "гу", "са", "ки", "ул", "бе" };
+    static readonly string[] SylEn = { "ka", "zu", "mi", "ro", "te", "la", "vo", "ex", "shi", "an", "pu", "dr", "om", "ri", "ne", "gu", "sa", "ki", "ul", "be" };
 
     public Chemistry(int seed)
     {
@@ -79,12 +84,16 @@ public sealed class Chemistry
             }
             E[s] = f < ElementCount ? 0 : r.Next(2, 13);
             E[s + 1] = E[s] + r.Next(3, 9);
-            string name;
-            do name = Syl[r.Next(Syl.Length)] + Syl[r.Next(Syl.Length)]; while (!names.Add(name));
+            string name, nameEn;
+            int s1, s2;
+            do { s1 = r.Next(Syl.Length); s2 = r.Next(Syl.Length); name = Syl[s1] + Syl[s2]; } while (!names.Add(name));
+            nameEn = SylEn[s1] + SylEn[s2];
             name = char.ToUpper(name[0]) + name[1..];
+            nameEn = char.ToUpper(nameEn[0]) + nameEn[1..];
             for (int t = s; t <= s + 1; t++)
             {
-                Name[t] = name + (t == s ? "" : "*");
+                NameRu[t] = name + (t == s ? "" : "*");
+                NameEn[t] = nameEn + (t == s ? "" : "*");
                 Mass[t] = mass;
                 Bond[t] = (affinity / count) * (valence / count) * (0.25f + count * 0.12f) / (1 + (t - s) * 0.5f);
                 Packing[t] = Math.Clamp(valence / (count * 4f), 0.15f, 1f);
@@ -124,7 +133,8 @@ public sealed class Chemistry
         VentHigh = Enumerable.Range(0, S).OrderByDescending(s => E[s]).Take(8).ToArray();
         VentMid = Low;
         Array.Fill(MatKey, -1);
-        MatName[Air] = "пустота"; MatName[Bedrock] = "граница недр";
+        MatNameEn[Air] = "void"; MatNameRu[Air] = "пустота";
+        MatNameEn[Bedrock] = "bedrock boundary"; MatNameRu[Bedrock] = "граница недр";
 
         MatCol[Bedrock] = new Rgb(0.22f, 0.21f, 0.24f);
         MatTier[Bedrock] = 5; MatHard[Bedrock] = MatBarrier[Bedrock] = 1e9f;
@@ -132,7 +142,8 @@ public sealed class Chemistry
         {
             int m = s + 2;
             BuiltMat[s] = (byte)m;
-            MatName[m] = $"агрегат {Name[s]}";
+            MatNameEn[m] = $"{NameEn[s]} aggregate";
+            MatNameRu[m] = $"агрегат {NameRu[s]}";
             MatCol[m] = Col[s]; MatKey[m] = s;
             MatCohesion[m] = Bond[s];
             MatBarrier[m] = 0.2f + Bond[s] * Bond[s];
