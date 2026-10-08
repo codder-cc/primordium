@@ -20,6 +20,7 @@ public sealed class UiState
     public int SpawnMatter { get; set; }            // 0 local, 1 import
     public int SpawnEnergy { get; set; }
     public int SpawnCount { get; set; } = 1;
+    public string Language { get; set; } = "en";   // en | ru
 }
 
 // The game's windows over the world: their stacking, Esc, toasts with what the simulation did, a small
@@ -28,6 +29,7 @@ public partial class UiManager : Control
 {
     public Main Main;
     public bool RestoreWindows = true;   // reopen the windows that were open last time
+    public string LanguageOverride;      // --lang: this run only, ui.json keeps its choice
     public UiState State = new();
     public readonly List<UiWindow> Windows = new();
     public LawsWindow Laws;
@@ -57,7 +59,29 @@ public partial class UiManager : Control
         SetAnchorsPreset(LayoutPreset.FullRect);
         Theme = UiKit.Theme;
         LoadState();
+        Loc.Set(LanguageOverride ?? State.Language);
+        Build();
+        loaded = true;
+        if (RestoreWindows) CallDeferred(nameof(RestoreOpen));
+    }
 
+    // Switches the interface language: the windows are built again in place, open ones stay open.
+    public void SetLanguage(string code)
+    {
+        if (code == Loc.Code) return;
+        SaveState();
+        Loc.Set(code);
+        State.Language = Loc.Code;
+        foreach (var c in GetChildren()) { RemoveChild(c); c.QueueFree(); }
+        Windows.Clear();
+        toasts.Clear();
+        Build();
+        RestoreOpen();
+        SaveState();
+    }
+
+    void Build()
+    {
         toolbar = UiKit.Row(4);
         toolbar.Position = new Vector2(14, 104);
         foreach (var (text, tip, act) in new (string, string, Action)[]
@@ -76,6 +100,10 @@ public partial class UiManager : Control
             b.AddThemeStyleboxOverride("normal", UiKit.Box(new Color(0.04f, 0.045f, 0.06f, 0.85f), 4, 8, UiKit.Rule, 3));
             toolbar.AddChild(b);
         }
+        var lang = UiKit.Button(Loc.En ? "RU" : "EN", () => SetLanguage(Loc.En ? "ru" : "en"), Loc.T("Русский язык интерфейса", "English interface"));
+        lang.AddThemeFontSizeOverride("font_size", 12);
+        lang.AddThemeStyleboxOverride("normal", UiKit.Box(new Color(0.04f, 0.045f, 0.06f, 0.85f), 4, 8, UiKit.Rule, 3));
+        toolbar.AddChild(lang);
         AddChild(toolbar);
 
         Add(Laws = new LawsWindow());
@@ -98,8 +126,6 @@ public partial class UiManager : Control
                 w.Position = new Vector2(s.X, s.Y);
             }
             else Center(w);
-        loaded = true;
-        if (RestoreWindows) CallDeferred(nameof(RestoreOpen));
     }
 
     void RestoreOpen()

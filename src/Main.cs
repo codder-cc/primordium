@@ -38,6 +38,7 @@ public partial class Main : Node
     public UiManager Ui { get; private set; }
     public int InitialPop => initialPop;
     string[] openAtStart;
+    string langAtStart;
     int uiTest = -1;
     PerfOverlay perf;
     int perfEvery, perfQuit = -1, perfDone, pauseAfter = -1, startTpf = 8;
@@ -89,6 +90,7 @@ public partial class Main : Node
             if (args[i] == "--tpf") startTpf = int.Parse(args[i + 1]);
             if (args[i] == "--viewthreads") View3D.ViewWorkers = int.Parse(args[i + 1]);
             if (args[i] == "--open") openAtStart = args[i + 1].Split(',');
+            if (args[i] == "--lang") langAtStart = args[i + 1];
         }
 
         View = new View3D();
@@ -104,7 +106,7 @@ public partial class Main : Node
 
         NewWorld(seed, warm);
         // The windows (laws, new world, saves, creature editor) and toasts, above the panel.
-        Ui = new UiManager { Main = this, RestoreWindows = openAtStart == null };
+        Ui = new UiManager { Main = this, RestoreWindows = openAtStart == null, LanguageOverride = langAtStart };
         layer.AddChild(Ui);
         Ui.ConfigureRunner(Sim);
         if (openAtStart != null)
