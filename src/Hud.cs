@@ -646,7 +646,7 @@ public partial class Hud : Control
             int t = ch.MatTier[m];
             var c = ch.MatCol[m];
             R(new Rect2(x, y + 1, 10, 10), new Color(c.R, c.G, c.B));
-            string name = ch.MatName[m].Replace("aggregate ", "").Replace("агрегат ", "");
+            string name = ch.MatName[m].Replace(" aggregate", "").Replace("агрегат ", "");
             T(x + 15, y + 10, name, Fg, 11);
             T(x + 118, y + 10, Grades[t], t >= 3 ? new Color(1f, 0.7f, 0.4f) : Dim, 10);
             int energy = 0;
