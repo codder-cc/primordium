@@ -168,10 +168,6 @@ public sealed class Chronicle
     internal static readonly string[] DietNamesRu = { "почти ничего", "свет", "химия", "порода", "охота", "смешанное" };
     public static string[] DietNames => Loc.T(DietNamesEn, DietNamesRu);
 
-    // Protein kinds (as Genome.EnzymeKind) in both languages, for stored event texts.
-    internal static readonly string[] EnzymeKindEn = { "binding", "splitting", "light capture", "motor" };
-    internal static readonly string[] EnzymeKindRu = { "соединение", "расщепление", "захват света", "мотор" };
-
     public long NextSeq = 1;
     public readonly List<ChronicleEvent> Important = new();   // for ever
     public readonly List<ChronicleEvent> Recent = new();      // the rest, oldest first, at most P.ChronicleCap

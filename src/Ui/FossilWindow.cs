@@ -71,7 +71,7 @@ public partial class FossilWindow : UiWindow
         var names = view.Molecules;
         string Mol(int s) => s < names.Length ? names[s] : $"#{s}";
         SetTitle(Loc.T($"Fossil #{f.AgentId}", $"Окаменелость #{f.AgentId}"));
-        string design = Main.Sim.DesignedLineages.TryGetValue(f.Lineage, out var dn) ? Loc.T($" · design “{dn}”", $" · дизайн «{dn}»") : "";
+        string design = Main.Sim.DesignedLineages.TryGetValue(f.Lineage, out var dn) ? Loc.T($" · design “{CreatureExamples.DisplayName(dn)}”", $" · дизайн «{CreatureExamples.DisplayName(dn)}»") : "";
         head.Text = Loc.T($"#{f.AgentId} · lineage #{f.Lineage} · generation {f.Gen}{design}", $"#{f.AgentId} · линия #{f.Lineage} · поколение {f.Gen}{design}");
         string life = f.DiedTick >= 0
             ? Loc.T($"lived from tick {f.BornTick} to {f.DiedTick} ({Chronicle.Day(f.BornTick)} – {f.DiedTick / P.DayLen + 1}), cause of death: {Chronicle.CauseName(f.Cause)}",
