@@ -263,6 +263,7 @@ for (int t = 1; t <= ticks; t++)
     {
         var sk = w.SkyCensus();
         Console.WriteLine($"   sky: diets per 32×32 square {sk[0]:F2} (planet/square {sk[1]:F2}) | transparency {sk[3]:F3} | activity {w.SolarActivity:P0}, flare power {w.FlarePower:F2}, mean dose {sk[2]:F4} | flares {sk[4]:F0} (mutations {w.FlareMutations}, deaths {sk[6]:F0}), eclipses {sk[5]:F0}{(w.EclipseNow ? $" (now at {w.EclipseX:F0},{w.EclipseY:F0})" : "")} | strikes {(w.AutoStrikes ? "on" : "off")}");
+        Console.WriteLine($"   light competition ({(World.CanopyLaw ? "canopy B" : "shared pool A")}): lit bodies per cell {sk[7]:F2}, light past those above {sk[8]:P0}, light-eater cover {sk[9]:F3} | photo income top/under {sk[10]:F2}, shared/lone {sk[11]:F2} | light eaters among light eaters' mates ×{sk[12]:F2}");
     }
     {
         var cc = w.ClimCensus();

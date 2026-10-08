@@ -497,6 +497,7 @@ public sealed partial class World
                 Photon[i] = Math.Min(P.PhotonCap, Photon[i] + lit * P.PhotonK * P.LightEvery);
             }
         });
+        if (CanopyLaw) DistributeCanopy();   // variant B of shading: the photons go to the bodies' own stores (World.Sky)
     }
 
     // Only the gas moves on its own: it spreads through the air (hardly over walls).

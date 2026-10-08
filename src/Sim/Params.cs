@@ -148,6 +148,7 @@ public static class ParamRegistry
         F("TranspAlt", "Свет", "Transparency gain per level of altitude above sea", "Прибавка прозрачности на уровень высоты над морем", 0, 0.1, 0.001);
         F("TranspHydro", "Свет", "Coupling to water: clear sky evaporates more and rains less", "Связь с водой: ясное небо испаряет больше и дождит меньше", 0, 1, 0.05);
         F("ShadeK", "Свет", "Shading: in a cell, higher (and larger) bodies take light first; 0 off", "Затенение: в клетке свет сначала берут тела выше (и крупнее); 0 — выкл", 0, 20, 0.1);
+        I("Canopy", "Свет", "Light in a cell: 0 — one shared pool, those above have the first chance (A); 1 — canopy: light goes down through the bodies, each stops 1−e^(−ShadeK·cover) of what reaches it, the rest is lost on the ground (B)", "Свет в клетке: 0 — общий запас, у верхних первый шанс (A); 1 — полог: свет идёт вниз сквозь тела, каждое задерживает 1−e^(−ShadeK·покрытие) дошедшего, остаток теряется на земле (B)", 0, 1, 1);
         // Temperature
         F("ComfortLo", "Температура", "Lower bound of comfortable temperature, °C", "Нижняя граница удобной температуры, °C", -40, 40, 0.5);
         F("ComfortHi", "Температура", "Upper bound of comfortable temperature, °C", "Верхняя граница удобной температуры, °C", -20, 80, 0.5);

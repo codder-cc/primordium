@@ -10,7 +10,7 @@ namespace Primordium;
 
 // Speed regressions on one fixed workload (ROADMAP 10.7).
 //
-//   --perf-baseline [--fixture path.sav] [--ticks 2000] [--warmup 200] [--repeat 1] [--csv perf.csv] [--label text]
+//   --perf-baseline [--fixture path.sav] [--ticks 2000] [--warmup 200] [--repeat 1] [--csv perf.csv] [--label text] [--set Name=value ...]
 //   --perf-baseline --make [--fixture path.sav] [--seed 2] [--target 15000] [--max-ticks 30000] [--step 1000]
 // The reference "boom" save is made, not stored: --make runs the default world of `seed` until it holds
 // `target` bodies (checked every `step` ticks; or until max-ticks) and saves it. The save keeps the whole
@@ -64,6 +64,7 @@ public static class PerfBaseline
         for (int r = 0; r < repeat; r++)
         {
             var w = World.Load(fixture);
+            ParamHook.Apply(ParamHook.Parse(args));   // --set / --preset over the laws the fixture restored (none: the fixture's own)
             popStart = w.Agents.Count;
             for (int t = 0; t < warmup; t++) w.Step();
             Array.Clear(w.Prof); Array.Clear(w.Detail);

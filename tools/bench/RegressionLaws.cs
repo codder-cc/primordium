@@ -105,7 +105,7 @@ public sealed partial class World
         foreach (var kv in Buried.OrderBy(kv => kv.Key)) { Mix((ulong)kv.Key); foreach (var m in kv.Value.Matter) Mix((ulong)m.Raw); F(kv.Value.Order); }
         foreach (var a in Agents)
         {
-            F(a.Mass); F(a.Volume); F(a.Tb); F(a.Lift); F(a.Vx); Mix((ulong)BitConverter.DoubleToInt64Bits(a.HeatHeld));
+            F(a.Mass); F(a.Volume); F(a.Tb); F(a.Lift); F(a.Vx); F(a.LightQuota); Mix((ulong)BitConverter.DoubleToInt64Bits(a.HeatHeld));
             Mix((ulong)a.Ip << 32 ^ (ulong)a.Sp << 16 ^ (ulong)a.InvTotal ^ (ulong)a.EnzN << 48 ^ (ulong)a.Links.Count << 56);
             for (int k = 0; k < a.EnzN; k++) F(a.Enz[k].Amount);
         }

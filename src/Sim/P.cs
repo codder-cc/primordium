@@ -92,6 +92,13 @@ public static class P
     // body gets a photon with chance e^(−ShadeK·Σ cover of those above it), cover = (volume per cell /
     // VoxelSpace)^(2/3); a photon it misses stays for them. 0 switches it off.
     public static float ShadeK = 1.5f;
+    // How the light of a cell is shared (World.Sky, ROADMAP 1.3). 0 — variant A: the cell keeps one pool of
+    // photons, and the chance above decides who of those in it catches one. 1 — variant B, the canopy: every
+    // LightEvery the photons falling on the cell go down through its bodies, highest first; each body stops
+    // 1 − e^(−ShadeK·cover) of what reaches it (its own store of photons, up to PhotonCap per cell it covers),
+    // the water between them swallows its share, the rest reaches the ground and is gone. With ShadeK 0 the
+    // bodies stop nothing: the shared pool of A.
+    public static int Canopy = 0;
 
     // Temperature: comfortable band; outside it harm grows exponentially.
     public static float ComfortLo = 2f, ComfortHi = 26f, TempTau = 7f;

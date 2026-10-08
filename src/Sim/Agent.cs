@@ -84,6 +84,7 @@ public sealed class Agent
     public double HeatHeld;  // reaction heat still in the body (it warmed Tb), shed into the cells as it cools
     public float FlareDose;  // solar flare dose this tick (World.Sky; for the view, recomputed every tick)
     public long FlareEp;     // the last flare episode that reached it (chronicle counts, observation only; saved)
+    public float LightQuota; // photons it stopped under the canopy (P.Canopy 1) and has not used yet (saved, version 11)
     public float EmaPhoto, EmaChem, EmaMine, EmaAttack;
     public int NChildren, NMates, NMoves, NAttacks, NKills, NInjects, NInfected, NCuts, NDigs, NPiles, NMines, NTakes, NGives, NGrows, NStruck, NExpress;
     public int NPhoto, NSplit, NBind, NIntake, NExpel;

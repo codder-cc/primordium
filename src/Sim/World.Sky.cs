@@ -9,7 +9,9 @@ namespace Primordium;
 //   the climate of a latitude follows the day's insolation sum, held back by the year's mean.
 // - Transparency (1.2): a slowly drifting field over the latitudinal profile of the wet and dry belts
 //   (the one the clouds follow), clearer high up; clear air evaporates more and rains less.
-// - Shading (1.3): in a cell, bodies higher up — or, on one floor, bigger — catch the light first.
+// - Shading (1.3): in a cell, bodies higher up — or, on one floor, bigger — catch the light first: either
+//   from the cell's shared pool by chance (A, P.Canopy 0) or as a canopy, each body stopping its share of
+//   what passes the ones above into its own store (B, P.Canopy 1).
 // - Eclipses (1.4): a moon on an inclined orbit from the seed; its shadow crosses the day side at some
 //   new moons. A pure function of the tick: predictable.
 // - Solar flares (1.5): the sun's activity swings over a cycle from the seed; flares come more often at
@@ -19,7 +21,8 @@ namespace Primordium;
 //   booked as the ledger's `flare` input.
 // Every piece has its switch (P.Insolation, P.Transparency, P.ShadeK, P.Eclipses, P.Flares); with all of
 // them off (and the old PhotonK) the world runs the old expressions bit for bit.
-// In the agent phase only the body's own cell is read (Sun, Height, the cell's list for shading);
+// In the agent phase only the body's own cell is read (Sun, Height, the cell's list for shading A; B only the
+// body's own store);
 // flare counters are Interlocked; the rest runs between ticks.
 public sealed partial class World
 {
@@ -443,9 +446,108 @@ public sealed partial class World
         return c * c;
     }
 
+    // ---- 1.3 shading, variant B: the canopy (P.Canopy 1) ----
+    // Between ticks, right after the light update (no agent phase is running): the photons falling on each
+    // cell this update, Sun·PhotonK·LightEvery, go down through the bodies standing in its light (on the top
+    // of the column, the big body covering it too), highest first by Z + Lift, on one level the bigger first.
+    // Each body is a layer of transmission e^(−ShadeK·cover) — the same law that is A's chance — and keeps
+    // what it stops in its own store, Agent.LightQuota (up to PhotonCap per cell it covers; what does not fit
+    // is lost, as the light that hits nobody is lost on the ground). Water between two layers swallows
+    // e^(−WaterDim·blocks). Photon[cell] is then the light that reached the ground this update (for the
+    // panels; nobody draws on it). In the agent phase `photo` spends only the body's own store, so the phase
+    // reads and writes nothing of the cell. Rows are independent: a body is written only from its own cell;
+    // what a big body stops in the other cells of its footprint waits in bigCaught and is added after the
+    // pass in the order of Agents.
+    public static bool CanopyLaw => P.Canopy != 0 && P.ShadeK > 0;
+    readonly float[] bigCaught = new float[N];   // scratch of one update, not state
+    [ThreadStatic] static Agent[] canopyBuf;
+
+    void DistributeCanopy()
+    {
+        float k = P.PhotonK * P.LightEvery;
+        int bigs = 0;
+        Parallel.For(0, H, y =>
+        {
+            var buf = canopyBuf ??= new Agent[64];
+            int rowBigs = 0;
+            for (int i = y * W, end = i + W; i < end; i++)
+            {
+                if (Big[i] != null) rowBigs++;
+                Photon[i] = CanopyCell(i, Sun[i] * k, ref buf, out _, out _);
+            }
+            canopyBuf = buf;
+            if (rowBigs > 0) Interlocked.Add(ref bigs, rowBigs);
+        });
+        if (bigs == 0) return;
+        foreach (var a in Agents)
+        {
+            if (a.Cells <= 1 || a.Dead) continue;
+            float got = 0;
+            for (int j = 1; j < a.Cells; j++) { int c = a.Foot[j]; if (Big[c] == a) got += bigCaught[c]; }
+            if (got > 0) KeepLight(a, got);
+        }
+    }
+
+    static float KeepLight(Agent a, float take)
+    {
+        float cap = P.PhotonCap * a.Cells, was = a.LightQuota;
+        a.LightQuota = Math.Min(cap, was + take);
+        return was + take - a.LightQuota;   // what did not fit
+    }
+
+    // One cell's canopy: `inflow` photons at the surface go down through its lit bodies. Returns what reaches
+    // the ground; `water` — what the water swallowed, `lost` — what bodies stopped beyond their store. What
+    // the cell's own bodies stop is in their stores; the covering big body's share is in bigCaught[cell].
+    // inflow = Σ stopped + water + lost + returned (the regression checks it).
+    internal float CanopyCell(int cell, float inflow, ref Agent[] buf, out float water, out float lost)
+    {
+        water = lost = 0;
+        var big = Big[cell];
+        if (big != null) bigCaught[cell] = 0;
+        if (inflow <= 0) return 0;
+        int n = 0, h = Height[cell];
+        for (var o = Head[cell]; o != null; o = o.NextInCell)
+        {
+            if (o.Dead || o.Z < h) continue;   // under a roof: out of the sun's path
+            if (n == buf.Length) Array.Resize(ref buf, n * 2);
+            buf[n++] = o;
+        }
+        if (big != null && !big.Dead && big.Z >= h)
+        {
+            if (n == buf.Length) Array.Resize(ref buf, n * 2);
+            buf[n++] = big;
+        }
+        float wd = Water[cell], f = inflow, depth = 0;
+        if (n > 1) Array.Sort(buf, 0, n, CanopyOrder);
+        for (int j = 0; j < n; j++)
+        {
+            var a = buf[j];
+            float d = Below(a, cell);
+            if (d > depth) { float t = f * MathF.Exp(-P.WaterDim * (d - depth)); water += f - t; f = t; depth = d; }
+            float take = f * (1 - MathF.Exp(-P.ShadeK * Cover2(a)));
+            f -= take;
+            if (a == big) bigCaught[cell] = take;
+            else lost += KeepLight(a, take);
+            buf[j] = null;
+        }
+        if (wd > depth) { float t = f * MathF.Exp(-P.WaterDim * (wd - depth)); water += f - t; f = t; }
+        return f;
+    }
+
+    // Highest first (Z + Lift), on one level the bigger, then the older id: a total order, so the same
+    // canopy whatever the order of the cell's list.
+    static readonly System.Collections.Generic.Comparer<Agent> CanopyOrder = System.Collections.Generic.Comparer<Agent>.Create((p, q) =>
+    {
+        int c = Level(q).CompareTo(Level(p));
+        if (c != 0) return c;
+        c = q.Volume.CompareTo(p.Volume);
+        return c != 0 ? c : p.Id.CompareTo(q.Id);
+    });
+
     // ---- save (version 8): its own block after the geochemistry ----
     // The light and transparency fields, the running eclipse and flare episodes with their counts, the
-    // flare deaths, and every body's last flare episode (in the order of Agents). Before version 8 the
+    // flare deaths, and every body's last flare episode (in the order of Agents); since version 11 then every
+    // body's canopy store. Before version 8 the
     // fields are rebuilt at the load (the surface light from Light and the water over it, the transparency
     // from the tick and the heights) and no episode is running.
     void SyncSky(Sync s)
@@ -460,6 +562,7 @@ public sealed partial class World
         s.V(ref FlareCount); s.V(ref flareEp); s.V(ref flareStart); s.V(ref flarePeak);
         s.V(ref flareHit); s.V(ref flareMut); s.V(ref flareDeaths); s.V(ref FlareMutations); s.V(ref DeathsFlare);
         foreach (var a in Agents) s.V(ref a.FlareEp);
+        if (s.Version >= 11) foreach (var a in Agents) s.V(ref a.LightQuota);   // the canopy's stores (before: none)
         if (s.Reading) { SolarActivity = FlareLaw ? ActivityAt(Tick) : 0; FlarePower = FlareLaw ? FlareAt(Tick) : 0; }
     }
 
@@ -472,12 +575,13 @@ public sealed partial class World
         if (TranspLaw) UpdateTransparency(); else { Array.Fill(Transp, 1f); TranspMean = 1; transpValid = false; }
         EclipseCount = 0; eclipseStart = -1; eclipseX0 = eclipseY0 = eclipseX1 = eclipseY1 = 0;
         FlareCount = 0; flareEp = 0; flareStart = 0; flarePeak = 0; flareHit = flareMut = flareDeaths = 0; FlareMutations = 0; DeathsFlare = 0;
-        foreach (var a in Agents) a.FlareEp = 0;
+        foreach (var a in Agents) { a.FlareEp = 0; a.LightQuota = 0; }   // nor the canopy's stores (version 11)
     }
 
     // ---- observation (bench, HUD) ----
 
-    public static readonly string[] SkyNames = { "diet_region", "diet_ratio", "flare_dose", "transp_mean", "flares", "eclipses", "deaths_flare" };
+    public static readonly string[] SkyNames = { "diet_region", "diet_ratio", "flare_dose", "transp_mean", "flares", "eclipses", "deaths_flare",
+        "lit_crowd", "shade_mean", "cover_plant", "photo_top", "photo_crowd", "plant_mix" };
 
     // diet_region: the mean e^H of diets within populated 32×32 squares (≥ 5 bodies, unweighted); diet_ratio: the
     // planet's e^H over that mean (how differently squares eat: 1 — alike); flare_dose: the mean dose of
@@ -517,6 +621,61 @@ public sealed partial class World
         v[2] = pop > 0 ? dose / pop : 0;
         v[3] = TranspLaw ? TranspMean : 1;
         v[4] = FlareCount; v[5] = EclipseCount; v[6] = DeathsFlare;
+        CanopyCensus(v.AsSpan(7));
         return v;
+    }
+
+    // Competition for light (observation, between ticks; the same for both variants of shading): over bodies
+    // in the sun (on the top of their column), counted in their own cell with the cell's canopy order.
+    // lit_crowd — the mean number of lit bodies in a body's cell (itself included); shade_mean — the mean
+    // share of the cell's light that passes the bodies above it, e^(−ShadeK·Σ cover above) (1 — nobody above;
+    // A's chance, B's transmission); cover_plant — the mean cover of light eaters (Diet plant): how much of a
+    // cell they spread over; photo_top — the mean photo income (EmaPhoto) of the top body of a shared cell over
+    // that of the bodies under it; photo_crowd — of bodies sharing their cell's light over lone ones;
+    // plant_mix — the share of light eaters among a light eater's cell mates over their share among all lit
+    // bodies (< 1: light eaters avoid each other's company, > 1: they gather).
+    void CanopyCensus(Span<double> v)
+    {
+        var buf = new Agent[16];
+        double lit = 0, crowd = 0, shade = 0, coverP = 0, plants = 0;
+        double topP = 0, topN = 0, underP = 0, underN = 0, shareP = 0, shareN = 0, loneP = 0, loneN = 0, mix = 0, mixN = 0;
+        for (int i = 0; i < N; i++)
+        {
+            if (Head[i] == null) continue;
+            int n = 0, h = Height[i];
+            for (var o = Head[i]; o != null; o = o.NextInCell)
+            {
+                if (o.Dead || o.Z < h) continue;
+                if (n == buf.Length) Array.Resize(ref buf, n * 2);
+                buf[n++] = o;
+            }
+            var big = Big[i];
+            if (big != null && !big.Dead && big.Z >= h) { if (n == buf.Length) Array.Resize(ref buf, n * 2); buf[n++] = big; }
+            if (n == 0) continue;
+            if (n > 1) Array.Sort(buf, 0, n, CanopyOrder);
+            int np = 0;
+            for (int j = 0; j < n; j++) if (Diet(buf[j]) == DietPlant) np++;
+            float cover = 0;
+            for (int j = 0; j < n; j++)
+            {
+                var a = buf[j];
+                float t = P.ShadeK > 0 && cover > 0 ? MathF.Exp(-P.ShadeK * cover) : 1;
+                cover += Cover2(a);
+                if (a == big) continue;   // counted in its own cell
+                bool plant = Diet(a) == DietPlant;
+                lit++; crowd += n; shade += t;
+                if (plant) { plants++; coverP += Cover2(a); if (n > 1) { mix += (np - 1) / (double)(n - 1); mixN++; } }
+                if (n == 1) { loneP += a.EmaPhoto; loneN++; continue; }
+                shareP += a.EmaPhoto; shareN++;
+                if (j == 0) { topP += a.EmaPhoto; topN++; } else { underP += a.EmaPhoto; underN++; }
+            }
+        }
+        static double Ratio(double a, double na, double b, double nb) => na > 0 && nb > 0 && b > 0 ? a / na / (b / nb) : 0;
+        v[0] = lit > 0 ? crowd / lit : 0;
+        v[1] = lit > 0 ? shade / lit : 0;
+        v[2] = plants > 0 ? coverP / plants : 0;
+        v[3] = Ratio(topP, topN, underP, underN);
+        v[4] = Ratio(shareP, shareN, loneP, loneN);
+        v[5] = mixN > 0 && lit > 0 && plants > 0 ? mix / mixN / (plants / lit) : 0;
     }
 }

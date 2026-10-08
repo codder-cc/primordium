@@ -45,7 +45,9 @@ public sealed partial class World
     // 9: the energy a body holds (Agent.Energy, Agent.HeatHeld) as double instead of float, so the energy
     // ledger closes like the atoms (ROADMAP 10.8); older files hold floats and are read into doubles exactly.
     // 10: the climate cycles block (SyncClimateCycles, World.ClimateCycles) after the sky.
-    public const int SaveVersion = 10, OldestSaveVersion = 1;
+    // 11: the sky block ends with every body's canopy store (Agent.LightQuota, World.Sky); before it the
+    // stores start empty.
+    public const int SaveVersion = 11, OldestSaveVersion = 1;
     static readonly byte[] SaveMagic = Encoding.ASCII.GetBytes("PRIMSAVE");
     const int EndMarker = 0x21444E45;   // "END!"
 

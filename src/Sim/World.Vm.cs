@@ -93,7 +93,7 @@ public sealed partial class World
                 case Genome.Temp: Push(a, imm >= 2 ? (int)a.Tb : (int)(CaveLaw ? LocalTemp(cell, a.Z) : Temp[cell])); break;
                 // light.1 is `uv` with solar flares on (World.Sky: the sun's activity and flares at the body,
                 // information only); with them off it reads the light, as before.
-                case Genome.LightOp: Push(a, imm >= 2 ? (InCave(a) ? 0 : (int)(Photon[cell] * 100)) : imm == 1 && FlareLaw ? UvSense(a) : (int)(AgentLight(a) * 100)); break;
+                case Genome.LightOp: Push(a, imm >= 2 ? (InCave(a) ? 0 : (int)((CanopyLaw ? a.LightQuota : Photon[cell]) * 100)) : imm == 1 && FlareLaw ? UvSense(a) : (int)(AgentLight(a) * 100)); break;
                 case Genome.Sense: Push(a, Conc(a, Chemistry.Spec(Pop(a)), cell)); break;
                 case Genome.Sensed: x = Pop(a); y = Pop(a); Push(a, Conc(a, Chemistry.Spec(y), nb[cell * 4 + (x & 3)])); break;
                 case Genome.Look: x = Pop(a); y = Pop(a); Look(a, cell, x & 3, y); break;
@@ -346,6 +346,7 @@ public sealed partial class World
         if (a.Inv[s] == 0 && a.InvTotal > 0) s = RandomMol(a);
         int p = Chem.PhotoUp[s];
         if (p < 0) return;
+        if (CanopyLaw) { PhotoCanopy(a, ip, s, p); return; }   // variant B: the body's own store
         cell = BrightestCell(a);   // only exposed parts of a large body catch surface photons
         if (cell < 0) return;
         // The cell's photons arrive at the water's surface; each block of water above the body
@@ -363,6 +364,33 @@ public sealed partial class World
             if (shade < 1 && Rng.NextDouble() >= shade) continue;
             Photon[cell] = Math.Max(0, ph - 1);
             if (reach < 1 && Rng.NextDouble() >= reach) continue;
+            RemoveMol(a, s);
+            AddMol(a, p);
+            float gain = Chem.E[p] - Chem.E[s];
+            a.GainPhoto += gain;
+            a.TickPhoto += gain;
+            Flows[FPhoto] += gain;
+            caught++;
+            if (damage > 0) PhotoDamageAfter(a, p, damage);
+        }
+        if (caught == 0) return;
+        a.NPhoto += caught;
+        if (slot >= 0) ChronReaction(a, Enzyme.Photo, s, 0);
+        Worked(a, slot, ip);
+        Note(EvKind.Photo);
+        Act(a, ActEat, -1);
+    }
+
+    // The canopy (P.Canopy 1, World.Sky): the photons are the ones the body itself stopped at the last light
+    // updates (water and the bodies above have had their share already), so only its own store is spent.
+    void PhotoCanopy(Agent a, int ip, int s, int p)
+    {
+        int times = Turnovers(Chance(a, Enzyme.Photo, s, 0, out int slot)), caught = 0;
+        float damage = PhotoDamageLaw && times > 0 ? PhotoDamageChance(a, s, p) : 0;
+        for (int k = 0; k < times; k++)
+        {
+            if (a.Inv[s] == 0 || a.LightQuota < 1f) break;
+            a.LightQuota -= 1;
             RemoveMol(a, s);
             AddMol(a, p);
             float gain = Chem.E[p] - Chem.E[s];
