@@ -20,18 +20,32 @@ public partial class EvolutionWindow : UiWindow
     static Series S(string col, string label, Color c, bool rate = false, string fmt = "0.##") => new() { Col = col, Label = label, Color = c, Rate = rate, Fmt = fmt };
     static readonly Color C1 = new(0.45f, 0.85f, 1f), C2 = new(1f, 0.82f, 0.4f), C3 = new(0.5f, 0.95f, 0.55f), C4 = new(1f, 0.5f, 0.45f), C5 = new(0.8f, 0.6f, 1f);
 
-    public static readonly Track[] Tracks =
+    // Built for each language once (titles, help and labels are read while drawing).
+    static Track[] tracksEn, tracksRu;
+    public static Track[] Tracks => Loc.En ? tracksEn ??= BuildTracks() : tracksRu ??= BuildTracks();
+
+    static Track[] BuildTracks() => new Track[]
     {
-        new() { Title = "Новизна", Help = "Компоненты (белки и мотивы используемого кода), чья активность (носители × время) выше 95-го перцентиля нейтральной тени. Мир против контрольной тени: разница — новизна сверх случайного.",
-            Series = new[] { S("adaptive", "мир", C1, fmt: "0"), S("adaptive_shadow", "тень", UiKit.Dim, fmt: "0"), S("novelty", "новизна", C2, fmt: "0") } },
-        new() { Title = "Сложность", Help = "Используемый код (байтов с защитой > 0 на тело), разных белков и реакций на тело, масса.",
-            Series = new[] { S("code_used", "код, байт", C1, fmt: "0.0"), S("body_proteins", "белков", C3), S("body_reactions", "реакций", C2), S("body_mass", "масса", C5, fmt: "0") } },
-        new() { Title = "Экология", Help = "Ниши — сочетания питания × глубины (поверхность, неглубоко, глубоко, вода) × региона 32×32 с ≥ 5 телами; разнообразие питания e^H; линии ≥ 10 тел; доли под землёй и в воде.",
-            Series = new[] { S("niches", "ниш", C1, fmt: "0"), S("diet_div", "питаний", C2), S("lineages_big", "линий ≥10", C3, fmt: "0"), S("under_share", "под землёй", C5, fmt: "0.0%"), S("water_share", "в воде", C4, fmt: "0%") } },
-        new() { Title = "Темп", Help = "Смены крупнейшей линии, видообразования и вымирания хроники — на 10 000 тиков; сдвиг отпечатка самого частого генома между замерами (бит из 64).",
-            Series = new[] { S("dom_changes", "смен доминанта", C2, true), S("speciations", "видообр.", C3, true), S("extinctions", "вымираний", C4, true), S("dom_drift", "дрейф, бит", C1, fmt: "0") } },
-        new() { Title = "Филогения", Help = "Возраст MRCA крупнейшей линии (тиков), среднее попарное расстояние (шагов-мутаций, выборка 128 пар), живых генотипов, длина линии самого частого генотипа (шагов).",
-            Series = new[] { S("mrca_age", "возраст MRCA", C1, fmt: "0"), S("pair_dist", "расхождение", C2, fmt: "0.0"), S("phylo_taxa", "генотипов", C3, fmt: "0"), S("dom_depth", "длина линии", C5, fmt: "0") } },
+        new() { Title = Loc.T("Novelty", "Новизна"),
+            Help = Loc.T("Components (proteins and motifs of used code) whose activity (carriers × time) is above the 95th percentile of the neutral shadow. The world against the control shadow: the difference is novelty beyond chance.",
+                         "Компоненты (белки и мотивы используемого кода), чья активность (носители × время) выше 95-го перцентиля нейтральной тени. Мир против контрольной тени: разница — новизна сверх случайного."),
+            Series = new[] { S("adaptive", Loc.T("world", "мир"), C1, fmt: "0"), S("adaptive_shadow", Loc.T("shadow", "тень"), UiKit.Dim, fmt: "0"), S("novelty", Loc.T("novelty", "новизна"), C2, fmt: "0") } },
+        new() { Title = Loc.T("Complexity", "Сложность"),
+            Help = Loc.T("Used code (bytes with protection > 0 per body), distinct proteins and reactions per body, mass.",
+                         "Используемый код (байтов с защитой > 0 на тело), разных белков и реакций на тело, масса."),
+            Series = new[] { S("code_used", Loc.T("code, bytes", "код, байт"), C1, fmt: "0.0"), S("body_proteins", Loc.T("proteins", "белков"), C3), S("body_reactions", Loc.T("reactions", "реакций"), C2), S("body_mass", Loc.T("mass", "масса"), C5, fmt: "0") } },
+        new() { Title = Loc.T("Ecology", "Экология"),
+            Help = Loc.T("Niches: combinations of diet × depth (surface, shallow, deep, water) × 32×32 region with ≥ 5 bodies; diet diversity e^H; lineages of ≥ 10 bodies; shares underground and in water.",
+                         "Ниши — сочетания питания × глубины (поверхность, неглубоко, глубоко, вода) × региона 32×32 с ≥ 5 телами; разнообразие питания e^H; линии ≥ 10 тел; доли под землёй и в воде."),
+            Series = new[] { S("niches", Loc.T("niches", "ниш"), C1, fmt: "0"), S("diet_div", Loc.T("diets", "питаний"), C2), S("lineages_big", Loc.T("lineages ≥10", "линий ≥10"), C3, fmt: "0"), S("under_share", Loc.T("underground", "под землёй"), C5, fmt: "0.0%"), S("water_share", Loc.T("in water", "в воде"), C4, fmt: "0%") } },
+        new() { Title = Loc.T("Tempo", "Темп"),
+            Help = Loc.T("Changes of the largest lineage, speciations and extinctions from the chronicle, per 10 000 ticks; drift of the most common genome's fingerprint between samples (bits of 64).",
+                         "Смены крупнейшей линии, видообразования и вымирания хроники — на 10 000 тиков; сдвиг отпечатка самого частого генома между замерами (бит из 64)."),
+            Series = new[] { S("dom_changes", Loc.T("dominant changes", "смен доминанта"), C2, true), S("speciations", Loc.T("speciations", "видообр."), C3, true), S("extinctions", Loc.T("extinctions", "вымираний"), C4, true), S("dom_drift", Loc.T("drift, bits", "дрейф, бит"), C1, fmt: "0") } },
+        new() { Title = Loc.T("Phylogeny", "Филогения"),
+            Help = Loc.T("MRCA age of the largest lineage (ticks), mean pairwise distance (mutation steps, a sample of 128 pairs), living genotypes, lineage length of the most common genotype (steps).",
+                         "Возраст MRCA крупнейшей линии (тиков), среднее попарное расстояние (шагов-мутаций, выборка 128 пар), живых генотипов, длина линии самого частого генотипа (шагов)."),
+            Series = new[] { S("mrca_age", Loc.T("MRCA age", "возраст MRCA"), C1, fmt: "0"), S("pair_dist", Loc.T("divergence", "расхождение"), C2, fmt: "0.0"), S("phylo_taxa", Loc.T("genotypes", "генотипов"), C3, fmt: "0"), S("dom_depth", Loc.T("lineage length", "длина линии"), C5, fmt: "0") } },
     };
 
     static readonly long[] Ranges = { 0, 5000, 20000, 100000 };
@@ -42,18 +56,21 @@ public partial class EvolutionWindow : UiWindow
     TrackChart chart;
     long shownVersion = -1;
 
-    public EvolutionWindow() : base("evolution", "Ход эволюции", new Vector2(980, 700))
+    public EvolutionWindow() : base("evolution", Loc.T("Course of evolution", "Ход эволюции"), new Vector2(980, 700))
     {
         MinSize = new Vector2(640, 460);
         verdict = UiKit.Text("", 13, UiKit.Fg, UiKit.Bold);
         verdict.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         verdict.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-        verdict.TooltipText = "Медиана нормированных трендов четырёх дорожек (новизна, используемый код, ниши, расхождение) за окно ProgressWindow. " +
-                              "Это подсказка, а не истина: читайте сами дорожки.";
-        range = UiKit.Options("всё время", "последние 5 000 тиков", "последние 20 000", "последние 100 000");
+        verdict.TooltipText = Loc.T("Median of the normalized trends of four tracks (novelty, used code, niches, divergence) over the ProgressWindow. " +
+                                    "This is a hint, not the truth: read the tracks themselves.",
+                                    "Медиана нормированных трендов четырёх дорожек (новизна, используемый код, ниши, расхождение) за окно ProgressWindow. " +
+                                    "Это подсказка, а не истина: читайте сами дорожки.");
+        range = UiKit.Options(Loc.T("all time", "всё время"), Loc.T("last 5 000 ticks", "последние 5 000 тиков"), Loc.T("last 20 000", "последние 20 000"), Loc.T("last 100 000", "последние 100 000"));
         range.ItemSelected += _ => chart.QueueRedraw();
-        marks = UiKit.Check("события хроники", true, _ => chart.QueueRedraw(), "важные события хроники вертикальными линиями поверх дорожек");
-        var csv = UiKit.Button("CSV", Export, "сохранить всю историю замеров в user://evolution/");
+        marks = UiKit.Check(Loc.T("chronicle events", "события хроники"), true, _ => chart.QueueRedraw(),
+            Loc.T("important chronicle events as vertical lines over the tracks", "важные события хроники вертикальными линиями поверх дорожек"));
+        var csv = UiKit.Button("CSV", Export, Loc.T("save the whole sample history to user://evolution/", "сохранить всю историю замеров в user://evolution/"));
         Body.AddChild(UiKit.Row(10, verdict, range, marks, csv));
         chart = new TrackChart { Win = this, SizeFlagsVertical = SizeFlags.ExpandFill, SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(560, 340) };
         Body.AddChild(chart);
@@ -76,22 +93,29 @@ public partial class EvolutionWindow : UiWindow
         chart.QueueRedraw();
         if (v.Latest == null)
         {
-            verdict.Text = "Замеров ещё нет (раз в " + P.ProgressEvery + " тиков)";
+            verdict.Text = Loc.T($"No samples yet (one every {P.ProgressEvery} ticks)", "Замеров ещё нет (раз в " + P.ProgressEvery + " тиков)");
             status.Text = "";
             return;
         }
         string trend = string.Join(", ", EvolutionHistory.IndexTrackNames.Select((n, k) => $"{n} {(k < v.Trends.Length ? v.Trends[k] : 0):+0.00;−0.00;0}"));
-        verdict.Text = $"Подсказка: эволюция {v.Verdict} (индекс {v.Index:+0.00;−0.00;0} за {v.Window / 1000} тыс. тиков: {trend})";
-        verdict.AddThemeColorOverride("font_color", v.Verdict == "идёт" ? UiKit.Good : v.Verdict == "откат" ? UiKit.Bad : UiKit.Acc);
+        // The verdict word in the language of the moment (v.Verdict was worded when the sample was published).
+        int sign = EvolutionHistory.VerdictSign(v.Index);
+        string word = EvolutionHistory.Verdict(v.Index);
+        verdict.Text = Loc.T($"Hint: evolution is {word} (index {v.Index:+0.00;−0.00;0} over {v.Window / 1000}k ticks: {trend})",
+                             $"Подсказка: эволюция {word} (индекс {v.Index:+0.00;−0.00;0} за {v.Window / 1000} тыс. тиков: {trend})");
+        verdict.AddThemeColorOverride("font_color", sign > 0 ? UiKit.Good : sign < 0 ? UiKit.Bad : UiKit.Acc);
         double Col(string n) => v.Latest[EvolutionHistory.Col(n)];
-        status.Text = $"замеров {v.Samples.Length} (раз в {v.Every * v.Stride} тиков; новые — раз в {v.Every}) · компонентов в мире {Col("comps"):0}, в тени {Col("comps_shadow"):0}, порог θ {Col("theta"):0} · " +
-                      $"узлов родословной {Col("phylo_nodes"):0} (корней {Col("phylo_roots"):0}) · память {v.Mb:0.0} МБ · наведите на дорожку — значения и события · F10 — закрыть";
+        status.Text = Loc.T(
+            $"samples {v.Samples.Length} (one per {v.Every * v.Stride} ticks; new ones every {v.Every}) · components in the world {Col("comps"):0}, in the shadow {Col("comps_shadow"):0}, threshold θ {Col("theta"):0} · " +
+            $"phylogeny nodes {Col("phylo_nodes"):0} (roots {Col("phylo_roots"):0}) · memory {v.Mb:0.0} MB · hover a track for values and events · F10 to close",
+            $"замеров {v.Samples.Length} (раз в {v.Every * v.Stride} тиков; новые — раз в {v.Every}) · компонентов в мире {Col("comps"):0}, в тени {Col("comps_shadow"):0}, порог θ {Col("theta"):0} · " +
+            $"узлов родословной {Col("phylo_nodes"):0} (корней {Col("phylo_roots"):0}) · память {v.Mb:0.0} МБ · наведите на дорожку — значения и события · F10 — закрыть");
     }
 
     void Export()
     {
         var v = Main.Sim?.Evolution;
-        if (v == null || v.Samples.Length == 0) { Ui.Toast("нечего сохранять: замеров ещё нет", true); return; }
+        if (v == null || v.Samples.Length == 0) { Ui.Toast(Loc.T("nothing to save: no samples yet", "нечего сохранять: замеров ещё нет"), true); return; }
         try
         {
             var dir = UiKit.Global("user://evolution");
@@ -103,7 +127,7 @@ public partial class EvolutionWindow : UiWindow
             if (v.Latest != null && (rows.Count == 0 || rows[^1][0] < v.Latest[0])) rows.Add(v.Latest);
             foreach (var r in rows) sb.AppendLine(string.Join(",", r.Select(x => x.ToString("G9", UiKit.Inv))));
             File.WriteAllText(path, sb.ToString());
-            Ui.Toast("сохранено: " + path);
+            Ui.Toast(Loc.T("saved: ", "сохранено: ") + path);
         }
         catch (Exception e) { Ui.Toast("CSV: " + e.Message, true); }
     }
@@ -149,7 +173,7 @@ public partial class TrackChart : Control
         if (v.Latest != null && (all.Count == 0 || all[^1][0] < v.Latest[0])) all.Add(v.Latest);
         if (all.Count < 2)
         {
-            DrawString(font, new Vector2(16, 28), "Мало замеров: нужно хотя бы два (раз в " + P.ProgressEvery + " тиков).", HorizontalAlignment.Left, -1, 13, UiKit.Dim);
+            DrawString(font, new Vector2(16, 28), Loc.T($"Too few samples: at least two are needed (one every {P.ProgressEvery} ticks).", "Мало замеров: нужно хотя бы два (раз в " + P.ProgressEvery + " тиков)."), HorizontalAlignment.Left, -1, 13, UiKit.Dim);
             return;
         }
         long end = (long)all[^1][0], span = Win.RangeTicks;
@@ -169,7 +193,7 @@ public partial class TrackChart : Control
             double t = start + (end - start) * k / 5.0;
             float x = X(t);
             DrawLine(new Vector2(x, top), new Vector2(x, bottom), UiKit.Rule, 1);
-            string lbl = t >= 10000 ? $"{t / 1000:0} тыс." : $"{t:0}";
+            string lbl = t >= 10000 ? Loc.T($"{t / 1000:0}k", $"{t / 1000:0} тыс.") : $"{t:0}";
             DrawString(font, new Vector2(Math.Clamp(x - 20, 0, size.X - 60), size.Y - 4), lbl, HorizontalAlignment.Left, -1, 11, UiKit.Dim);
         }
 
@@ -222,9 +246,9 @@ public partial class TrackChart : Control
         {
             float x = X(rows[hi][0]);
             DrawLine(new Vector2(x, top), new Vector2(x, bottom), UiKit.Acc with { A = 0.6f }, 1);
-            var lines = new List<string> { $"тик {rows[hi][0]:0} ({Chronicle.Day((long)rows[hi][0])})" };
+            var lines = new List<string> { Loc.T($"tick {rows[hi][0]:0} ({Chronicle.Day((long)rows[hi][0])})", $"тик {rows[hi][0]:0} ({Chronicle.Day((long)rows[hi][0])})") };
             foreach (var e in events)
-                if (Math.Abs(X(e.Tick) - mouse.X) < 4) lines.Add($"{Chronicle.TypeNames[(int)e.Type]}: {e.Text}");
+                if (Math.Abs(X(e.Tick) - mouse.X) < 4) lines.Add($"{Chronicle.TypeNames[(int)e.Type]}: {e.Shown}");
             float w = 0;
             foreach (var l in lines) w = Math.Max(w, font.GetStringSize(l, HorizontalAlignment.Left, -1, 11).X);
             w = Math.Min(w + 14, size.X - 20);

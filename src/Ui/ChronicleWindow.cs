@@ -32,15 +32,15 @@ public partial class ChronicleWindow : UiWindow
     double filledAt;
     static readonly long[] Periods = { 0, 1, 10, 100 };   // days, 0 = all time
 
-    public ChronicleWindow() : base("chronicle", "Хроника мира", new Vector2(900, 600))
+    public ChronicleWindow() : base("chronicle", Loc.T("World chronicle", "Хроника мира"), new Vector2(900, 600))
     {
         MinSize = new Vector2(620, 380);
         tabs = new TabContainer { SizeFlagsVertical = SizeFlags.ExpandFill };
         Body.AddChild(tabs);
         tabs.AddChild(FeedTab());
         tabs.AddChild(FossilTab());
-        tabs.SetTabTitle(0, "Лента событий");
-        tabs.SetTabTitle(1, "Окаменелости");
+        tabs.SetTabTitle(0, Loc.T("Event feed", "Лента событий"));
+        tabs.SetTabTitle(1, Loc.T("Fossils", "Окаменелости"));
         tabs.TabChanged += _ => dirty = true;
     }
 
@@ -49,20 +49,22 @@ public partial class ChronicleWindow : UiWindow
     Control FeedTab()
     {
         var col = UiKit.Col(6);
-        onlyImportant = UiKit.Check("только важное", false, _ => dirty = true, "события, которые хроника хранит всегда (первые в своём роде, вымирания, новые доминанты, видообразование…)");
-        period = UiKit.Options("за всё время", "за последние сутки", "за 10 суток", "за 100 суток");
+        onlyImportant = UiKit.Check(Loc.T("important only", "только важное"), false, _ => dirty = true,
+            Loc.T("events the chronicle keeps forever (firsts of their kind, extinctions, new dominants, speciation…)",
+                  "события, которые хроника хранит всегда (первые в своём роде, вымирания, новые доминанты, видообразование…)"));
+        period = UiKit.Options(Loc.T("all time", "за всё время"), Loc.T("last day", "за последние сутки"), Loc.T("last 10 days", "за 10 суток"), Loc.T("last 100 days", "за 100 суток"));
         period.ItemSelected += _ => dirty = true;
-        lineage = UiKit.Edit("", "линия #", 110);
+        lineage = UiKit.Edit("", Loc.T("lineage #", "линия #"), 110);
         lineage.TextChanged += _ => dirty = true;
-        var all = UiKit.Button("все типы", () => SetTypes(true));
-        var none = UiKit.Button("ни одного", () => SetTypes(false));
-        col.AddChild(UiKit.Row(8, onlyImportant, period, UiKit.Text("линия", 13, UiKit.Dim), lineage, UiKit.Spacer(), all, none));
+        var all = UiKit.Button(Loc.T("all types", "все типы"), () => SetTypes(true));
+        var none = UiKit.Button(Loc.T("none", "ни одного"), () => SetTypes(false));
+        col.AddChild(UiKit.Row(8, onlyImportant, period, UiKit.Text(Loc.T("lineage", "линия"), 13, UiKit.Dim), lineage, UiKit.Spacer(), all, none));
         var flow = new HFlowContainer();
         flow.AddThemeConstantOverride("h_separation", 10);
         flow.AddThemeConstantOverride("v_separation", 0);
         for (int k = 0; k < typeBox.Length; k++)
         {
-            var box = typeBox[k] = UiKit.Check(Chronicle.TypeNames[k], true, _ => dirty = true, "показывать события этого типа");
+            var box = typeBox[k] = UiKit.Check(Chronicle.TypeNames[k], true, _ => dirty = true, Loc.T("show events of this type", "показывать события этого типа"));
             box.AddThemeColorOverride("font_color", TypeColors[k]);
             box.AddThemeColorOverride("font_hover_color", TypeColors[k]);
             box.AddThemeColorOverride("font_pressed_color", TypeColors[k]);
@@ -83,12 +85,12 @@ public partial class ChronicleWindow : UiWindow
     Control FossilTab()
     {
         var col = UiKit.Col(6);
-        fossilOrder = UiKit.Options("сначала важные", "сначала новые", "сначала древние");
+        fossilOrder = UiKit.Options(Loc.T("most important first", "сначала важные"), Loc.T("newest first", "сначала новые"), Loc.T("oldest first", "сначала древние"));
         fossilOrder.ItemSelected += _ => dirty = true;
-        fossilFilter = UiKit.Edit("", "линия или номер", 150);
+        fossilFilter = UiKit.Edit("", Loc.T("lineage or number", "линия или номер"), 150);
         fossilFilter.TextChanged += _ => dirty = true;
-        col.AddChild(UiKit.Row(8, fossilOrder, UiKit.Text("найти", 13, UiKit.Dim), fossilFilter, UiKit.Spacer(),
-            UiKit.Text("клик — открыть: геном, белки, биография, «Воскресить»", 12, UiKit.Dim)));
+        col.AddChild(UiKit.Row(8, fossilOrder, UiKit.Text(Loc.T("find", "найти"), 13, UiKit.Dim), fossilFilter, UiKit.Spacer(),
+            UiKit.Text(Loc.T("click to open: genome, proteins, biography, “Revive”", "клик — открыть: геном, белки, биография, «Воскресить»"), 12, UiKit.Dim)));
         fossils = new ItemList { SizeFlagsVertical = SizeFlags.ExpandFill, FocusMode = FocusModeEnum.None };
         fossils.AddThemeFontSizeOverride("font_size", 12);
         fossils.ItemClicked += (i, _, button) => { if (button == (long)MouseButton.Left) Ui.Fossil.Show(shownFossils[(int)i]); };
@@ -139,19 +141,24 @@ public partial class ChronicleWindow : UiWindow
         feed.Clear();
         foreach (var e in shown)
         {
-            int k = feed.AddItem($"{(e.Important ? "★" : "  ")} {Chronicle.Day(e.Tick),-10} тик {e.Tick,-8:0}  {e.Text}");
+            int k = feed.AddItem($"{(e.Important ? "★" : "  ")} {Chronicle.Day(e.Tick),-10} {Loc.T("tick", "тик")} {e.Tick,-8:0}  {e.Shown}");
             feed.SetItemCustomFgColor(k, e.Important ? TypeColors[(int)e.Type] : TypeColors[(int)e.Type].Lerp(UiKit.Dim, 0.35f));
             feed.SetItemTooltip(k, Chronicle.TypeNames[(int)e.Type] + " · " + Where(e, view));
         }
         int total = view.Events.Length;
-        status.Text = $"показано {shown.Count} из {total} хранимых (важных {view.Events.Count(e => e.Important)}, всего было {view.Counts.Sum()}) · " +
-                      "клик — к существу, если живо, иначе его окаменелость · F8 — закрыть";
+        int importantN = view.Events.Count(e => e.Important);
+        long ever = view.Counts.Sum();
+        status.Text = Loc.T($"showing {shown.Count} of {total} kept (important {importantN}, {ever} ever) · " +
+                            "click: go to the creature if alive, else its fossil · F8 to close",
+                            $"показано {shown.Count} из {total} хранимых (важных {importantN}, всего было {ever}) · " +
+                            "клик — к существу, если живо, иначе его окаменелость · F8 — закрыть");
     }
 
     static string Where(ChronicleEvent e, ChronicleView view)
     {
-        string who = e.AgentId == 0 ? "без существа" : view.FossilByAgent.ContainsKey(e.AgentId) ? $"#{e.AgentId}: есть окаменелость" : $"#{e.AgentId}";
-        return $"{who}" + (e.X >= 0 ? $" · клетка ({e.X}, {e.Y})" : "") + (e.Lineage != 0 ? $" · линия #{e.Lineage}" : "");
+        string who = e.AgentId == 0 ? Loc.T("no creature", "без существа")
+                   : view.FossilByAgent.ContainsKey(e.AgentId) ? Loc.T($"#{e.AgentId}: fossil kept", $"#{e.AgentId}: есть окаменелость") : $"#{e.AgentId}";
+        return $"{who}" + (e.X >= 0 ? Loc.T($" · cell ({e.X}, {e.Y})", $" · клетка ({e.X}, {e.Y})") : "") + (e.Lineage != 0 ? Loc.T($" · lineage #{e.Lineage}", $" · линия #{e.Lineage}") : "");
     }
 
     void FillFossils(ChronicleView view)
@@ -169,11 +176,13 @@ public partial class ChronicleWindow : UiWindow
         fossils.Clear();
         foreach (var f in shownFossils)
         {
-            string life = f.DiedTick >= 0 ? $"{Chronicle.Day(f.BornTick)} – {f.DiedTick / P.DayLen + 1}, {Chronicle.CauseName(f.Cause)}" : $"{Chronicle.Day(f.BornTick)}, снят живым";
-            int k = fossils.AddItem($"#{f.AgentId,-9} линия #{f.Lineage,-9} пок. {f.Gen,-4} {life} · геном {f.Genome?.Length ?? 0} байт · потомков {f.Children} · {Chronicle.WhyText(f.Why)}");
+            string life = f.DiedTick >= 0 ? $"{Chronicle.Day(f.BornTick)} – {f.DiedTick / P.DayLen + 1}, {Chronicle.CauseName(f.Cause)}" : Loc.T($"{Chronicle.Day(f.BornTick)}, taken alive", $"{Chronicle.Day(f.BornTick)}, снят живым");
+            int k = fossils.AddItem(Loc.T($"#{f.AgentId,-9} lineage #{f.Lineage,-9} gen. {f.Gen,-4} {life} · genome {f.Genome?.Length ?? 0} bytes · offspring {f.Children} · {Chronicle.WhyText(f.Why)}",
+                                    $"#{f.AgentId,-9} линия #{f.Lineage,-9} пок. {f.Gen,-4} {life} · геном {f.Genome?.Length ?? 0} байт · потомков {f.Children} · {Chronicle.WhyText(f.Why)}"));
             fossils.SetItemCustomFgColor(k, (f.Why & Chronicle.WhyEvent) != 0 ? UiKit.Acc : f.Designed ? UiKit.Good : UiKit.Fg);
         }
-        fossilStatus.Text = $"окаменелостей {view.Fossils.Length} (хранится до {P.FossilCap}, лишние — наименее важные) · показано {shownFossils.Count}";
+        fossilStatus.Text = Loc.T($"fossils {view.Fossils.Length} (up to {P.FossilCap} kept, the least important go first) · showing {shownFossils.Count}",
+                                  $"окаменелостей {view.Fossils.Length} (хранится до {P.FossilCap}, лишние — наименее важные) · показано {shownFossils.Count}");
     }
 
     static long ParseId(string text)
@@ -194,7 +203,7 @@ public partial class ChronicleWindow : UiWindow
         }
         var f = Main.Sim.Chronicle.FossilFor(e);
         if (f != null) { Ui.Fossil.Show(f); return; }
-        if (e.X >= 0) { Main.View.LookAtCell(e.X, e.Y); Ui.Toast($"событие было здесь: ({e.X}, {e.Y})"); return; }
-        Ui.Toast("у этого события нет существа и места");
+        if (e.X >= 0) { Main.View.LookAtCell(e.X, e.Y); Ui.Toast(Loc.T($"the event was here: ({e.X}, {e.Y})", $"событие было здесь: ({e.X}, {e.Y})")); return; }
+        Ui.Toast(Loc.T("this event has no creature and no place", "у этого события нет существа и места"));
     }
 }

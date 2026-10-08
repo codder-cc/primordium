@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace Primordium;
 
-// "Ход эволюции" (ROADMAP 7.1, 9.1): how far evolution has got, measured against a neutral model.
+// "Course of evolution" (ROADMAP 7.1, 9.1): how far evolution has got, measured against a neutral model.
 // Observation only: nothing here is read by the simulation, and its random numbers come from its own
 // streams (the shadows' SimRng), never from the world's.
 //
@@ -407,10 +407,12 @@ public sealed class EvolutionHistory
 
     // The summary hint: for each of four tracks (novelty, used code, niches, mean pairwise phylogenetic
     // distance) the change of its least-squares line over the last `window` ticks, relative to its mean
-    // size there (clamped to ±1); the median of the four. ≥ +0.05 "идёт", ≤ −0.05 "откат", else
-    // "стагнирует". A hint, not a verdict: the tracks are always shown next to it.
+    // size there (clamped to ±1); the median of the four. ≥ +0.05 "progressing", ≤ −0.05 "regressing",
+    // else "stagnating". A hint, not a verdict: the tracks are always shown next to it.
     public static readonly int[] IndexTracks = { CNovelty, CCode, CNiches, CPairDist };
-    public static readonly string[] IndexTrackNames = { "новизна", "сложность", "ниши", "расхождение" };
+    public static string[] IndexTrackNames => Loc.T(IndexTrackNamesEn, IndexTrackNamesRu);
+    static readonly string[] IndexTrackNamesEn = { "novelty", "complexity", "niches", "divergence" };
+    static readonly string[] IndexTrackNamesRu = { "новизна", "сложность", "ниши", "расхождение" };
 
     public static (double index, double[] trends) Index(IReadOnlyList<double[]> s, long window, double[] latest = null)
     {
@@ -437,5 +439,9 @@ public sealed class EvolutionHistory
         return ((sorted[1] + sorted[2]) / 2, trends);
     }
 
-    public static string Verdict(double index) => index >= 0.05 ? "идёт" : index <= -0.05 ? "откат" : "стагнирует";
+    public static int VerdictSign(double index) => index >= 0.05 ? 1 : index <= -0.05 ? -1 : 0;
+    public static string Verdict(double index) => VerdictSign(index) switch
+    {
+        > 0 => Loc.T("progressing", "идёт"), < 0 => Loc.T("regressing", "откат"), _ => Loc.T("stagnating", "стагнирует"),
+    };
 }

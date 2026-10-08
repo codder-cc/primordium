@@ -160,38 +160,49 @@ public sealed partial class World
             case EvType.FirstEnzyme:
                 {
                     int kind = c.Arg & 3, ea = c.Arg >> 2 & 31, eb = c.Arg >> 7 & 31;
-                    string what = kind switch { Enzyme.Bind => $"{Mol(ea)} + {Mol(eb)}", Enzyme.Motor => "движение", Enzyme.Photo => $"свет + {Mol(ea)}", _ => $"{Mol(ea)} →" };
+                    string What(bool en) => kind switch
+                    {
+                        Enzyme.Bind => $"{Mol(ea)} + {Mol(eb)}", Enzyme.Motor => en ? "movement" : "движение",
+                        Enzyme.Photo => (en ? "light + " : "свет + ") + Mol(ea), _ => $"{Mol(ea)} →",
+                    };
                     bool firstOfKind = !AnySeen(Chronicle.SeenEnzyme, kind, c.Key);
-                    Add(EvType.FirstEnzyme, $"первый белок «{Genome.EnzymeKind[kind]}» ({what}) — #{a.Id}, линия #{a.Lineage}", a, c.Value, firstOfKind);
+                    Add(EvType.FirstEnzyme, Loc.Both($"first protein “{Chronicle.EnzymeKindEn[kind]}” ({What(true)}) — #{a.Id}, lineage #{a.Lineage}",
+                                                     $"первый белок «{Chronicle.EnzymeKindRu[kind]}» ({What(false)}) — #{a.Id}, линия #{a.Lineage}"), a, c.Value, firstOfKind);
                     break;
                 }
             case EvType.FirstReaction:
                 {
                     int kind = c.Arg & 3, s1 = c.Arg >> 2 & 31, s2 = c.Arg >> 7 & 31;
-                    string what = kind switch
+                    string What(bool en) => kind switch
                     {
                         Enzyme.Bind => $"{Mol(s1)} + {Mol(s2)} → {(ch.Combine[s1, s2] >= 0 ? Mol(ch.Combine[s1, s2]) : "?")}",
-                        Enzyme.Photo => $"свет: {Mol(s1)} → {(ch.PhotoUp[s1] >= 0 ? Mol(ch.PhotoUp[s1]) : "?")}",
+                        Enzyme.Photo => (en ? "light: " : "свет: ") + $"{Mol(s1)} → {(ch.PhotoUp[s1] >= 0 ? Mol(ch.PhotoUp[s1]) : "?")}",
                         _ => $"{Mol(s1)} → {(ch.SplitA[s1] >= 0 ? Mol(ch.SplitA[s1]) : "?")}{(ch.SplitB[s1] >= 0 ? " + " + Mol(ch.SplitB[s1]) : "")}",
                     };
                     bool firstOfKind = !AnySeen(Chronicle.SeenReaction, kind, c.Key);
-                    Add(EvType.FirstReaction, $"впервые с белком: {what} — #{a.Id}, линия #{a.Lineage}", a, 0, firstOfKind);
+                    Add(EvType.FirstReaction, Loc.Both($"first time with a protein: {What(true)} — #{a.Id}, lineage #{a.Lineage}",
+                                                       $"впервые с белком: {What(false)} — #{a.Id}, линия #{a.Lineage}"), a, 0, firstOfKind);
                     break;
                 }
             case EvType.CaveDweller:
-                Add(c.Type, $"житель пещер: #{a.Id} (линия #{a.Lineage}) прожил под крышей {c.Value / P.DayLen:0.#} сут.", a, c.Value, true);
+                Add(c.Type, Loc.Both($"cave dweller: #{a.Id} (lineage #{a.Lineage}) has lived under a roof for {c.Value / P.DayLen:0.#} days",
+                                     $"житель пещер: #{a.Id} (линия #{a.Lineage}) прожил под крышей {c.Value / P.DayLen:0.#} сут."), a, c.Value, true);
                 break;
             case EvType.FirstSwimmer:
-                Add(c.Type, $"первый пловец: #{a.Id} (линия #{a.Lineage}) держится в толще воды в {c.Value:0.0} блока над дном", a, c.Value, true);
+                Add(c.Type, Loc.Both($"first swimmer: #{a.Id} (lineage #{a.Lineage}) floats in open water {c.Value:0.0} blocks above the bottom",
+                                     $"первый пловец: #{a.Id} (линия #{a.Lineage}) держится в толще воды в {c.Value:0.0} блока над дном"), a, c.Value, true);
                 break;
             case EvType.FirstBottom:
-                Add(c.Type, $"первый на дне глубокой воды: #{a.Id} (линия #{a.Lineage}), над ним {c.Value:0.0} блока воды", a, c.Value, true);
+                Add(c.Type, Loc.Both($"first on the bottom of deep water: #{a.Id} (lineage #{a.Lineage}), {c.Value:0.0} blocks of water above it",
+                                     $"первый на дне глубокой воды: #{a.Id} (линия #{a.Lineage}), над ним {c.Value:0.0} блока воды"), a, c.Value, true);
                 break;
             case EvType.FirstPredator:
-                Add(c.Type, $"первый хищник: #{a.Id} (линия #{a.Lineage}) убил #{c.B?.Id} (линия #{c.B?.Lineage}) и забрал его вещество", a, c.Value, true, c.B);
+                Add(c.Type, Loc.Both($"first predator: #{a.Id} (lineage #{a.Lineage}) killed #{c.B?.Id} (lineage #{c.B?.Lineage}) and took its matter",
+                                     $"первый хищник: #{a.Id} (линия #{a.Lineage}) убил #{c.B?.Id} (линия #{c.B?.Lineage}) и забрал его вещество"), a, c.Value, true, c.B);
                 break;
             case EvType.FirstParasite:
-                Add(c.Type, $"первый паразит: код линии #{(long)c.Value} передан потомку #{a.Id} тела #{c.B?.Id} (линия #{a.Lineage})", a, c.Value, true, c.B);
+                Add(c.Type, Loc.Both($"first parasite: code of lineage #{(long)c.Value} passed to #{a.Id}, offspring of #{c.B?.Id} (lineage #{a.Lineage})",
+                                     $"первый паразит: код линии #{(long)c.Value} передан потомку #{a.Id} тела #{c.B?.Id} (линия #{a.Lineage})"), a, c.Value, true, c.B);
                 break;
         }
     }
@@ -213,16 +224,31 @@ public sealed partial class World
         foreach (int m in DepthMarks) if (depth >= m && Chronicle.DepthShown < m) mark = true;
         if (!mark && depth < Chronicle.DepthShown * 1.25f + 1) return;
         Chronicle.DepthShown = depth;
-        Add(EvType.DepthRecord, $"рекорд глубины: #{a.Id} (линия #{a.Lineage}) на {depth} {Plural(depth, "уровень", "уровня", "уровней")} под поверхностью", a, depth, mark);
+        Add(EvType.DepthRecord, Loc.Both($"depth record: #{a.Id} (lineage #{a.Lineage}) {depth} {PluralEn(depth, "level", "levels")} below the surface",
+                                         $"рекорд глубины: #{a.Id} (линия #{a.Lineage}) на {depth} {Plural(depth, "уровень", "уровня", "уровней")} под поверхностью"), a, depth, mark);
     }
 
+    // Russian plural forms (1 уровень, 2 уровня, 5 уровней).
     static string Plural(int n, string one, string few, string many)
     {
         int m = Math.Abs(n) % 100, d = m % 10;
         return m is >= 11 and <= 14 ? many : d == 1 ? one : d is >= 2 and <= 4 ? few : many;
     }
 
-    // Adds an event (between ticks); its body, if any, becomes tracked.
+    // English plural (1 level, 2 levels).
+    static string PluralEn(int n, string one, string many) => Math.Abs(n) == 1 ? one : many;
+
+    // A text that may already hold both languages (Loc.Both) split into its English and Russian parts;
+    // a plain one is the same in both. Used to put names and descriptions into stored event texts.
+    static (string en, string ru) BothParts(string s)
+    {
+        s ??= "";
+        int i = s.IndexOf('\u001f');
+        return i < 0 ? (s, s) : (s[..i], s[(i + 1)..]);
+    }
+
+    // Adds an event (between ticks); its body, if any, becomes tracked. The text is kept (and saved): build
+    // it with Loc.Both(en, ru), never with Loc.T, so that it does not depend on the language of the moment.
     public ChronicleEvent Add(EvType type, string text, Agent a = null, float value = 0, bool important = false, Agent other = null, int x = -1, int y = -1)
     {
         var e = new ChronicleEvent
@@ -302,7 +328,11 @@ public sealed partial class World
             if (f == null || f.Tick != Tick) continue;
             Agent a = null;
             foreach (var b in Agents) if (b.Id == f.AgentId) { a = b; break; }
-            var e = Add(EvType.Discovery, $"открытие: {Chem.MatName[f.Mat]} — линия #{f.Lineage} разрушает его белком (#{f.AgentId})", a, f.Mat, true);
+            // The material's name built here in both languages (Chemistry.MatName is "aggregate <molecule>").
+            int key = f.Mat >= 0 && f.Mat < Chem.MatKey.Length ? Chem.MatKey[f.Mat] : -1;
+            var (matEn, matRu) = key >= 0 ? ($"aggregate {Chem.Name[key]}", $"агрегат {Chem.Name[key]}") : BothParts(Chem.MatName[f.Mat]);
+            var e = Add(EvType.Discovery, Loc.Both($"discovery: {matEn} — lineage #{f.Lineage} breaks it down with a protein (#{f.AgentId})",
+                                                   $"открытие: {matRu} — линия #{f.Lineage} разрушает его белком (#{f.AgentId})"), a, f.Mat, true);
             e.Lineage = f.Lineage; e.AgentId = f.AgentId;
         }
     }
@@ -345,8 +375,12 @@ public sealed partial class World
             if (info.Peak < ExtinctPeak && !info.WasDominant) continue;
             bool important = info.Peak >= ExtinctImportant || info.WasDominant;
             string design = DesignOf(id);
-            var e = Add(EvType.Extinction, $"вымерла линия #{id}{(design != null ? $" («{design}»)" : "")}: до {info.Peak} особей ({Chronicle.Day(info.PeakTick)}), жила с суток {info.FirstTick / P.DayLen + 1}" +
-                        (info.WasDominant ? " — была крупнейшей" : ""), null, info.Peak, important);
+            long peakDay = info.PeakTick / P.DayLen + 1, firstDay = info.FirstTick / P.DayLen + 1;
+            var e = Add(EvType.Extinction, Loc.Both(
+                            $"lineage #{id}{(design != null ? $" (“{design}”)" : "")} went extinct: up to {info.Peak} individuals (day {peakDay}), lived since day {firstDay}" +
+                            (info.WasDominant ? " — was the largest" : ""),
+                            $"вымерла линия #{id}{(design != null ? $" («{design}»)" : "")}: до {info.Peak} особей (сутки {peakDay}), жила с суток {firstDay}" +
+                            (info.WasDominant ? " — была крупнейшей" : "")), null, info.Peak, important);
             e.Lineage = id;
             if (info.Rep != null)
             {
@@ -386,7 +420,9 @@ public sealed partial class World
             Chronicle.DominantLineage = top; Chronicle.DominantCount = topN;
             if (lin.TryGetValue(top, out var info)) info.WasDominant = true;
             string design = DesignOf(top);
-            Add(EvType.NewDominant, $"крупнейшая линия теперь #{top}{(design != null ? $" («{design}»)" : "")}: {topN} особей" + (was != 0 ? $", прежняя #{was} — {domNow}" : ""),
+            Add(EvType.NewDominant, Loc.Both(
+                    $"the largest lineage is now #{top}{(design != null ? $" (“{design}”)" : "")}: {topN} individuals" + (was != 0 ? $", the previous one #{was} — {domNow}" : ""),
+                    $"крупнейшая линия теперь #{top}{(design != null ? $" («{design}»)" : "")}: {topN} особей" + (was != 0 ? $", прежняя #{was} — {domNow}" : "")),
                 tally[top].Oldest, topN, true);
         }
 
@@ -397,7 +433,8 @@ public sealed partial class World
             if (a == null || bestV[k] < RecordMin[k] || bestV[k] < Chronicle.RecordBest[k] * 1.5f) continue;
             Chronicle.RecordBest[k] = bestV[k];
             BioNote(a, Tick, BioKind.Record, 0, bestV[k], k);
-            Add(EvType.Record, $"рекорд: {Chronicle.RecordName(k)} {bestV[k]:0} — #{a.Id}, линия #{a.Lineage}", a, bestV[k]);
+            Add(EvType.Record, Loc.Both($"record: {Chronicle.RecordNameEn(k)} {bestV[k]:0} — #{a.Id}, lineage #{a.Lineage}",
+                                        $"рекорд: {Chronicle.RecordNameRu(k)} {bestV[k]:0} — #{a.Id}, линия #{a.Lineage}"), a, bestV[k]);
         }
 
         if (Tick % (4 * SurveyEvery) == 0) SurveySpeciation(tally);
@@ -425,7 +462,8 @@ public sealed partial class World
         if (info.PendingN < DietHold) return;
         sbyte was = info.Diet;
         info.Diet = diet; info.PendingN = 0;
-        Add(EvType.NewDiet, $"линия #{info.Id} ({t.N} особей) теперь живёт иначе: {Chronicle.DietNames[was]} → {Chronicle.DietNames[diet]}", t.Oldest, diet,
+        Add(EvType.NewDiet, Loc.Both($"lineage #{info.Id} ({t.N} individuals) now lives differently: {Chronicle.DietNamesEn[was]} → {Chronicle.DietNamesEn[diet]}",
+                                     $"линия #{info.Id} ({t.N} особей) теперь живёт иначе: {Chronicle.DietNamesRu[was]} → {Chronicle.DietNamesRu[diet]}"), t.Oldest, diet,
             info.Id == Chronicle.DominantLineage);
     }
 
@@ -492,13 +530,20 @@ public sealed partial class World
             Agent rep = null;
             foreach (var a in Agents)
                 if (!a.Dead && a.Lineage == id && BitOperations.PopCount(a.Tag ^ small) < BitOperations.PopCount(a.Tag ^ big) && (rep == null || a.Age > rep.Age)) rep = a;
-            Add(EvType.Speciation, $"линия #{id} разделилась: новая ветвь из {smallN} особей, отличие {apart} бит родства из 64 при разбросе внутри ветвей {within:0.#} (основная — {bigN})", rep, apart, true);
+            Add(EvType.Speciation, Loc.Both(
+                    $"lineage #{id} split: a new branch of {smallN} individuals, {apart} of 64 kinship bits apart with a spread of {within:0.#} within branches (main branch: {bigN})",
+                    $"линия #{id} разделилась: новая ветвь из {smallN} особей, отличие {apart} бит родства из 64 при разбросе внутри ветвей {within:0.#} (основная — {bigN})"), rep, apart, true);
         }
     }
 
     // ---- the game and the bench ----
 
     // Event when a law changes (World.SetParam) and when the player plants a design (World.SpawnDesign).
-    void ChronLaw(ParamInfo p, double was) =>
-        Add(EvType.Player, $"закон {p.Name}: {was.ToString("G6", System.Globalization.CultureInfo.InvariantCulture)} → {p.Value.ToString("G6", System.Globalization.CultureInfo.InvariantCulture)} ({p.Description})", null, (float)p.Value);
+    void ChronLaw(ParamInfo p, double was)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        string change = $"{p.Name}: {was.ToString("G6", inv)} → {p.Value.ToString("G6", inv)}";
+        var (en, ru) = BothParts(p.Description);
+        Add(EvType.Player, Loc.Both($"law {change} ({en})", $"закон {change} ({ru})"), null, (float)p.Value);
+    }
 }

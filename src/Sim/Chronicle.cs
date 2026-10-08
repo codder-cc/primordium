@@ -37,12 +37,14 @@ public sealed class ChronicleEvent
     public EvType Type;
     public long AgentId, Lineage;   // 0: no body / no lineage
     public int X = -1, Y = -1, Z = -1;
-    public string Text;       // Russian, for the window
+    public string Text;       // both languages (Loc.Both); shown with Loc.Show (old saves: plain Russian)
     public float Value;
     public bool Important;    // kept for ever (the rest live in a ring of P.ChronicleCap)
     public byte[] Genome;     // the participant's genome at the time (null if none)
 
-    public override string ToString() => $"[{Tick}] {Chronicle.TypeNames[(int)Type]}: {Text}";
+    public string Shown => Loc.Show(Text);   // in the language of the moment of reading
+
+    public override string ToString() => $"[{Tick}] {Chronicle.TypeNames[(int)Type]}: {Shown}";
 }
 
 // A line of a tracked body's biography.
@@ -98,9 +100,11 @@ public sealed class Fossil
     {
         var d = new CreatureDesign
         {
-            Name = $"окаменелость #{AgentId}",
-            Description = $"Из окаменелости: существо #{AgentId}, линия {Lineage}, поколение {Gen}, мир {seed}, " +
-                          (DiedTick >= 0 ? $"жило с тика {BornTick} по {DiedTick}." : $"снято живым на тике {BornTick + Age}."),
+            Name = Loc.T($"fossil #{AgentId}", $"окаменелость #{AgentId}"),
+            Description = Loc.T($"From a fossil: creature #{AgentId}, lineage {Lineage}, generation {Gen}, world {seed}, ",
+                                $"Из окаменелости: существо #{AgentId}, линия {Lineage}, поколение {Gen}, мир {seed}, ") +
+                          (DiedTick >= 0 ? Loc.T($"lived from tick {BornTick} to {DiedTick}.", $"жило с тика {BornTick} по {DiedTick}.")
+                                         : Loc.T($"taken alive at tick {BornTick + Age}.", $"снято живым на тике {BornTick + Age}.")),
             Genome = GenomeAsm.Disassemble(Genome),
             Energy = MathF.Round(Math.Clamp(Energy, 20, 200)),
             Hue = Hue, Sat = Sat, Val = Val, Shape = Shape,
@@ -138,20 +142,35 @@ public sealed class LineageInfo
 
 // The world's chronicle: events (a ring of P.ChronicleCap plus every important one), fossils, the
 // compact ancestry of tracked bodies and what the surveys remember. Filled by World (World.Chronicle.cs)
-// between ticks; agents add to it only through their tile's Ctx (see SIMULATION.md, «Хроника»).
+// between ticks; agents add to it only through their tile's Ctx (see SIMULATION.md, the chronicle section).
 public sealed class Chronicle
 {
     public const int BioCap = 64;
     public const byte WhyEvent = 1, WhyPlayer = 2, WhyFounder = 4, WhyDesigned = 8, WhyKid = 16;
     public const sbyte DietMixed = 5;
 
-    public static readonly string[] TypeNames =
+    static readonly string[] TypeNamesEn =
+    {
+        "first protein", "first reaction", "rock discovery", "diet shift", "depth record", "cave dweller",
+        "first swimmer", "first on the bottom", "first predator", "first parasite", "speciation", "extinction",
+        "new dominant", "record", "climate and sky", "player",
+    };
+    static readonly string[] TypeNamesRu =
     {
         "первый белок", "первая реакция", "открытие породы", "смена питания", "рекорд глубины", "житель пещер",
         "первый пловец", "первый на дне", "первый хищник", "первый паразит", "видообразование", "вымирание",
         "новый доминант", "рекорд", "климат и небо", "игрок",
     };
-    public static readonly string[] DietNames = { "почти ничего", "свет", "химия", "порода", "охота", "смешанное" };
+    public static string[] TypeNames => Loc.T(TypeNamesEn, TypeNamesRu);
+
+    // Diet names in both languages: event texts are stored as Loc.Both and must not depend on Loc.En.
+    internal static readonly string[] DietNamesEn = { "almost nothing", "light", "chemistry", "rock", "hunting", "mixed" };
+    internal static readonly string[] DietNamesRu = { "почти ничего", "свет", "химия", "порода", "охота", "смешанное" };
+    public static string[] DietNames => Loc.T(DietNamesEn, DietNamesRu);
+
+    // Protein kinds (as Genome.EnzymeKind) in both languages, for stored event texts.
+    internal static readonly string[] EnzymeKindEn = { "binding", "splitting", "light capture", "motor" };
+    internal static readonly string[] EnzymeKindRu = { "соединение", "расщепление", "захват света", "мотор" };
 
     public long NextSeq = 1;
     public readonly List<ChronicleEvent> Important = new();   // for ever
@@ -250,22 +269,23 @@ public sealed class Chronicle
 
     // ---- words ----
 
-    public static string Day(long tick) => $"сутки {tick / P.DayLen + 1}";
+    public static string Day(long tick) => Loc.T($"day {tick / P.DayLen + 1}", $"сутки {tick / P.DayLen + 1}");
 
     public static string CauseName(int cause) => cause switch
     {
-        World.CauseStarve => "голод", World.CauseKilled => "убит", World.CauseBroken => "распался",
-        World.CauseClimate => "мороз или жара", World.CauseBuried => "обвал", World.CauseHand => "рука игрока", World.CauseFlare => "солнечная вспышка", _ => "жив",
+        World.CauseStarve => Loc.T("starvation", "голод"), World.CauseKilled => Loc.T("killed", "убит"), World.CauseBroken => Loc.T("fell apart", "распался"),
+        World.CauseClimate => Loc.T("frost or heat", "мороз или жара"), World.CauseBuried => Loc.T("buried by a collapse", "обвал"),
+        World.CauseHand => Loc.T("the player's hand", "рука игрока"), World.CauseFlare => Loc.T("solar flare", "солнечная вспышка"), _ => Loc.T("alive", "жив"),
     };
 
     public static string WhyText(byte why)
     {
         var parts = new List<string>();
-        if ((why & WhyEvent) != 0) parts.Add("участник событий");
-        if ((why & WhyPlayer) != 0) parts.Add("выбран игроком");
-        if ((why & WhyFounder) != 0) parts.Add("основатель линии");
-        if ((why & WhyDesigned) != 0) parts.Add("посажен игроком");
-        if ((why & WhyKid) != 0) parts.Add("потомок посаженного");
+        if ((why & WhyEvent) != 0) parts.Add(Loc.T("took part in events", "участник событий"));
+        if ((why & WhyPlayer) != 0) parts.Add(Loc.T("chosen by the player", "выбран игроком"));
+        if ((why & WhyFounder) != 0) parts.Add(Loc.T("lineage founder", "основатель линии"));
+        if ((why & WhyDesigned) != 0) parts.Add(Loc.T("planted by the player", "посажен игроком"));
+        if ((why & WhyKid) != 0) parts.Add(Loc.T("descendant of a planted design", "потомок посаженного"));
         return parts.Count == 0 ? "—" : string.Join(", ", parts);
     }
 
@@ -274,26 +294,30 @@ public sealed class Chronicle
         string Mol(long s) => ch != null && s >= 0 && s < Chemistry.S ? ch.Name[s] : $"#{s}";
         return e.Kind switch
         {
-            BioKind.Born => e.Value > 0 ? $"родился от #{e.Other} и #{(long)e.Value}" : e.Other > 0 ? $"родился делением #{e.Other}" : "появился (основатель линии)",
-            BioKind.Tracked => $"под наблюдением: {WhyText(e.Arg)}",
-            BioKind.Protein => $"первый белок «{Genome.EnzymeKind[e.Arg & 3]}»" + (e.Arg == Enzyme.Motor ? "" : $" на {Mol(e.Other & 31)}" + (e.Arg == Enzyme.Bind ? $" + {Mol(e.Other >> 5 & 31)}" : "")),
-            BioKind.Reaction => $"первая реакция с белком: {Genome.EnzymeKind[e.Arg & 3]} {Mol(e.Other & 31)}" + (e.Arg == Enzyme.Bind ? $" + {Mol(e.Other >> 5 & 31)}" : ""),
-            BioKind.CaveIn => $"ушёл под землю (глубина {e.Value:0})",
-            BioKind.CaveOut => $"вышел на поверхность после {e.Value:0} тиков под землёй",
-            BioKind.Kill => $"убил #{e.Other} (убийство №{e.Value:0})",
-            BioKind.Killed => $"на него напал #{e.Other}",
-            BioKind.Theft => $"украл у #{e.Other} (кража №{e.Value:0})",
-            BioKind.Gift => $"подарил #{e.Other} (дар №{e.Value:0})",
-            BioKind.Struck => $"облучён ударом с орбиты: геном теперь {e.Value:0} байт",
-            BioKind.Flare => $"под солнечной вспышкой: доза {e.Value:0.00} за тик",
-            BioKind.Record => $"рекорд: {RecordName(e.Arg)} {e.Value:0}",
-            BioKind.Child => e.Value > 0 ? $"потомок №{e.Value:0}: #{e.Other}" : $"потомок от спаривания: #{e.Other}",
-            BioKind.Event => $"событие хроники: {TypeNames[Math.Min((int)e.Arg, (int)EvType.Count - 1)]}",
-            BioKind.Death => $"умер: {CauseName(e.Arg)}",
-            BioKind.Infected => $"в него вписан код линии #{e.Other}",
+            BioKind.Born => e.Value > 0 ? Loc.T($"born to #{e.Other} and #{(long)e.Value}", $"родился от #{e.Other} и #{(long)e.Value}")
+                          : e.Other > 0 ? Loc.T($"born by division of #{e.Other}", $"родился делением #{e.Other}") : Loc.T("appeared (lineage founder)", "появился (основатель линии)"),
+            BioKind.Tracked => Loc.T($"tracked: {WhyText(e.Arg)}", $"под наблюдением: {WhyText(e.Arg)}"),
+            BioKind.Protein => Loc.T($"first protein “{Genome.EnzymeKind[e.Arg & 3]}”", $"первый белок «{Genome.EnzymeKind[e.Arg & 3]}»")
+                               + (e.Arg == Enzyme.Motor ? "" : Loc.T(" on ", " на ") + Mol(e.Other & 31) + (e.Arg == Enzyme.Bind ? $" + {Mol(e.Other >> 5 & 31)}" : "")),
+            BioKind.Reaction => Loc.T("first protein-driven reaction: ", "первая реакция с белком: ") + $"{Genome.EnzymeKind[e.Arg & 3]} {Mol(e.Other & 31)}" + (e.Arg == Enzyme.Bind ? $" + {Mol(e.Other >> 5 & 31)}" : ""),
+            BioKind.CaveIn => Loc.T($"went underground (depth {e.Value:0})", $"ушёл под землю (глубина {e.Value:0})"),
+            BioKind.CaveOut => Loc.T($"came up to the surface after {e.Value:0} ticks underground", $"вышел на поверхность после {e.Value:0} тиков под землёй"),
+            BioKind.Kill => Loc.T($"killed #{e.Other} (kill no. {e.Value:0})", $"убил #{e.Other} (убийство №{e.Value:0})"),
+            BioKind.Killed => Loc.T($"attacked by #{e.Other}", $"на него напал #{e.Other}"),
+            BioKind.Theft => Loc.T($"stole from #{e.Other} (theft no. {e.Value:0})", $"украл у #{e.Other} (кража №{e.Value:0})"),
+            BioKind.Gift => Loc.T($"gave to #{e.Other} (gift no. {e.Value:0})", $"подарил #{e.Other} (дар №{e.Value:0})"),
+            BioKind.Struck => Loc.T($"irradiated by an orbital strike: genome now {e.Value:0} bytes", $"облучён ударом с орбиты: геном теперь {e.Value:0} байт"),
+            BioKind.Flare => Loc.T($"caught in a solar flare: dose {e.Value:0.00} per tick", $"под солнечной вспышкой: доза {e.Value:0.00} за тик"),
+            BioKind.Record => Loc.T($"record: {RecordName(e.Arg)} {e.Value:0}", $"рекорд: {RecordName(e.Arg)} {e.Value:0}"),
+            BioKind.Child => e.Value > 0 ? Loc.T($"offspring no. {e.Value:0}: #{e.Other}", $"потомок №{e.Value:0}: #{e.Other}") : Loc.T($"offspring by mating: #{e.Other}", $"потомок от спаривания: #{e.Other}"),
+            BioKind.Event => Loc.T("chronicle event: ", "событие хроники: ") + TypeNames[Math.Min((int)e.Arg, (int)EvType.Count - 1)],
+            BioKind.Death => Loc.T($"died: {CauseName(e.Arg)}", $"умер: {CauseName(e.Arg)}"),
+            BioKind.Infected => Loc.T($"code of lineage #{e.Other} written into it", $"в него вписан код линии #{e.Other}"),
             _ => e.Kind.ToString(),
         };
     }
 
-    public static string RecordName(int k) => k switch { 0 => "масса", 1 => "возраст", 2 => "потомков", _ => "длина генома" };
+    public static string RecordName(int k) => Loc.T(RecordNameEn(k), RecordNameRu(k));
+    internal static string RecordNameEn(int k) => k switch { 0 => "mass", 1 => "age", 2 => "offspring", _ => "genome length" };
+    internal static string RecordNameRu(int k) => k switch { 0 => "масса", 1 => "возраст", 2 => "потомков", _ => "длина генома" };
 }

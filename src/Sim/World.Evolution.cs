@@ -6,7 +6,7 @@ using System.Numerics;
 
 namespace Primordium;
 
-// "Ход эволюции" (ROADMAP 7.1, 9.1, 9.2): the neutral shadow (Evolution.cs), the family tree of the
+// "Course of evolution" (ROADMAP 7.1, 9.1, 9.2): the neutral shadow (Evolution.cs), the family tree of the
 // living (Phylogeny.cs) and the progress tracks sampled every P.ProgressEvery ticks (EvolutionHistory).
 // Observation only, like the chronicle: nothing here is read by the simulation, no random number is
 // drawn from the world's streams (the shadow has its own), and the state hash is the same without it.
