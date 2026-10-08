@@ -262,7 +262,14 @@ public sealed partial class World
     // designs and lineages survive save/load; a living body becomes a design and back.
     static void DesignRegression()
     {
-        var w = new World(new WorldSettings { Seed = 1, InitialPop = 0, Abiogenesis = false, Strikes = false });
+        // The example designs were made for the legacy chemistry (ChemEnergyModel 0): in the chemistry
+        // from bonds the rock holds no downhill energy and the miner example (Крот) starves within 600
+        // ticks. The planting, ledger and save tests below do not depend on the energies.
+        int chemModel = P.ChemEnergyModel;
+        P.ChemEnergyModel = 0;
+        World w;
+        try { w = new World(new WorldSettings { Seed = 1, InitialPop = 0, Abiogenesis = false, Strikes = false }); }
+        finally { P.ChemEnergyModel = chemModel; }
         var before = w.ElementBudget();
         string designNote = "";
         int Find(Func<int, bool> ok)

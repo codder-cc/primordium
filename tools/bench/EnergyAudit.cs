@@ -36,6 +36,7 @@ public sealed partial class World
         public double[] LooseRCell, TopRCell, MineCost, TopRPerMol, TopEPerMol;
         public double PayR, PayE, CellsTop, AccTopR;
         public double BelowRPerMol, BelowEPerMol, DigCostMed, DigPerMolBelowMed, BelowMineMed, BelowPayR;
+        public readonly double[] LooseSp = new double[Chemistry.S], TopSp = new double[Chemistry.S], CrustSp = new double[Chemistry.S];
     }
 
     static double Pct(double[] v, double q)
@@ -59,7 +60,7 @@ public sealed partial class World
                 double m = c[i].D;
                 if (m <= 0) continue;
                 if (s == Chem.Gas) { g.GasE += m * E[s]; continue; }
-                g.LooseMol += m; g.LooseE += m * E[s]; g.LooseR += m * r[s];
+                g.LooseMol += m; g.LooseE += m * E[s]; g.LooseR += m * r[s]; g.LooseSp[s] += m;
                 looseCell[i] += m * r[s];
             }
         }
@@ -89,6 +90,8 @@ public sealed partial class World
                 {
                     if (counts[s] == 0) continue;
                     n += counts[s]; e += (double)counts[s] * E[s]; rr += counts[s] * r[s];
+                    g.CrustSp[s] += counts[s];
+                    if (z == h - 1) g.TopSp[s] += counts[s];
                     mass += counts[s] * Chem.Mass[s];
                     if (r[s] > 0) fuel += counts[s] * Chem.Mass[s];
                 }
@@ -124,8 +127,37 @@ public sealed partial class World
         return g;
     }
 
+    // What a pool would release if all of its matter could meet: every downhill reaction (Chemistry.Downhill,
+    // splits and binds), the most energetic first, each run until a partner is used up. An upper bound on
+    // the pool's chemical energy that also counts binds (R counts splits only).
+    static double AllDownhill(Chemistry ch, double[] amounts)
+    {
+        var a = (double[])amounts.Clone();
+        double energy = 0;
+        for (int step = 0; step < 4096; step++)
+        {
+            int k = 0;
+            for (; k < ch.Downhill.Length; k++)
+            {
+                var q = ch.Downhill[k];
+                if (q.B < 0 ? a[q.A] > 1e-9 : q.A == q.B ? a[q.A] > 2e-9 : a[q.A] > 1e-9 && a[q.B] > 1e-9) break;
+            }
+            if (k == ch.Downhill.Length) break;
+            var r = ch.Downhill[k];
+            double take = r.B < 0 ? a[r.A] : r.A == r.B ? a[r.A] / 2 : Math.Min(a[r.A], a[r.B]);
+            a[r.A] -= take;
+            if (r.B < 0) { a[ch.SplitA[r.A]] += take; if (ch.SplitB[r.A] >= 0) a[ch.SplitB[r.A]] += take; }
+            else { a[r.B] -= take; a[r.P] += take; }
+            energy += take * r.Energy;
+        }
+        return energy;
+    }
+
     IEnumerable<string> GroundLines(GroundSnap g)
     {
+        double ml = AllDownhill(Chem, g.LooseSp), mt = AllDownhill(Chem, g.TopSp), mc = AllDownhill(Chem, g.CrustSp);
+        yield return Loc.T($"all downhill if mixed (splits + binds): loose {G(ml)} ({F(ml / g.LooseMol)}/mol), top blocks {G(mt)} ({F(mt / g.TopMol)}/mol), crust {G(mc)} ({F(mc / g.CrustMol)}/mol)",
+                           $"всё под гору при смешении (распады + связывания): россыпь {G(ml)} ({F(ml / g.LooseMol)}/мол), верхние блоки {G(mt)} ({F(mt / g.TopMol)}/мол), кора {G(mc)} ({F(mc / g.CrustMol)}/мол)");
         yield return Loc.T(
             $"ground: loose (surface, no gas) {G(g.LooseMol)} mol, E {G(g.LooseE)}, R {G(g.LooseR)} (R/E {F(g.LooseR / g.LooseE)}); gas E {G(g.GasE)}; burials top E {G(g.BurTopE)} R {G(g.BurTopR)}, cave floors E {G(g.BurCaveE)} R {G(g.BurCaveR)}, deep E {G(g.BurDeepE)} R {G(g.BurDeepR)}",
             $"грунт: россыпь (поверхность, без газа) {G(g.LooseMol)} мол, E {G(g.LooseE)}, R {G(g.LooseR)} (R/E {F(g.LooseR / g.LooseE)}); газ E {G(g.GasE)}; захоронения верх E {G(g.BurTopE)} R {G(g.BurTopR)}, полы пещер E {G(g.BurCaveE)} R {G(g.BurCaveR)}, глубина E {G(g.BurDeepE)} R {G(g.BurDeepR)}");
@@ -259,6 +291,19 @@ public sealed partial class World
             $"смертей {G(dN / days)}/д: запас+тепло в тепло {Per(st, dN, 2)}/тело, вещество в останки E {Per(dE, dN, 1)} R {Per(q[EnergyEconomyProbe.DeathMatterR], dN, 1)}/тело ({Per(q[EnergyEconomyProbe.DeathMol], dN, 1)} мол, масса {Per(q[EnergyEconomyProbe.DeathMass], dN, 1)}); доля запаса в энергии тела {F(st / (st + dE), 3)}, в энергии под гору {F(st / (st + q[EnergyEconomyProbe.DeathMatterR]), 3)}; убито {G(q[EnergyEconomyProbe.KilledN] / days)}/д с запасом {Per(q[EnergyEconomyProbe.KilledStore], q[EnergyEconomyProbe.KilledN], 2)} и {Per(q[EnergyEconomyProbe.KilledMol], q[EnergyEconomyProbe.KilledN], 1)} мол");
         yield return Loc.T($"births {births} ({G(births / days)}/d), abiogenesis {spawns} ({G(spawns / days)}/d), deaths {deaths}",
                            $"рождений {births} ({G(births / days)}/д), абиогенез {spawns} ({G(spawns / days)}/д), смертей {deaths}");
+        // The local abiogenesis law (AbioModel 1) at the window's end, whichever law runs: Σ of the cells' chances.
+        double pSum = 0, pWater = 0;
+        int pCells = 0, pReady = 0;
+        for (int i = 0; i < N; i++)
+        {
+            float p = AbioCellChance(i);
+            if (p <= 0) continue;
+            pCells++; pSum += p;
+            if (Submerged(i)) pWater += p;
+            if (p >= 0.5f * P.AbioCellRate) pReady++;
+        }
+        yield return Loc.T($"local abiogenesis law now: expected {G(pSum * P.DayLen)}/d over {pCells} cells ({pReady} at ≥ half the rate), under water {F(pSum > 0 ? pWater / pSum : 0, 2)} of it",
+                           $"закон местного абиогенеза сейчас: ожидается {G(pSum * P.DayLen)}/д по {pCells} клеткам ({pReady} — не меньше половины ставки), под водой {F(pSum > 0 ? pWater / pSum : 0, 2)}");
     }
 
     static IEnumerable<string> ChemLines(Chemistry ch, double[] r)
@@ -278,6 +323,33 @@ public sealed partial class World
         yield return "chem: " + string.Join(", ", cols.Select(c => $"E~{c.name} r {F(Oscillation.Pearson(e, c.v))} ρ {F(Oscillation.Spearman(e, c.v))}"))
             + Loc.T($"; splits {splits}, exothermic {exo} (ground compounds {groundExo} of 12); binds exothermic {bindExo} of {bindAll}; compounds R/E {F(sumR / sumE, 3)}",
                     $"; распадов {splits}, экзотермичных {exo} (основных соединений {groundExo} из 12); связываний экзотермичных {bindExo} из {bindAll}; соединения R/E {F(sumR / sumE, 3)}");
+    }
+
+    // --chem-table [--seeds 1-6] [--verbose]: the chemistry of each seed under the current laws (no world is
+    // made): per species E, its energy above its elements, formation energy and caged atoms (model 1),
+    // the split's dE, R and the bond; then the summary line of the energy audit and a pooled one.
+    public static void ChemTable(string[] args)
+    {
+        string Arg(string name, string def) { int i = Array.IndexOf(args, name); return i >= 0 && i + 1 < args.Length ? args[i + 1] : def; }
+        bool verbose = Array.IndexOf(args, "--verbose") >= 0;
+        int exoAll = 0, groundExoAll = 0, bindExoAll = 0, bindUpAll = 0, bindAll = 0, n = 0;
+        var e = new List<double>(); var bond = new List<double>();
+        foreach (int seed in Batch.ParseSeeds(Arg("--seeds", "1-6")))
+        {
+            var ch = new Chemistry(seed);
+            var r = EnergyEconomyProbe.Downhill(ch);
+            Console.WriteLine($"=== seed {seed}: model {ch.Model}, zero {ch.EnergyZero}/atom; elements " + string.Join(" ", Enumerable.Range(0, Chemistry.ElementCount).Select(k => $"{ch.ElementName[k]}(v{ch.Valence[k]} x{ch.Affinity[k]:0.00})")));
+            if (verbose)
+                for (int s = 0; s < Chemistry.S; s++)
+                    Console.WriteLine($"  {s,2} {ch.Formula(s) + (s % 2 == 1 ? "*" : ""),-12} E {ch.E[s],3}  above elements {ch.E[s] - ch.EnergyZero * ch.AtomCount(s),4}  form {ch.Formation[s],6:0.0} caged {ch.Caged[s]}  split {(ch.SplitA[s] >= 0 ? ch.SplitEnergy(s).ToString("+0;-0;0") : "-"),4}  R {r[s],4:0}  bond {ch.Bond[s]:0.00}{(ch.Solid[s] ? " solid" : "")}{(s == ch.Gas ? " gas" : "")}{(ch.VentHigh.Contains(s) ? " vent" : "")}");
+            foreach (var line in ChemLines(ch, r)) Console.WriteLine("  " + line);
+            exoAll += ch.Unstable.Length;
+            groundExoAll += Enumerable.Range(0, Chemistry.S).Count(s => s % 2 == 0 && ch.SplitExo[s] && ch.AtomCount(s) > 1);
+            for (int a = 0; a < Chemistry.S; a++) for (int b = a; b < Chemistry.S; b++) { int p = ch.Combine[a, b]; if (p < 0) continue; bindAll++; if (ch.E[a] + ch.E[b] > ch.E[p]) bindExoAll++; if (ch.E[a] + ch.E[b] < ch.E[p]) bindUpAll++; }
+            for (int s = 0; s < Chemistry.S; s += 2) if (ch.AtomCount(s) > 1) { e.Add(ch.E[s] - (ch.Model == 0 ? 0 : ch.EnergyZero * ch.AtomCount(s))); bond.Add(ch.Bond[s]); }
+            n++;
+        }
+        Console.WriteLine($"pooled over {n} seeds: exothermic splits {exoAll} of {28 * n}, ground compounds with an exothermic split {groundExoAll} of {12 * n}, exothermic binds {bindExoAll} of {bindAll} (uphill {bindUpAll}); r(E above elements, bond) of ground compounds {F(Oscillation.Pearson(e.ToArray(), bond.ToArray()))}");
     }
 
     public static void EnergyAuditReport(string[] args)

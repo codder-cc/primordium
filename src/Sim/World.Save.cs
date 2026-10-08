@@ -227,12 +227,27 @@ public sealed partial class World
         var initialLaws = ReadLaws(br);
         var laws = ReadLaws(br);
         int tileSide = br.ReadInt32();
+        // Laws added later than a file are its legacy behaviour, not today's default: a world saved
+        // before them was made and run without them (its chemistry is regenerated from the seed, so
+        // its energies must come out as they were).
+        foreach (var (name, legacy) in LegacyLaws)
+        {
+            initialLaws.TryAdd(name, legacy);
+            laws.TryAdd(name, legacy);
+        }
         ParamRegistry.Restore(laws);
-        var w = new World(settings, tileSide, false) { InitialLaws = initialLaws };
+        var w = new World(settings, tileSide, false, (int)initialLaws[nameof(P.ChemEnergyModel)]) { InitialLaws = initialLaws };
         w.SyncBody(reader);
         if (br.ReadInt32() != EndMarker) throw new InvalidDataException("save file is damaged (no end marker)");
         return w;
     }
+
+    // Laws whose absence from a save file means their legacy value (they were added after the file).
+    static readonly (string name, double legacy)[] LegacyLaws =
+    {
+        (nameof(P.ChemEnergyModel), 0),
+        (nameof(P.AbioModel), 0),
+    };
 
     static void WriteLaws(BinaryWriter w, Dictionary<string, double> laws)
     {

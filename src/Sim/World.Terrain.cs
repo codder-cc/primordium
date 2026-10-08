@@ -96,6 +96,10 @@ public sealed partial class World
                     // Pressure selects denser, more cohesive aggregates; correlated domains make seams.
                     float rank = Math.Clamp(depth * 0.65f + domain * 0.35f + (vein - 0.5f) * 0.5f, 0, 0.999f);
                     int molecule = GeoOn ? GeoPick(x, y, z, h - z - 1, rank, weights) : species[(int)(rank * species.Length)];
+                    // The chemistry from bonds (Chemistry.Model 1): rock is old, relaxed matter — a stratum
+                    // drawn as an excited state is laid as its ground state (same atoms; the excitation was
+                    // shed before the world began). The legacy chemistry keeps its excited strata.
+                    if (Chem.Model != 0) molecule = Chemistry.Ground(molecule);
                     Order[q] = (byte)(255 * Math.Clamp(0.12f + depth * 0.75f + Chem.Packing[molecule] * 0.15f, 0, 1));
                     Mat[q] = Chem.BuiltMat[molecule]; Units[q] = (ushort)BlockCapacity(molecule, Order[q]);   // full at its packing
                 }

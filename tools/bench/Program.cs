@@ -83,6 +83,7 @@ if (Array.IndexOf(args, "--invade") >= 0) { World.InvasionProbe(args); return; }
 if (Array.IndexOf(args, "--tournament") >= 0) { World.Tournament(args); return; }   // ancestors against moderns in the same world (Tournament.cs)
 if (Array.IndexOf(args, "--food-chain") >= 0) { World.FoodChainReport(args); return; }   // who eats whom, trophic levels (FoodChain.cs)
 if (Array.IndexOf(args, "--predation") >= 0) { World.PredationReport(args); return; }
+if (Array.IndexOf(args, "--chem-table") >= 0) { World.ChemTable(args); return; }   // the chemistry of seeds under the current laws (EnergyAudit.cs)
 if (Array.IndexOf(args, "--energy-audit") >= 0) { World.EnergyAuditReport(args); return; }   // the energy economy, observed (EnergyAudit.cs, docs/ENERGY-AUDIT.md)   // predation audit, defence, parasites, territory (Predation.cs)
 if (Array.IndexOf(args, "--osc") >= 0) { Oscillation.FromRuns(args); return; }   // Lotka–Volterra test on a batch's runs.csv (Predation.cs)
 if (Array.IndexOf(args, "--perf-baseline") >= 0) { PerfBaseline.Run(args); return; }   // fixed boom save, ms/tick by stage (PerfBaseline.cs)

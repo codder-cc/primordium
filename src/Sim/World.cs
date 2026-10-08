@@ -130,7 +130,8 @@ public sealed partial class World
     // random streams. Elements, terrain, vents, water and the primordial litter stay those of the
     // seed, so repeats of one seed with different life seeds show how much of an outcome is chance.
     // 0 is the original world of the seed.
-    World(WorldSettings settings, int tileSize, bool generate)
+    // chemModel: the chemistry's energy model (Chemistry.Model); < 0 — the current law, P.ChemEnergyModel.
+    World(WorldSettings settings, int tileSize, bool generate, int chemModel = -1)
     {
         Settings = settings = settings?.Clone() ?? new WorldSettings();
         if (generate && settings.Params != null) ParamRegistry.Restore(settings.Params);
@@ -164,7 +165,7 @@ public sealed partial class World
         long life = settings.LifeSeed == 0 ? 0 : (long)Hash32.U((uint)settings.LifeSeed * 2654435761u) << 32 | 1;
         for (int k = 0; k < Tiles; k++) ctxs[k] = new Ctx { Rng = new SimRng(seed ^ life, 1 + k), Slot = k };
         paramsSeen = ParamRegistry.Version;   // the tables built below use the laws as they are now
-        Chem = new Chemistry(seed);
+        Chem = new Chemistry(seed, chemModel >= 0 ? chemModel : P.ChemEnergyModel);
         tiles = new List<Agent>[Tiles];
         for (int k = 0; k < Tiles; k++) tiles[k] = new List<Agent>();
         for (int i = 0; i < N; i++)
@@ -188,11 +189,17 @@ public sealed partial class World
         for (int k = 0; k < P.VentCount; k++) SpawnVent();
         RecomputeVentFields();
 
-        // The primordial remains: a one-time endowment of loose matter like the ground it lies on.
+        // The primordial remains: a one-time endowment of loose matter like the ground it lies on. In the
+        // chemistry from bonds (Chemistry.Model 1) the rock is relaxed (ground states) and the primordial
+        // soup is the energised part: the grains lie in their excited state (the surface under the young
+        // sun), the only fuel the first bodies find besides light. The legacy chemistry: as the rock.
         for (int i = 0; i < N; i++)
         {
             int top = TopMat(i);   // a handful of loose grains of the ground it lies on
-            if (top >= 2) C[top - 2][i] += 8 * P.InitLitter * (0.5f + (float)Rng.NextDouble());
+            if (top < 2) continue;
+            int s = top - 2;
+            if (Chem.Model != 0 && Chem.PhotoUp[s] >= 0) s = Chem.PhotoUp[s];
+            C[s][i] += 8 * P.InitLitter * (0.5f + (float)Rng.NextDouble());
         }
 
         RecomputeFlow();
@@ -374,10 +381,14 @@ public sealed partial class World
         }
         Lap(DAlarms);
         Prof[2] += prof.Elapsed.TotalMilliseconds;
-        // Abiogenesis is very rare on a living planet; on a nearly empty one the untouched primordial
-        // soup tries far more often.
-        float barren = Math.Max(0, 1 - Agents.Count / 200f);
-        if (Abiogenesis && mainRng.NextDouble() < P.AbioChance * (1 + 160 * barren)) SpawnRandom();
+        // Abiogenesis. P.AbioModel 1: from each cell's own chemistry (World.Life, AbioLocal). 0 (legacy):
+        // very rare on a living planet; on a nearly empty one the untouched primordial soup tries far more often.
+        if (Abiogenesis && P.AbioModel != 0) AbioLocal();
+        else
+        {
+            float barren = Math.Max(0, 1 - Agents.Count / 200f);
+            if (Abiogenesis && mainRng.NextDouble() < P.AbioChance * (1 + 160 * barren)) SpawnRandom();
+        }
         ResMark(ResourceProbe.POther);
         ResTick();
         Lap(DAbio);

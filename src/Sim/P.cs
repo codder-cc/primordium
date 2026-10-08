@@ -198,6 +198,11 @@ public static class P
     // Environment
     public static int InitialPop = 3000;        // random genomes scattered at the start
     public static float AbioChance = 0.003f;    // chance per tick of one random newcomer (if abiogenesis is on)
+    // AbioModel 1: abiogenesis from local chemistry — a cell's chance per tick is AbioCellRate ×
+    // min(1, energy its loose matter releases by itself / SpawnEnergy) × TempFactor × wetness (World.Life,
+    // AbioCellChance); 0 — the legacy global chance AbioChance, raised when bodies are few.
+    public static int AbioModel = 0;
+    public static float AbioCellRate = 2e-5f;
     public static int SpawnBody = 8;
     public static float SpawnEnergy = 30f;      // burnt out of the cell's own molecules
     public static float InitLitter = 0.5f;       // primordial remains: this many times the top block's makeup (never renewed)
@@ -219,6 +224,14 @@ public static class P
     // All read when a world is made (a world keeps what it was made with, see World.Geochem).
     public static int GeoProfile = 1;
     public static float DepthScale = 4f, DepthMid = 12f, DeepElementMin = 0.7f, VeinThreshold = 0.72f, VeinGain = 4f;
+
+    // Energies of the molecules (Chemistry): ChemEnergyModel 0 — drawn at random, as before (legacy);
+    // 1 — from composition and bonds: formation energy −Σ_bonds ChemIonicK·(χi − χj)² (Pauling's ionic
+    // resonance, χ = element affinity) plus the cost of atoms no bond can reach; the excitation a photon
+    // brings is ChemExciteK × √(mean affinity of the atoms). Read when a world is made (a save keeps the
+    // value it was made with; a save without it is legacy).
+    public static int ChemEnergyModel = 1;
+    public static float ChemIonicK = 6f, ChemExciteK = 6f;
 
     // Climate (°C): latitude/season climate + daily swing − altitude
     // TLapse: per level of the first relief (~28 levels from valleys to peaks). A world made with the relief

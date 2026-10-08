@@ -34,10 +34,38 @@ public sealed partial class World
                 int de = ch.E[a] + ch.E[b] - ch.E[p];
                 if (want(de)) return (a, b, p, de);
             }
+        // A chemistry from bonds (ChemEnergyModel 1) has few uphill binds: also two of one species.
+        for (int a = 0; a < Chemistry.S; a++)
+        {
+            int p = ch.Combine[a, a];
+            if (p >= 0 && want(2 * ch.E[a] - ch.E[p])) return (a, a, p, 2 * ch.E[a] - ch.E[p]);
+        }
         throw new Exception("no such reaction in this chemistry");
     }
 
+    // The probes run on the legacy chemistry (ChemEnergyModel 0), which has every kind of reaction (the
+    // chemistry from bonds has no uphill bind in the fixture's seed); the living worlds of the other
+    // tests run the default one. Then abiogenesis from local chemistry in the chemistry from bonds:
+    // a body powered by binds and splits of loose matter only, energy booked.
     static void EnergyRegression()
+    {
+        int model = P.ChemEnergyModel;
+        P.ChemEnergyModel = 0;
+        try { EnergyProbes(); } finally { P.ChemEnergyModel = model; }
+        var w = Fixture();
+        Require(w.Chem.Model == model, "the fixture's chemistry does not follow the law");
+        int cell = 20 * W + 20;
+        for (int s = 0; s < Chemistry.S; s++) w.C[s][cell] += 12;
+        w.EnergyStart();
+        var before = w.AuditEnergy();
+        Require(w.SpawnAt(cell, true, true), "probe local abiogenesis failed");
+        var born = w.Agents[^1];
+        Require(born.Energy > 0, "a local founder without energy");
+        w.EnergyBalanced(before, "local abiogenesis", FAbio);
+        Console.WriteLine($"PASS local abiogenesis (chemistry model {w.Chem.Model}): founder with {born.Energy:0.#} energy from loose matter only, ledger balanced");
+    }
+
+    static void EnergyProbes()
     {
         var w = Fixture(); var ch = w.Chem;
         int c = 80 * W + 120;

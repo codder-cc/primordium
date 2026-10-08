@@ -49,8 +49,21 @@ public sealed class Chemistry
     static readonly string[] Syl = { "ка", "зу", "ми", "ро", "те", "ла", "во", "экс", "ши", "ан", "пу", "др", "ом", "ри", "не", "гу", "са", "ки", "ул", "бе" };
     static readonly string[] SylEn = { "ka", "zu", "mi", "ro", "te", "la", "vo", "ex", "shi", "an", "pu", "dr", "om", "ri", "ne", "gu", "sa", "ki", "ul", "be" };
 
-    public Chemistry(int seed)
+    // How the energies were made (P.ChemEnergyModel when the world was created): 0 — drawn at random
+    // (the legacy chemistry), 1 — from the composition and the bonds (FormationEnergies below).
+    public readonly int Model;
+    // Model 1 (0 for model 0): each ground state's energy of formation from its elements, before the
+    // per-atom offset (negative: the bonds released energy when it formed), and the per-atom offset
+    // (EnergyZero) that keeps every E ≥ 0. Caged: atoms the formula holds that no bond reaches.
+    public readonly float[] Formation = new float[S];
+    public readonly int[] Caged = new int[S];
+    public int EnergyZero { get; private set; }
+
+    public Chemistry(int seed) : this(seed, P.ChemEnergyModel) { }
+
+    public Chemistry(int seed, int model)
     {
+        Model = model;
         var r = new Random(unchecked(seed * 7919 + 17));
         var colours = new Rgb[ElementCount];
         for (int e = 0; e < ElementCount; e++)
@@ -115,6 +128,9 @@ public sealed class Chemistry
             if (a < 0) { SplitA[s + 1] = s; SplitB[s + 1] = -1; }
             PhotoUp[s] = s + 1;
         }
+        // The legacy draws above stay (the random stream, and with it every formula, name and colour, is
+        // the same in both models); model 1 replaces the energies only.
+        if (Model == 1) FormationEnergies();
         for (int a = 0; a < S; a++)
             for (int b = 0; b < S; b++)
             {
@@ -134,13 +150,23 @@ public sealed class Chemistry
             Reactivity[s] = AffinityPerAtom[s] * Excitation[s];
             if (Reactivity[s] > Reactivity[MostReactive]) MostReactive = s;
         }
+        var down = new List<Reaction>();
+        for (int s = 0; s < S; s++) if (SplitExo[s]) down.Add(new Reaction(s, -1, -1, SplitEnergy(s)));
+        for (int a = 0; a < S; a++)
+            for (int b = a; b < S; b++)
+                if (Combine[a, b] >= 0 && E[a] + E[b] > E[Combine[a, b]]) down.Add(new Reaction(a, b, Combine[a, b], E[a] + E[b] - E[Combine[a, b]]));
+        Downhill = down.OrderByDescending(q => q.Energy).ToArray();   // stable: splits, then binds, in index order
         int[] Where(Func<int, bool> f) => Enumerable.Range(0, S).Where(f).ToArray();
         // Low-energy ground states: nothing in them for the reactive-damage law to spend.
-        Low = Where(s => E[s] <= 5 && Excitation[s] == 0);
+        // (Model 1: ground states bound at least as low as their elements, with no downhill split.)
+        Low = Model == 0 ? Where(s => E[s] <= 5 && Excitation[s] == 0)
+                         : Where(s => Excitation[s] == 0 && !SplitExo[s] && E[s] <= EnergyZero * AtomCount(s));
         Unstable = Where(s => SplitExo[s]); Solids = Where(s => Solid[s]); Excited = Where(s => Excitation[s] > 0);
         // The most volatile species has an atmospheric reservoir. It is never destroyed by water.
         Gas = Enumerable.Range(0, S).OrderBy(s => Mass[s] * (0.1f + Bond[s])).First();
-        VentHigh = Enumerable.Range(0, S).OrderByDescending(s => E[s]).Take(8).ToArray();
+        // The vents' energetic ejecta: the highest E (model 1: the most energy above the elements they are
+        // made of — excited and crowded molecules — since E there also counts the per-atom offset).
+        VentHigh = Enumerable.Range(0, S).OrderByDescending(s => Model == 0 ? E[s] : E[s] - EnergyZero * AtomCount(s)).Take(8).ToArray();
         VentMid = Low;
         Array.Fill(MatKey, -1);
         MatNameEn[Air] = "void"; MatNameRu[Air] = "пустота";
@@ -173,6 +199,73 @@ public sealed class Chemistry
         ApplyParams();
     }
 
+    // Model 1: energies from composition and bonds (a Pauling-like additive bond model). The reference
+    // is every element in its own aggregate (each atom bonded to its like), energy 0. A molecule's atoms
+    // are joined by a tree of bonds (n − 1 for n atoms), each atom taking no more bonds than its
+    // valence; the tree is the one the bonds favour most (greedy, from the highest-valence atom). A bond
+    // between unlike atoms i–j gives up two half like-bonds for one unlike bond, and the difference is
+    // Pauling's ionic resonance energy, ChemIonicK·(χi − χj)² with χ = Affinity (electronegativity):
+    // so the formation energy is −Σ_tree ChemIonicK·Δχ² — compounds of unlike atoms are bound lower than
+    // their elements, compounds of one element are neutral. An atom the tree cannot reach (every atom
+    // that could hold it has used its valence) is caged: it keeps no bond and loses its v/2 like-bonds,
+    // ChemIonicK·χ·v/2 each — such crowded formulas are energy-rich and fall apart by themselves.
+    // Every ground state's E = round(EnergyZero·atoms + formation), EnergyZero the smallest whole
+    // per-atom offset that keeps all E ≥ 0: an offset per atom changes no reaction's ΔE (atoms are
+    // conserved), only where zero is. Excitation (the excited state's E above its ground) is the gap a
+    // photon must bridge, ChemExciteK × √(mean electronegativity of the atoms) (at least 1): tightly
+    // held electrons need bigger photons, with a diminishing return (affinities 0.2–2 give a gap within
+    // a factor of 3, so no world is left with photons too small to live on). Ties in the tree go to the higher valence, then the lower element.
+    void FormationEnergies()
+    {
+        float k = P.ChemIonicK;
+        float worst = 0;
+        var el = new int[8];
+        var free = new int[8];
+        var inTree = new bool[8];
+        for (int s = 0; s < S; s += 2)
+        {
+            int n = 0;
+            for (int e = 0; e < ElementCount; e++) for (int j = 0; j < Atoms[s, e]; j++) el[n++] = e;
+            int start = 0;
+            for (int j = 1; j < n; j++) if (Valence[el[j]] > Valence[el[start]]) start = j;
+            for (int j = 0; j < n; j++) { free[j] = (int)Valence[el[j]]; inTree[j] = false; }
+            inTree[start] = true;
+            float energy = 0;
+            int caged = 0;
+            for (int added = 1; added < n; added++)
+            {
+                int bi = -1, bj = -1;
+                float best = -1;
+                for (int i = 0; i < n; i++)
+                {
+                    if (!inTree[i] || free[i] <= 0) continue;
+                    for (int j = 0; j < n; j++)
+                    {
+                        if (inTree[j] || free[j] <= 0) continue;
+                        float d = Affinity[el[i]] - Affinity[el[j]], g = k * d * d;
+                        if (g > best || (g == best && (Valence[el[j]] > Valence[el[bj]] || (Valence[el[j]] == Valence[el[bj]] && el[j] < el[bj])))) { best = g; bi = i; bj = j; }
+                    }
+                }
+                if (bi < 0) break;
+                inTree[bj] = true; free[bi]--; free[bj]--;
+                energy -= best;
+            }
+            for (int j = 0; j < n; j++)
+                if (!inTree[j]) { caged++; energy += k * Affinity[el[j]] * Valence[el[j]] / 2; }
+            Formation[s] = Formation[s + 1] = energy;
+            Caged[s] = Caged[s + 1] = caged;
+            worst = Math.Max(worst, -energy / n);
+        }
+        int zero = (int)MathF.Ceiling(worst - 1e-4f);
+        for (int s = 0; s < S; s += 2)
+        {
+            int n = AtomCount(s);
+            E[s] = Math.Max(0, (int)MathF.Round(zero * n + Formation[s]));
+            E[s + 1] = E[s] + Math.Max(1, (int)MathF.Round(P.ChemExciteK * MathF.Sqrt(AffinityPerAtom[s])));
+        }
+        EnergyZero = zero;
+    }
+
     // What depends on the world's laws (P) rather than on the seed: a full block's count of each kind
     // (P.VoxelSpace) and the room the gas takes held in a body (P.GasExpand). World calls it again when
     // those laws change (World.ApplyParamChanges).
@@ -184,6 +277,12 @@ public sealed class Chemistry
             MatCap[s + 2] = Math.Clamp((int)MathF.Round(P.VoxelSpace / Volume[s]), 1, ushort.MaxValue);
         }
     }
+
+    // A downhill reaction: B < 0 — the split of A (into SplitA/SplitB), otherwise the bind A + B → P;
+    // Energy is what it releases (> 0).
+    public readonly record struct Reaction(int A, int B, int P, int Energy);
+    // Every exothermic split and bind, the most energetic first (ties: splits before binds, lower species first).
+    public readonly Reaction[] Downhill;
 
     public static int Ground(int s) => s & ~1;   // the ground state of the formula (species come in ground/excited pairs)
 

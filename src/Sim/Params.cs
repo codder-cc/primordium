@@ -225,7 +225,9 @@ public static class ParamRegistry
         F("Friction", "Движение", "Velocity kept per tick on land", "Скорость, сохраняемая за тик на суше", 0, 1, 0.01);
         // Environment
         I("InitialPop", "Среда", "Random genomes at the start of a world", "Случайных геномов в начале мира", 0, 50000, 100, live: false);
-        F("AbioChance", "Среда", "Chance of abiogenesis per tick (if abiogenesis is on)", "Шанс самозарождения за тик (если абиогенез включён)", 0, 0.1, 0.0005);
+        F("AbioChance", "Среда", "Chance of abiogenesis per tick, legacy law (AbioModel 0; raised when bodies are few)", "Шанс самозарождения за тик, прежний закон (AbioModel 0; выше, когда тел мало)", 0, 0.1, 0.0005);
+        I("AbioModel", "Среда", "Abiogenesis: 1 from local chemistry (chance per cell by the energy its loose matter releases, temperature and wetness; no count of bodies), 0 the legacy global chance", "Самозарождение: 1 — из местной химии (шанс клетки по энергии её рыхлого вещества, температуре и влажности; без счёта тел), 0 — прежний общий шанс", 0, 1, 1);
+        F("AbioCellRate", "Среда", "Abiogenesis (AbioModel 1): chance per cell per tick at full readiness (loose matter able to release SpawnEnergy), 15 °C and the best wetness", "Самозарождение (AbioModel 1): шанс на клетку за тик при полной готовности (рыхлое вещество может дать SpawnEnergy), 15 °C и лучшей влажности", 0, 0.001, 0.0000005);
         I("SpawnBody", "Среда", "Molecules in an abiogenic body", "Молекул в теле самозарождённого", 1, 64, 1);
         F("SpawnEnergy", "Среда", "Energy of an abiogenic body (from local reactions)", "Энергия самозарождённого (из местных реакций)", 0, 200, 1);
         F("InitLitter", "Среда", "Primordial remains: share of the top block's composition", "Первичные останки: доля состава верхнего блока", 0, 10, 0.1, live: false);
@@ -238,6 +240,9 @@ public static class ParamRegistry
         F("DeepElementMin", "Геохимия", "Smallest DepthBias of the world's deepest element (a generator guarantee)", "Наименьший DepthBias самого глубинного элемента мира (гарантия генератора)", 0, 1, 0.05, live: false);
         F("VeinThreshold", "Геохимия", "Coherent-field threshold for veins (higher means narrower, rarer veins)", "Порог связного поля для жил (выше — жилы уже и реже)", 0.5, 1, 0.01, live: false);
         F("VeinGain", "Геохимия", "How many e-fold a vein is enriched in the deep element", "Во сколько e-раз жила обогащена глубинным элементом", 0, 20, 0.5, live: false);
+        I("ChemEnergyModel", "Геохимия", "Molecule energies: 1 from composition and bonds (Pauling-like bond energies; stable compounds are low), 0 drawn at random as before", "Энергии молекул: 1 — из состава и связей (энергии связей по Полингу; устойчивые соединения — низкие), 0 — случайные, как раньше", 0, 1, 1, live: false);
+        F("ChemIonicK", "Геохимия", "Energy of a bond between unlike atoms below their like bonds, per (difference of affinities)²; an unreachable atom costs this × affinity × valence / 2", "Энергия связи разных атомов ниже их связей с подобными, на (разность сродств)²; атом, до которого не дотянулась ни одна связь, стоит столько × сродство × валентность / 2", 0.5, 30, 0.5, live: false);
+        F("ChemExciteK", "Геохимия", "Excitation a photon brings to a molecule: this × √(mean affinity of its atoms)", "Возбуждение, которое фотон даёт молекуле: столько × √(среднее сродство её атомов)", 0.5, 30, 0.5, live: false);
         // Climate
         F("TEquator", "Климат", "Equator temperature, °C", "Температура экватора, °C", -50, 80, 0.5);
         F("TPole", "Климат", "Pole temperature, °C", "Температура полюса, °C", -80, 50, 0.5);

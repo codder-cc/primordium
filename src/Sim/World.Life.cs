@@ -550,11 +550,16 @@ public sealed partial class World
         return made;
     }
 
-    bool SpawnAt(int i, bool force)
+    // looseOnly (the local abiogenesis law, P.AbioModel 1): the body is gathered from the cell's loose
+    // matter only — rock reaches the loose layer by weathering — and is powered by every downhill
+    // reaction of that matter, splits and binds alike. Otherwise (the initial bodies, groups, legacy
+    // abiogenesis) also from a soft top block (barrier < 2), with binds only in the bonds chemistry
+    // (Chemistry.Model 1: there splits seldom release energy; the legacy chemistry keeps its splits only).
+    bool SpawnAt(int i, bool force, bool looseOnly = false)
     {
         if (!Fits(i, Height[i], P.SpawnBody * 4f) || (!force && Submerged(i))) return false;
         int top = i * Z + Height[i] - 1;
-        bool soft = top >= 0 && VoxelBarrier(top) < 2;
+        bool soft = !looseOnly && top >= 0 && VoxelBarrier(top) < 2;
         int available = soft ? Units[top] : 0;
         for (int s = 0; s < Chemistry.S; s++) if (s != Chem.Gas) available += (int)C[s][i].F;
         if (available < P.SpawnBody) return false;
@@ -576,25 +581,27 @@ public sealed partial class World
                     if (choice < 0) { q = s; C[s][i] -= 1; break; }
                 }
             }
-            else q = TakeSoft(i);
+            else if (!looseOnly) q = TakeSoft(i);
             if (q < 0) break;
             AddMol(a, q);
         }
         // Harvest only released bond energy; all reaction products stay in the world.
         float energy = 0;
-        for (int tries = 0; tries < Chemistry.S && energy < P.SpawnEnergy; tries++)
-        {
-            int best = -1;
-            for (int s = 0; s < Chemistry.S; s++)
-                if (Chem.SplitExo[s] && C[s][i] >= 0.1f && (best < 0 || Chem.SplitEnergy(s) > Chem.SplitEnergy(best))) best = s;
-            if (best < 0) break;
-            Qty take = Qty.Min(C[best][i], (P.SpawnEnergy - energy) / Chem.SplitEnergy(best));
-            C[best][i] -= take;
-            C[Chem.SplitA[best]][i] += take;
-            if (Chem.SplitB[best] >= 0) C[Chem.SplitB[best]][i] += take;
-            energy += (float)(take * Chem.SplitEnergy(best));
-            Flows[FAbio] += take * Chem.SplitEnergy(best);
-        }
+        if (looseOnly || Chem.Model != 0) energy = (float)LocalReactions(i, P.SpawnEnergy, true);
+        else
+            for (int tries = 0; tries < Chemistry.S && energy < P.SpawnEnergy; tries++)
+            {
+                int best = -1;
+                for (int s = 0; s < Chemistry.S; s++)
+                    if (Chem.SplitExo[s] && C[s][i] >= 0.1f && (best < 0 || Chem.SplitEnergy(s) > Chem.SplitEnergy(best))) best = s;
+                if (best < 0) break;
+                Qty take = Qty.Min(C[best][i], (P.SpawnEnergy - energy) / Chem.SplitEnergy(best));
+                C[best][i] -= take;
+                C[Chem.SplitA[best]][i] += take;
+                if (Chem.SplitB[best] >= 0) C[Chem.SplitB[best]][i] += take;
+                energy += (float)(take * Chem.SplitEnergy(best));
+                Flows[FAbio] += take * Chem.SplitEnergy(best);
+            }
         if (a.InvTotal < P.MinBody || energy <= 0)
         {
             for (int s = 0; s < Chemistry.S; s++) C[s][i] += a.Inv[s];
@@ -608,6 +615,84 @@ public sealed partial class World
         EvoRegister(a);   // a founder: a root of the family tree
         TrackNew(a, Chronicle.WhyFounder);   // a founder of a lineage keeps a biography
         return true;
+    }
+
+    // The downhill reactions of a cell's loose matter (Chemistry.Downhill: exothermic splits s → A + B
+    // and binds a + b → p), the most energetic first, until `need` is released; each moves exactly the
+    // same Qty of every partner. apply = false only measures (nothing moves);
+    // apply = true moves the matter and books the energy as abiogenic (FAbio). Returns the energy.
+    double LocalReactions(int i, double need, bool apply)
+    {
+        Span<long> raw = stackalloc long[Chemistry.S];
+        for (int s = 0; s < Chemistry.S; s++) raw[s] = C[s][i].Raw;
+        double energy = 0;
+        long min = Qty.Of(0.1).Raw;
+        var down = Chem.Downhill;
+        for (int tries = 0; tries < 2 * Chemistry.S && energy < need; tries++)
+        {
+            // The most energetic reaction the matter left can run (each partner at least 0.1 molecule).
+            int k = 0;
+            for (; k < down.Length; k++)
+            {
+                var q = down[k];
+                if (q.B < 0) { if (raw[q.A] >= min) break; }
+                else if (q.A == q.B ? raw[q.A] >= 2 * min : raw[q.A] >= min && raw[q.B] >= min) break;
+            }
+            if (k == down.Length) break;
+            var r = down[k];
+            long have = r.B < 0 ? raw[r.A] : r.A == r.B ? raw[r.A] / 2 : Math.Min(raw[r.A], raw[r.B]);
+            Qty take = Qty.Min(Qty.FromRaw(have), (need - energy) / r.Energy);
+            if (take.Raw <= 0) break;
+            raw[r.A] -= take.Raw;
+            if (r.B < 0)
+            {
+                raw[Chem.SplitA[r.A]] += take.Raw;
+                if (Chem.SplitB[r.A] >= 0) raw[Chem.SplitB[r.A]] += take.Raw;
+            }
+            else { raw[r.B] -= take.Raw; raw[r.P] += take.Raw; }
+            energy += take * r.Energy;
+        }
+        if (apply)
+        {
+            for (int s = 0; s < Chemistry.S; s++) C[s][i] = Qty.FromRaw(raw[s]);
+            Flows[FAbio] += energy;
+        }
+        return energy;
+    }
+
+    // Abiogenesis from local chemistry (P.AbioModel 1). A cell gives rise to a body with the chance
+    // per tick AbioCellRate × readiness × TempFactor(T) × wetness, and nothing in it counts the bodies
+    // that already live: readiness = the energy the cell's loose matter could release by itself
+    // (LocalReactions, splits and binds) over SpawnEnergy, at most 1, and 0 while the cell holds fewer
+    // loose molecules (gas aside) than a body is made of (SpawnBody); wetness = (m/d)·e^(1 − m/d) with
+    // m = water depth + rain and d = SwimDepth — none on dry ground (nothing dissolves, nothing meets),
+    // the most where the bottom is just covered, and e-fold less with every further SwimDepth of water
+    // (the matter is diluted in it): the hard ban under water is gone, deep water is merely dilute.
+    // The chance is summed over the planet by sampling: AbioSamples random cells a tick, each taken
+    // with its chance × N / AbioSamples (an estimator of the same expected rate, not a law).
+    const int AbioSamples = 64;
+
+    public float AbioCellChance(int i)
+    {
+        float m = Water[i] + Rain[i], d = P.SwimDepth;
+        if (m <= 0 || P.AbioCellRate <= 0) return 0;
+        float wet = m / d * MathF.Exp(1 - m / d);
+        if (wet < 1e-6f) return 0;
+        int loose = 0;
+        for (int s = 0; s < Chemistry.S; s++) if (s != Chem.Gas) loose += (int)C[s][i].F;
+        if (loose < P.SpawnBody) return 0;   // not enough loose matter for a body (SpawnAt would refuse)
+        double ready = Math.Min(1, LocalReactions(i, P.SpawnEnergy, false) / P.SpawnEnergy);
+        return (float)(P.AbioCellRate * ready * TempFactor(Temp[i]) * wet);
+    }
+
+    void AbioLocal()
+    {
+        for (int k = 0; k < AbioSamples; k++)
+        {
+            int i = Rng.Next(N);
+            float p = AbioCellChance(i);
+            if (p > 0 && Rng.NextDouble() < p * ((double)N / AbioSamples)) SpawnAt(i, true, true);
+        }
     }
 
     int TakeSoft(int i)
