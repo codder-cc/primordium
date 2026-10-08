@@ -72,10 +72,13 @@ public sealed partial class World
         var a = new World(3, 600, true);
         P.ProgressEvery = 100000;
         var b = new World(3, 600, true);
+        var metrics = new EvoMetrics();   // the bench's and the game's evolution metrics (EvoMetrics) on a only, every 50 ticks
+        double[] lastMetrics = null;
         for (int t = 1; t <= 2000; t++)
         {
             P.ProgressEvery = 10; a.Step();
             P.ProgressEvery = 100000; b.Step();
+            if (t % 50 == 0) lastMetrics = metrics.Sample(a);
             if (t % 500 == 0)
             {
                 Require(a.StateHash() == b.StateHash(), $"sampling the course of evolution changed the world at tick {t}");
@@ -92,6 +95,21 @@ public sealed partial class World
             }
         }
         P.ProgressEvery = every;
+        {
+            // EvoMetrics: shares in range, the diet oscillation found in a made-up cycle and not in noise,
+            // Moran's I positive for a clump and negative for a checkerboard.
+            double M(string n) => lastMetrics[EvoMetrics.Col(n)];
+            Require(M("roofed_share") is >= 0 and <= 1 && M("body_depth_mean") >= 0 && M("body_depth_p90") <= M("body_depth_max") && M("depth_levels_eff") >= 1
+                && M("pop_regions_eff") >= 1 && M("diet_beta_rel") is >= 0 and <= 1, "EvoMetrics: depth or region columns out of range: " + EvoMetrics.Format(lastMetrics));
+            Require(!double.IsNaN(M("osc_score")) && M("osc_p") is > 0 and <= 1, $"EvoMetrics: diet oscillation not computed after 40 samples (score {M("osc_score")}, p {M("osc_p")})");
+            var (pc, pn) = EvoMetrics.OscSelfCheck();
+            Require(pc <= 0.02 && pn > 0.05, $"EvoMetrics oscillation: a made-up predator–prey cycle gave p {pc:F3}, noise {pn:F3}");
+            var clump = new double[40]; var board = new double[40]; var use = Enumerable.Repeat(true, 40).ToArray();
+            for (int r = 0; r < 40; r++) { clump[r] = r % 8 < 3 ? 10 : 0; board[r] = (r % 8 + r / 8) % 2; }
+            double mc = EvoMetrics.Moran(clump, use), mb = EvoMetrics.Moran(board, use);
+            Require(mc > 0.3 && mb < -0.9, $"Moran's I: clump {mc:F2}, checkerboard {mb:F2}");
+            Console.WriteLine($"   EvoMetrics: roofed {M("roofed_share"):P1}, depth mean {M("body_depth_mean"):F2} p90 {M("body_depth_p90"):F0}, pop Moran {M("pop_moran"):F2}, diet Moran {M("diet_moran"):F2}, osc p {M("osc_p"):F3}; made-up cycle p {pc:F3}, noise p {pn:F3}; Moran clump {mc:F2} checkerboard {mb:F2}");
+        }
         var v = a.Progress.Latest;
         Require(a.Progress.Samples.Count == 200 && v != null, $"samples: {a.Progress.Samples.Count}");
         double novelty = v[EvolutionHistory.CNovelty];
@@ -132,7 +150,7 @@ public sealed partial class World
         for (int t = 0; t < 200; t++) o.Step();
         Require(o.StateHash() == a.StateHashAfter(200), "a version 5 save diverged");
 
-        Console.WriteLine($"PASS evolution: neutral novelty {nMean:F1} (of ~{nScale:F0} adaptive), selection ≥ {sMin}; sampling changes nothing (2000 ticks); " +
+        Console.WriteLine($"PASS evolution: neutral novelty {nMean:F1} (of ~{nScale:F0} adaptive), selection ≥ {sMin}; sampling (and EvoMetrics) changes nothing (2000 ticks); " +
                           $"world novelty {novelty} at tick 2000 ({a.Shadow.RLiving} living components), tree {a.Phylo.Nodes} nodes for {a.Agents.Count} bodies; save/load exact, version 5 loads");
     }
 

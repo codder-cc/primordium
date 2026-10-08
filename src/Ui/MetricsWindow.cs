@@ -67,9 +67,52 @@ public partial class MetricsWindow : UiWindow
             M("specs_ever", "specs ever", "белков за всё время", "useful specs seen in all", "полезных белков, виденных за всё время", "0"),
             M("firsts", "materials broken", "материалов вскрыто", "materials first broken with a protein's help (World.Firsts)", "материалы, впервые разрушенные с помощью белка (World.Firsts)", "0"),
         }),
+        (Loc.T("Depth and mining", "Глубина и добыча"), new[]
+        {
+            M("roofed_share", "under a roof", "под крышей", "share of bodies with at least one solid block above them (voids skipped)", "доля тел, над которыми есть хотя бы один твёрдый блок (пустоты не считаются)", "0.0%"),
+            M("body_depth_mean", "depth, mean", "глубина, средняя", "mean levels below the top of the body's column, over all bodies (0 on the surface)", "среднее число уровней ниже верха столба тела, по всем телам (0 на поверхности)", "0.00"),
+            M("body_depth_p90", "depth, 90th percentile", "глубина, 90-й процентиль", "nine bodies in ten live at most this many levels below their column's top", "девять тел из десяти живут не глубже стольких уровней под верхом столба", "0"),
+            M("body_depth_max", "depth, max", "глубина, макс.", "the deepest body, levels below its column's top", "самое глубокое тело, уровней под верхом столба", "0"),
+            M("depth_levels_eff", "depth levels", "уровней глубины", "e^H over the occupied depth levels: 1 — everybody at one depth, more — spread over levels",
+              "e^H по занятым уровням глубины: 1 — все на одной глубине, больше — распределены по уровням", "0.00"),
+            M("mine_depth", "mining depth", "глубина добычи", "mean depth below the column's top of the molecules torn out of rock since the previous sample",
+              "средняя глубина под верхом столба молекул, вырванных из породы с прошлого замера", "0.00"),
+            M("mined_n", "molecules mined", "молекул добыто", "molecules torn out of rock since the previous sample", "молекул вырвано из породы с прошлого замера", "0"),
+        }),
+        (Loc.T("Regions (32×32)", "Регионы (32×32)"), new[]
+        {
+            M("pop_moran", "population clumping", "скученность населения", "Moran's I of bodies per 32×32 region (≈ −0.03 random, > 0 neighbouring regions alike, < 0 checkerboard)",
+              "индекс Морана числа тел по регионам 32×32 (≈ −0,03 случайно, > 0 соседние регионы похожи, < 0 шахматка)", "0.00"),
+            M("pop_regions_eff", "regions held", "занятых регионов", "e^H of the bodies over the 40 regions: how many regions hold them, effectively", "e^H тел по 40 регионам: сколько регионов их держит, эффективно", "0.0"),
+            M("diet_moran", "diet clumping", "скученность питания", "Moran's I of each diet's share among populated regions (≥ 5 bodies), weighted by the diet's share",
+              "индекс Морана доли каждого питания по населённым регионам (≥ 5 тел), с весом по доле питания", "0.00"),
+            M("diet_beta_rel", "diets by region", "питание по регионам", "share of the diet entropy explained by the region: 0 — every region eats the same mix, 1 — one diet per region",
+              "доля энтропии питания, объяснённая регионом: 0 — везде одна смесь, 1 — в каждом регионе одно питание", "0.000"),
+        }),
+        (Loc.T("Diet cycles", "Циклы питания"), new[]
+        {
+            M("osc_score", "lead–lag strength", "сила запаздывания", "largest S = corr(Δa(t), Δb(t+k)) − corr(Δb(t), Δa(t+k)) over pairs of diets and lags (last ≤ 48 samples): a's changes followed by b's, b's by the opposite of a's",
+              "наибольшее S = corr(Δa(t), Δb(t+k)) − corr(Δb(t), Δa(t+k)) по парам питаний и лагам (последние ≤ 48 замеров): за изменением a следует b, за b — обратное a", "0.00"),
+            M("osc_p", "lead–lag p", "запаздывание, p", "share of shuffled surrogates reaching that strength: small — a cycle above noise", "доля перемешанных суррогатов с такой же силой: мало — цикл выше шума", "0.000"),
+            M("osc_lag", "lag, ticks", "лаг, тиков", "the lag of the strongest pair", "лаг сильнейшей пары", "0"),
+            M("osc_lead", "leading diet", "ведущее питание", "diet code of the leader (0 idle, 1 light, 2 chemistry, 3 soil, 4 hunting)", "код ведущего питания (0 бездействие, 1 свет, 2 химия, 3 почва, 4 охота)", "0"),
+            M("osc_follow", "following diet", "ведомое питание", "diet code of the follower (0 idle, 1 light, 2 chemistry, 3 soil, 4 hunting)", "код ведомого питания (0 бездействие, 1 свет, 2 химия, 3 почва, 4 охота)", "0"),
+            M("hunt_score", "hunters: strength", "охотники: сила", "the same strength, only pairs with the hunters", "та же сила, только пары с охотниками", "0.00"),
+            M("hunt_p", "hunters: p", "охотники: p", "surrogate p of the hunters' pairs", "p суррогатов для пар с охотниками", "0.000"),
+        }),
         (Loc.T("Course of evolution (kept in the save)", "Ход эволюции (хранится в сейве)"),
             EvolutionHistory.Names.Skip(1).Select(c => new Def { Source = 1, Col = c, Label = c, Help = EvolutionHelp(c), Fmt = c.EndsWith("_share") ? "0.0%" : "0.##" }).ToArray()),
     };
+
+    // Every EvoMetrics column shows up: one not listed above lands in "Other" under its own name.
+    static (string title, Def[] defs)[] AllGroups()
+    {
+        var groups = Groups().ToList();
+        var listed = new HashSet<string>(groups.SelectMany(g => g.defs).Where(d => d.Source == 0).Select(d => d.Col));
+        var rest = EvoMetrics.Names.Where(c => !listed.Contains(c)).Select(c => M(c, c, c, "EvoMetrics: " + c, "EvoMetrics: " + c)).ToArray();
+        if (rest.Length > 0) groups.Insert(groups.Count - 1, (Loc.T("Other", "Прочее"), rest));
+        return groups.ToArray();
+    }
 
     static string EvolutionHelp(string col)
     {
@@ -104,7 +147,7 @@ public partial class MetricsWindow : UiWindow
         Body.AddChild(UiKit.Row(10, hint, range, clear, csv));
 
         var list = UiKit.Col(2);
-        foreach (var (title, defs) in Groups())
+        foreach (var (title, defs) in AllGroups())
         {
             list.AddChild(UiKit.Text(title, 12, UiKit.Acc, UiKit.Bold));
             foreach (var d in defs)
@@ -297,7 +340,7 @@ public partial class MetricsChart : Control
             DrawRect(new Rect2(left, y0, right - left, th), new Color(1, 1, 1, 0.025f));
             var all = RowsOf(d);
             int c = ColOf(d);
-            var rows = all.Where(r => r[0] >= start && c >= 0 && c < r.Length).ToArray();
+            var rows = all.Where(r => r[0] >= start && c >= 0 && c < r.Length && double.IsFinite(r[c])).ToArray();   // NaN: undefined at that sample
             DrawString(font, new Vector2(left + 6, y0 + 14), d.Label + (d.Source == 1 ? Loc.T("  (saved)", "  (сейв)") : ""), HorizontalAlignment.Left, -1, 12, UiKit.Fg);
             if (rows.Length == 0)
             {
