@@ -198,7 +198,7 @@ public sealed partial class World
             int vents = Vents.Count;
             SpawnVent();
             nextVentAt = Tick + Rng.Next(3000, 15000);
-            if (Vents.Count > vents) { var v = Vents[^1]; Add(EvType.Climate, $"проснулся вулкан ({v.X}, {v.Y}), сила {v.Strength:0.00}", null, v.Strength, false, null, v.X, v.Y); }
+            if (Vents.Count > vents) { var v = Vents[^1]; Add(EvType.Climate, Loc.Both($"a volcano awoke at ({v.X}, {v.Y}), strength {v.Strength:0.00}", $"проснулся вулкан ({v.X}, {v.Y}), сила {v.Strength:0.00}"), null, v.Strength, false, null, v.X, v.Y); }
         }
         if (ventsDirty) { RecomputeVentFields(); ventsDirty = false; }
         MaybeMegaEruption();   // the climate cycles' volcanic winters (World.ClimateCycles; nothing with the law off)

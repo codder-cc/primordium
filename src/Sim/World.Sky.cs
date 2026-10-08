@@ -248,13 +248,15 @@ public sealed partial class World
         {
             eclipseStart = Tick; eclipseX0 = EclipseX; eclipseY0 = EclipseY;
             EclipseCount++;
-            Add(EvType.Climate, $"началось солнечное затмение: тень спутника в ({EclipseX:0}, {EclipseY:0}), полная тень {P.EclipseR:0} клеток", null, P.EclipseR, false, null, (int)EclipseX, Math.Clamp((int)EclipseY, 0, H - 1));
+            Add(EvType.Climate, Loc.Both($"solar eclipse began: the moon's shadow at ({EclipseX:0}, {EclipseY:0}), umbra {P.EclipseR:0} cells",
+                $"началось солнечное затмение: тень спутника в ({EclipseX:0}, {EclipseY:0}), полная тень {P.EclipseR:0} клеток"), null, P.EclipseR, false, null, (int)EclipseX, Math.Clamp((int)EclipseY, 0, H - 1));
         }
         if (EclipseNow) { eclipseX1 = EclipseX; eclipseY1 = EclipseY; }
         else if (eclipseStart >= 0)
         {
             long len = Tick - eclipseStart;
-            Add(EvType.Climate, $"солнечное затмение №{EclipseCount}: тень прошла от ({eclipseX0:0}, {eclipseY0:0}) до ({eclipseX1:0}, {eclipseY1:0}) за {len} тиков", null, len, EclipseCount == 1, null, (int)eclipseX1, Math.Clamp((int)eclipseY1, 0, H - 1));
+            Add(EvType.Climate, Loc.Both($"solar eclipse #{EclipseCount}: the shadow went from ({eclipseX0:0}, {eclipseY0:0}) to ({eclipseX1:0}, {eclipseY1:0}) in {len} ticks",
+                $"солнечное затмение №{EclipseCount}: тень прошла от ({eclipseX0:0}, {eclipseY0:0}) до ({eclipseX1:0}, {eclipseY1:0}) за {len} тиков"), null, len, EclipseCount == 1, null, (int)eclipseX1, Math.Clamp((int)eclipseY1, 0, H - 1));
             eclipseStart = -1;
         }
     }
@@ -336,7 +338,8 @@ public sealed partial class World
             if (flareEp == 0)
             {
                 flareEp = ++FlareCount; flareStart = Tick; flarePeak = 0; flareHit = flareMut = flareDeaths = 0;
-                Add(EvType.Climate, $"солнечная вспышка №{FlareCount}: активность солнца {SolarActivity:P0}", null, FlarePower);
+                Add(EvType.Climate, Loc.Both($"solar flare #{FlareCount}: solar activity {SolarActivity:P0}",
+                    $"солнечная вспышка №{FlareCount}: активность солнца {SolarActivity:P0}"), null, FlarePower);
             }
             flarePeak = Math.Max(flarePeak, FlarePower);
         }
@@ -346,7 +349,8 @@ public sealed partial class World
     void EndFlare()
     {
         bool big = flareDeaths >= 50 || flarePeak >= 5 * Math.Max(0.1f, P.FlarePowerMin);
-        Add(EvType.Climate, $"вспышка №{flareEp} кончилась: пик мощности {flarePeak:0.0}, {Tick - flareStart} тиков; облучено {flareHit} {Plural(flareHit, "тело", "тела", "тел")}, мутаций {flareMut}, погибло {flareDeaths}",
+        Add(EvType.Climate, Loc.Both($"flare #{flareEp} ended: peak power {flarePeak:0.0}, {Tick - flareStart} ticks; {flareHit} {EnPlural(flareHit, "body", "bodies")} irradiated, {flareMut} mutations, {flareDeaths} deaths",
+                $"вспышка №{flareEp} кончилась: пик мощности {flarePeak:0.0}, {Tick - flareStart} тиков; облучено {flareHit} {Plural(flareHit, "тело", "тела", "тел")}, мутаций {flareMut}, погибло {flareDeaths}"),
             null, flarePeak, big);
         flareEp = 0;
     }

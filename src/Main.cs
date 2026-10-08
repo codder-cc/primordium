@@ -47,14 +47,16 @@ public partial class Main : Node
     readonly HashSet<string> printedErrors = new();
     PanelContainer fastPanel;
     LineEdit fastEdit;
-    Label fastNote;
+    Label fastNote, fastTitle, fastHint;
     int frame, shotFrames = -1;
     string shotPath;
     bool lDown, rDown, mDown, dragged;
     Vector2 pressPos;
 
     // The hand: a brush that pours matter (a new random kind every stroke) or water, kills or digs.
-    public static readonly string[] ToolNames = { "", "насыпать", "вода", "убить", "копнуть", "посадить" };
+    static readonly string[] ToolNamesEn = { "", "pour", "water", "kill", "dig", "plant" };
+    static readonly string[] ToolNamesRu = { "", "насыпать", "вода", "убить", "копнуть", "посадить" };
+    public static string[] ToolNames => Loc.T(ToolNamesEn, ToolNamesRu);
     public int Tool;
     public volatile int PourSpecies = -1;   // chosen on the simulation thread (it draws from the world's random numbers)
     public float BrushR = 3;
@@ -136,7 +138,7 @@ public partial class Main : Node
             View.Selected = Lineages[0].rep;
             if (Array.IndexOf(args, "--oldest") >= 0 && Records.Count > 0) View.Selected = Records[0].a;
             if (Array.IndexOf(args, "--big") >= 0)
-                foreach (var r in Records) if (r.name.StartsWith("занимает")) View.Selected = r.a;
+                View.Selected = BiggestRecord() ?? View.Selected;
             View.LookAt(View.Selected);
             View.ZoomAt(focus);
         }
@@ -188,13 +190,17 @@ public partial class Main : Node
         perf?.Reset(sim);
     }
 
-    // A new world from the "Новый мир" window: made on the simulation thread and swapped in between ticks.
+    // The holder of the "covers the most cells" record (found by its size, not by the record's name,
+    // which is in the interface language): the body among the record holders that covers most cells.
+    Agent BiggestRecord() => Records.Count == 0 ? null : Records.Select(r => r.a).Where(a => a != null).MaxBy(a => a.Cells);
+
+    // A new world from the "New world" window: made on the simulation thread and swapped in between ticks.
     public void CreateWorld(WorldSettings settings)
     {
         initialPop = settings.InitialPop;
         abiogenesis = settings.Abiogenesis;
         strikes = settings.Strikes;
-        Ui.Toast($"создаю мир: seed {settings.Seed}, население {settings.InitialPop}…");
+        Ui.Toast(Loc.T($"creating a world: seed {settings.Seed}, population {settings.InitialPop}…", $"создаю мир: seed {settings.Seed}, население {settings.InitialPop}…"));
         Sim.NewWorld(settings);
     }
 
@@ -299,7 +305,7 @@ public partial class Main : Node
 
         if (shotFrames == 8 && Array.IndexOf(OS.GetCmdlineUserArgs(), "--big") >= 0)
         {
-            foreach (var r in Records) if (r.name.StartsWith("занимает")) { View.Selected = r.a; View.LookAt(r.a); View.ZoomAt(22); }
+            if (BiggestRecord() is { } big) { View.Selected = big; View.LookAt(big); View.ZoomAt(22); }
         }
         if (shotFrames == 8 && Array.IndexOf(OS.GetCmdlineUserArgs(), "--oldest") >= 0)
         {
@@ -352,9 +358,9 @@ public partial class Main : Node
         fastPanel.AddThemeStyleboxOverride("panel", style);
         var box = new VBoxContainer();
         box.AddThemeConstantOverride("separation", 8);
-        var title = new Label { Text = "Промотка без отрисовки" };
+        var title = fastTitle = new Label();
         title.AddThemeFontSizeOverride("font_size", 17);
-        var hint = new Label { Text = "Сколько суток промотать? Например 25.\nИли «до 200» — до 200-х суток.\nEnter — начать (пусто — 10 суток), Esc — закрыть." };
+        var hint = fastHint = new Label();
         hint.AddThemeFontSizeOverride("font_size", 13);
         hint.AddThemeColorOverride("font_color", new Color(0.6f, 0.64f, 0.71f));
         fastEdit = new LineEdit { CustomMinimumSize = new Vector2(320, 0), PlaceholderText = "10" };
@@ -381,7 +387,11 @@ public partial class Main : Node
 
     void OpenFastForm()
     {
-        fastNote.Text = $"сейчас сутки {World.Day + 1}";
+        // Set on every opening: the language may have changed since the form was built.
+        fastTitle.Text = Loc.T("Fast-forward without rendering", "Промотка без отрисовки");
+        fastHint.Text = Loc.T("How many days to fast-forward? For example 25.\nOr \"to 200\" — up to day 200.\nEnter — start (empty — 10 days), Esc — close.",
+            "Сколько суток промотать? Например 25.\nИли «до 200» — до 200-х суток.\nEnter — начать (пусто — 10 суток), Esc — закрыть.");
+        fastNote.Text = Loc.T($"now day {World.Day + 1}", $"сейчас сутки {World.Day + 1}");
         fastNote.AddThemeColorOverride("font_color", new Color(0.6f, 0.64f, 0.71f));
         fastEdit.Text = "";
         fastPanel.Visible = true;
@@ -398,11 +408,11 @@ public partial class Main : Node
     {
         text = text.Trim().ToLowerInvariant();
         if (text.Length == 0) text = "10";
-        bool until = text.StartsWith("до");
+        bool until = text.StartsWith("до") || text.StartsWith("to") || text.StartsWith("until");
         var digits = new string(text.Where(char.IsDigit).ToArray());
         if (!long.TryParse(digits, out long n) || n <= 0 || n > 100000)
         {
-            fastNote.Text = "нужно число суток, например 25 или «до 200»";
+            fastNote.Text = Loc.T("enter a number of days, e.g. 25 or \"to 200\"", "нужно число суток, например 25 или «до 200»");
             fastNote.AddThemeColorOverride("font_color", new Color(1f, 0.55f, 0.5f));
             return;
         }
@@ -410,7 +420,7 @@ public partial class Main : Node
         long target = until ? (n - 1) * P.DayLen : now + n * P.DayLen;
         if (target <= now)
         {
-            fastNote.Text = $"сутки {n} уже прошли (сейчас {World.Day + 1})";
+            fastNote.Text = Loc.T($"day {n} has already passed (now day {World.Day + 1})", $"сутки {n} уже прошли (сейчас {World.Day + 1})");
             fastNote.AddThemeColorOverride("font_color", new Color(1f, 0.55f, 0.5f));
             return;
         }
@@ -583,7 +593,7 @@ public partial class Main : Node
             case Key.P:
                 var path = OS.GetSystemDir(OS.SystemDir.Desktop) + $"/primordium-{World.Seed}-{World.Tick}.png";
                 GetViewport().GetTexture().GetImage().SavePng(path);
-                GD.Print("снимок: " + path);
+                GD.Print(Loc.T("screenshot: ", "снимок: ") + path);
                 break;
         }
     }

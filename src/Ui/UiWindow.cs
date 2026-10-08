@@ -43,7 +43,7 @@ public partial class UiWindow : Control
         title = UiKit.Title(caption, 14);
         title.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         title.MouseFilter = MouseFilterEnum.Ignore;
-        var close = UiKit.Button("✕", Close, "закрыть (Esc)");
+        var close = UiKit.Button("✕", Close, Loc.T("close (Esc)", "закрыть (Esc)"));
         close.Flat = true;
         close.AddThemeColorOverride("font_color", UiKit.Dim);
         row.AddChild(title);

@@ -20,13 +20,13 @@ public partial class SavesWindow : UiWindow
 
     public const string QuickName = "quick.sav";
 
-    public SavesWindow() : base("saves", "Сохранения", new Vector2(620, 560))
+    public SavesWindow() : base("saves", Loc.T("Saves", "Сохранения"), new Vector2(620, 560))
     {
         MinSize = new Vector2(520, 320);
-        note = UiKit.Edit("", "заметка к сохранению (необязательно)");
+        note = UiKit.Edit("", Loc.T("note for the save (optional)", "заметка к сохранению (необязательно)"));
         note.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         note.TextSubmitted += _ => SaveNew();
-        var save = UiKit.Button("Сохранить в новый слот", SaveNew, "весь мир в один файл: после загрузки он идёт ровно так же");
+        var save = UiKit.Button(Loc.T("Save to a new slot", "Сохранить в новый слот"), SaveNew, Loc.T("the whole world in one file: once loaded it runs exactly the same", "весь мир в один файл: после загрузки он идёт ровно так же"));
         save.AddThemeColorOverride("font_color", UiKit.Acc);
         Body.AddChild(UiKit.Row(8, note, save));
 
@@ -38,9 +38,9 @@ public partial class SavesWindow : UiWindow
         minutes.ValueChanged += v => { Ui.State.AutosaveMinutes = (float)v; Ui.ConfigureRunner(Main.Sim); Ui.SaveSoon(); };
         slots = UiKit.Spin(1, 10, 1, 3, 70);
         slots.ValueChanged += v => { Ui.State.AutosaveSlots = (int)v; Ui.ConfigureRunner(Main.Sim); Ui.SaveSoon(); };
-        Body.AddChild(UiKit.Row(8, UiKit.Text("Автосохранение каждые", 13, UiKit.Dim), minutes, UiKit.Text("мин (0 — выкл.), по кругу в", 13, UiKit.Dim), slots,
-            UiKit.Text("слота", 13, UiKit.Dim), UiKit.Spacer(), UiKit.Button("Импорт…", Import, "добавить файл .sav откуда угодно в список сохранений"),
-            UiKit.Button("Папка", () => OS.ShellOpen(UiManager.SavesDir), "открыть папку сохранений")));
+        Body.AddChild(UiKit.Row(8, UiKit.Text(Loc.T("Autosave every", "Автосохранение каждые"), 13, UiKit.Dim), minutes, UiKit.Text(Loc.T("min (0 — off), rotating through", "мин (0 — выкл.), по кругу в"), 13, UiKit.Dim), slots,
+            UiKit.Text(Loc.T("slots", "слота"), 13, UiKit.Dim), UiKit.Spacer(), UiKit.Button(Loc.T("Import…", "Импорт…"), Import, Loc.T("add a .sav file from anywhere to the list of saves", "добавить файл .sav откуда угодно в список сохранений")),
+            UiKit.Button(Loc.T("Folder", "Папка"), () => OS.ShellOpen(UiManager.SavesDir), Loc.T("open the saves folder", "открыть папку сохранений"))));
         autoInfo = UiKit.Text("", 12, UiKit.Dim, null, true);
         Body.AddChild(autoInfo);
     }
@@ -62,9 +62,12 @@ public partial class SavesWindow : UiWindow
             if (last.Ok) Capture(Thumb(last.Path), () => { if (Visible) Rebuild(); });
         }
         if (Visible && Main.Sim != null)
-            autoInfo.Text = (Ui.State.AutosaveMinutes <= 0 ? "автосохранение выключено" : $"файлы autosave_N.sav в {UiManager.SavesDir}") +
-                            (last != null ? $" · последнее: {(last.Ok ? $"тик {last.Tick:N0}, {last.Bytes / 1048576.0:F1} МБ, {last.Ms:F0} мс" : "ошибка " + last.Error)}" : "") +
-                            " · F5 — быстро сохранить, F9 — загрузить быстрое";
+            autoInfo.Text = (Ui.State.AutosaveMinutes <= 0 ? Loc.T("autosave is off", "автосохранение выключено") : Loc.T($"files autosave_N.sav in {UiManager.SavesDir}", $"файлы autosave_N.sav в {UiManager.SavesDir}")) +
+                            (last != null
+                                ? Loc.T($" · last: {(last.Ok ? $"tick {last.Tick:N0}, {last.Bytes / 1048576.0:F1} MB, {last.Ms:F0} ms" : "error " + last.Error)}",
+                                    $" · последнее: {(last.Ok ? $"тик {last.Tick:N0}, {last.Bytes / 1048576.0:F1} МБ, {last.Ms:F0} мс" : "ошибка " + last.Error)}")
+                                : "") +
+                            Loc.T(" · F5 — quick save, F9 — quick load", " · F5 — быстро сохранить, F9 — загрузить быстрое");
     }
 
     static string Thumb(string savePath) => Path.ChangeExtension(savePath, ".png");
@@ -81,7 +84,7 @@ public partial class SavesWindow : UiWindow
             try { files.Add((path, SimRunner.ReadSaveInfo(path), null)); }
             catch (Exception e) { files.Add((path, null, e.Message)); }
         }
-        if (files.Count == 0) list.AddChild(UiKit.Text("Сохранений пока нет.", 13, UiKit.Dim));
+        if (files.Count == 0) list.AddChild(UiKit.Text(Loc.T("No saves yet.", "Сохранений пока нет."), 13, UiKit.Dim));
         foreach (var (path, info, error) in files.OrderByDescending(f => f.info?.SavedAt ?? File.GetLastWriteTimeUtc(f.path)))
             list.AddChild(SlotRow(path, info, error));
     }
@@ -102,26 +105,28 @@ public partial class SavesWindow : UiWindow
         var text = UiKit.Col(2);
         text.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         string file = Path.GetFileNameWithoutExtension(path);
-        string kind = file == "quick" ? "быстрое сохранение" : file.StartsWith("autosave") ? "автосохранение" : file;
-        text.AddChild(UiKit.Text(info?.Note is { Length: > 0 } n && n != "autosave" ? n : kind, 14, UiKit.Fg, UiKit.Bold));
+        string kind = file == "quick" ? Loc.T("quick save", "быстрое сохранение") : file.StartsWith("autosave") ? Loc.T("autosave", "автосохранение") : file;
+        text.AddChild(UiKit.Text(info?.Note is { Length: > 0 } n && n != "autosave" ? Loc.Show(n) : kind, 14, UiKit.Fg, UiKit.Bold));
         if (info != null)
         {
-            text.AddChild(UiKit.Text($"сутки {info.Tick / P.DayLen + 1} · тик {info.Tick:N0} · особей {info.Population:N0} · seed {info.Seed}", 12, UiKit.Fg));
+            text.AddChild(UiKit.Text(Loc.T($"day {info.Tick / P.DayLen + 1} · tick {info.Tick:N0} · {info.Population:N0} bodies · seed {info.Seed}",
+                $"сутки {info.Tick / P.DayLen + 1} · тик {info.Tick:N0} · особей {info.Population:N0} · seed {info.Seed}"), 12, UiKit.Fg));
             long bytes = new FileInfo(path).Length;
-            text.AddChild(UiKit.Text($"{info.SavedAt.ToLocalTime():dd.MM.yyyy HH:mm} · {bytes / 1048576.0:F1} МБ · {kind}", 12, UiKit.Dim));
+            text.AddChild(UiKit.Text(Loc.T($"{info.SavedAt.ToLocalTime():yyyy-MM-dd HH:mm} · {bytes / 1048576.0:F1} MB · {kind}",
+                $"{info.SavedAt.ToLocalTime():dd.MM.yyyy HH:mm} · {bytes / 1048576.0:F1} МБ · {kind}"), 12, UiKit.Dim));
         }
-        else text.AddChild(UiKit.Text("не читается: " + error, 12, UiKit.Bad, null, true));
+        else text.AddChild(UiKit.Text(Loc.T("unreadable: ", "не читается: ") + error, 12, UiKit.Bad, null, true));
         row.AddChild(text);
 
         var buttons = UiKit.Col(3);
-        var load = UiKit.Button("Загрузить", () => Load(path), "заменить текущий мир сохранённым");
+        var load = UiKit.Button(Loc.T("Load", "Загрузить"), () => Load(path), Loc.T("replace the current world with the saved one", "заменить текущий мир сохранённым"));
         load.Disabled = info == null;
         buttons.AddChild(load);
-        buttons.AddChild(new ConfirmButton("Перезаписать", () => SaveTo(path, info?.Note is { Length: > 0 } n2 && n2 != "autosave" ? n2 : note.Text.Trim()), "записать текущий мир в этот слот"));
-        var export = UiKit.Button("Экспорт…", () => Export(path), "скопировать файл сохранения (и картинку) в выбранное место");
+        buttons.AddChild(new ConfirmButton(Loc.T("Overwrite", "Перезаписать"), () => SaveTo(path, info?.Note is { Length: > 0 } n2 && n2 != "autosave" ? n2 : note.Text.Trim()), Loc.T("write the current world into this slot", "записать текущий мир в этот слот")));
+        var export = UiKit.Button(Loc.T("Export…", "Экспорт…"), () => Export(path), Loc.T("copy the save file (and its picture) to a place of your choice", "скопировать файл сохранения (и картинку) в выбранное место"));
         export.Disabled = info == null;
         buttons.AddChild(export);
-        buttons.AddChild(new ConfirmButton("Удалить", () => Delete(path), "удалить файл сохранения"));
+        buttons.AddChild(new ConfirmButton(Loc.T("Delete", "Удалить"), () => Delete(path), Loc.T("delete the save file", "удалить файл сохранения")));
         row.AddChild(buttons);
         return panel;
     }
@@ -161,18 +166,18 @@ public partial class SavesWindow : UiWindow
             })));
     }
 
-    public void QuickSave() => SaveTo(Path.Combine(UiManager.SavesDir, QuickName), "быстрое сохранение");
+    public void QuickSave() => SaveTo(Path.Combine(UiManager.SavesDir, QuickName), Loc.Both("quick save", "быстрое сохранение"));   // the note is kept in the file: both languages
 
     public void QuickLoad()
     {
         string path = Path.Combine(UiManager.SavesDir, QuickName);
-        if (!File.Exists(path)) { Ui.Toast("быстрого сохранения ещё нет (F5 — сохранить)", true); return; }
+        if (!File.Exists(path)) { Ui.Toast(Loc.T("no quick save yet (F5 — save)", "быстрого сохранения ещё нет (F5 — сохранить)"), true); return; }
         Load(path);
     }
 
     void Load(string path)
     {
-        Ui.Toast("загружаю " + Path.GetFileName(path) + "…");
+        Ui.Toast(Loc.T("loading ", "загружаю ") + Path.GetFileName(path) + "…");
         Main.Sim.Load(path);
     }
 
@@ -182,9 +187,9 @@ public partial class SavesWindow : UiWindow
         {
             File.Delete(path);
             if (File.Exists(Thumb(path))) File.Delete(Thumb(path));
-            Ui.Toast("удалено: " + Path.GetFileName(path));
+            Ui.Toast(Loc.T("deleted: ", "удалено: ") + Path.GetFileName(path));
         }
-        catch (Exception e) { Ui.Toast("не удалить: " + e.Message, true); }
+        catch (Exception e) { Ui.Toast(Loc.T("cannot delete: ", "не удалить: ") + e.Message, true); }
         Rebuild();
     }
 
@@ -196,7 +201,7 @@ public partial class SavesWindow : UiWindow
         var dlg = new FileDialog
         {
             FileMode = mode, Access = FileDialog.AccessEnum.Filesystem, Title = title, UseNativeDialog = true,
-            Filters = new[] { "*.sav ; Сохранение Primordium" }, CurrentDir = System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile),
+            Filters = new[] { Loc.T("*.sav ; Primordium save", "*.sav ; Сохранение Primordium") }, CurrentDir = System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile),
         };
         if (suggested != null) dlg.CurrentFile = suggested;
         dlg.FileSelected += f => { picked(f); dlg.QueueFree(); };
@@ -206,20 +211,20 @@ public partial class SavesWindow : UiWindow
     }
 
     void Export(string path) =>
-        PickFile(FileDialog.FileModeEnum.SaveFile, "Экспорт сохранения", Path.GetFileName(path), dest =>
+        PickFile(FileDialog.FileModeEnum.SaveFile, Loc.T("Export save", "Экспорт сохранения"), Path.GetFileName(path), dest =>
         {
             try
             {
                 if (!dest.EndsWith(".sav", StringComparison.OrdinalIgnoreCase)) dest += ".sav";
                 File.Copy(path, dest, true);
                 if (File.Exists(Thumb(path))) File.Copy(Thumb(path), Thumb(dest), true);
-                Ui.Toast("экспортировано: " + dest);
+                Ui.Toast(Loc.T("exported: ", "экспортировано: ") + dest);
             }
-            catch (Exception e) { Ui.Toast("не экспортировать: " + e.Message, true); }
+            catch (Exception e) { Ui.Toast(Loc.T("cannot export: ", "не экспортировать: ") + e.Message, true); }
         });
 
     void Import() =>
-        PickFile(FileDialog.FileModeEnum.OpenFile, "Импорт сохранения", null, src =>
+        PickFile(FileDialog.FileModeEnum.OpenFile, Loc.T("Import save", "Импорт сохранения"), null, src =>
         {
             try
             {
@@ -229,10 +234,10 @@ public partial class SavesWindow : UiWindow
                 for (int k = 2; File.Exists(dest); k++) dest = Path.Combine(UiManager.SavesDir, $"{name}_{k}.sav");
                 File.Copy(src, dest);
                 if (File.Exists(Thumb(src))) File.Copy(Thumb(src), Thumb(dest), true);
-                Ui.Toast("импортировано: " + Path.GetFileName(dest));
+                Ui.Toast(Loc.T("imported: ", "импортировано: ") + Path.GetFileName(dest));
                 Rebuild();
             }
-            catch (Exception e) { Ui.Toast("не сохранение Primordium: " + e.Message, true); }
+            catch (Exception e) { Ui.Toast(Loc.T("not a Primordium save: ", "не сохранение Primordium: ") + e.Message, true); }
         });
 
     // A small picture of the world: the panels are hidden for one frame, the view is read back, cropped

@@ -86,13 +86,13 @@ public partial class UiManager : Control
         toolbar.Position = new Vector2(14, 104);
         foreach (var (text, tip, act) in new (string, string, Action)[]
         {
-            ("Законы  F2", "законы мира: цены, прочность, климат…", () => Laws.Toggle()),
-            ("Новый мир  F4", "seed, население, самозарождение, удары, набор законов", () => NewWorld.Toggle()),
-            ("Сохранения  F6", "слоты, загрузка, автосохранение (F5 — быстро сохранить, F9 — загрузить)", () => Saves.Toggle()),
-            ("Конструктор  F7", "свои существа: геном, тело, посадка кистью 5", () => Creator.Toggle()),
-            ("Хроника  F8", "события мира, окаменелости; биография выбранного — вкладка в карточке существа", () => Chronicle.Toggle()),
-            ("Ход эволюции  F10", "новизна против нейтральной тени, сложность, экология, темп, филогения; сводная подсказка", () => Evolution.Toggle()),
-            ("Катастрофы  F11", "ледниковье, потоп, вулканическая зима, вспышка, засуха, отравление — теми же законами, что и в мире", () => Catastrophes.Toggle()),
+            (Loc.T("Laws  F2", "Законы  F2"), Loc.T("world laws: costs, strength, climate…", "законы мира: цены, прочность, климат…"), () => Laws.Toggle()),
+            (Loc.T("New world  F4", "Новый мир  F4"), Loc.T("seed, population, abiogenesis, strikes, law preset", "seed, население, самозарождение, удары, набор законов"), () => NewWorld.Toggle()),
+            (Loc.T("Saves  F6", "Сохранения  F6"), Loc.T("slots, loading, autosave (F5 — quick save, F9 — load)", "слоты, загрузка, автосохранение (F5 — быстро сохранить, F9 — загрузить)"), () => Saves.Toggle()),
+            (Loc.T("Designer  F7", "Конструктор  F7"), Loc.T("your own creatures: genome, body, planting with brush 5", "свои существа: геном, тело, посадка кистью 5"), () => Creator.Toggle()),
+            (Loc.T("Chronicle  F8", "Хроника  F8"), Loc.T("world events, fossils; the selected body's biography is a tab in its card", "события мира, окаменелости; биография выбранного — вкладка в карточке существа"), () => Chronicle.Toggle()),
+            (Loc.T("Evolution  F10", "Ход эволюции  F10"), Loc.T("novelty vs. the neutral shadow, complexity, ecology, tempo, phylogeny; a summary hint", "новизна против нейтральной тени, сложность, экология, темп, филогения; сводная подсказка"), () => Evolution.Toggle()),
+            (Loc.T("Catastrophes  F11", "Катастрофы  F11"), Loc.T("ice age, flood, volcanic winter, solar flare, drought, poisoning — by the same laws as the rest of the world", "ледниковье, потоп, вулканическая зима, вспышка, засуха, отравление — теми же законами, что и в мире"), () => Catastrophes.Toggle()),
         })
         {
             var b = UiKit.Button(text, act, tip);

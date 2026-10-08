@@ -233,7 +233,8 @@ public sealed partial class World
             }
         }
         // SpillVoxel already invalidated each affected column.
-        Add(EvType.Climate, $"удар с орбиты ({cx}, {cy}), радиус {r}: облучено {struck} {Plural(struck, "тело", "тела", "тел")}", null, struck, struck >= 50, null, cx, cy);
+        Add(EvType.Climate, Loc.Both($"strike from orbit at ({cx}, {cy}), radius {r}: {struck} {EnPlural(struck, "body", "bodies")} irradiated",
+            $"удар с орбиты ({cx}, {cy}), радиус {r}: облучено {struck} {Plural(struck, "тело", "тела", "тел")}"), null, struck, struck >= 50, null, cx, cy);
     }
 
     void Irradiate(Agent a, float k, SimRng rng)

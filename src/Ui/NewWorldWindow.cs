@@ -6,7 +6,7 @@ using Godot;
 namespace Primordium;
 
 // F4: a new world from settings — seed, first population, outside influences, a law preset and, under
-// "Дополнительно", every law (including those read only when a world is made).
+// "More", every law (including those read only when a world is made).
 public partial class NewWorldWindow : UiWindow
 {
     LineEdit seed;
@@ -19,40 +19,40 @@ public partial class NewWorldWindow : UiWindow
     List<(string name, string path)> presetList = new();
     Label note;
 
-    public NewWorldWindow() : base("newworld", "Новый мир", new Vector2(600, 270))
+    public NewWorldWindow() : base("newworld", Loc.T("New world", "Новый мир"), new Vector2(600, 270))
     {
         MinSize = new Vector2(480, 240);
-        seed = UiKit.Edit("", "число", 120);
+        seed = UiKit.Edit("", Loc.T("number", "число"), 120);
         seed.TextSubmitted += _ => Create();
-        var dice = UiKit.Button("случайный", () => seed.Text = NewSeed().ToString(), "новый случайный seed");
+        var dice = UiKit.Button(Loc.T("random", "случайный"), () => seed.Text = NewSeed().ToString(), Loc.T("a new random seed", "новый случайный seed"));
         Body.AddChild(UiKit.Row(8, Label("Seed"), seed, dice,
-            UiKit.Text("задаёт элементы, молекулы, рельеф и климат", 12, UiKit.Dim, null, true)));
+            UiKit.Text(Loc.T("sets the elements, molecules, terrain and climate", "задаёт элементы, молекулы, рельеф и климат"), 12, UiKit.Dim, null, true)));
 
         pop = UiKit.Spin(0, 50000, 50, P.InitialPop, 110);
         pop.GetLineEdit().FocusMode = FocusModeEnum.Click;
-        Body.AddChild(UiKit.Row(8, Label("Население"), pop,
-            UiKit.Text("случайных геномов в начале; 0 — пустой мир, жизнь запускаете сами", 12, UiKit.Dim, null, true)));
+        Body.AddChild(UiKit.Row(8, Label(Loc.T("Population", "Население")), pop,
+            UiKit.Text(Loc.T("random genomes at the start; 0 — an empty world, you start life yourself", "случайных геномов в начале; 0 — пустой мир, жизнь запускаете сами"), 12, UiKit.Dim, null, true)));
 
-        abio = UiKit.Check("Самозарождение", false, null, "время от времени новое случайное существо из местного вещества (A — переключить на ходу)");
-        strikes = UiKit.Check("Удары с орбиты", false, null, "мутагенные удары из космоса время от времени (⇧X — переключить на ходу)");
-        // Laws of the sky (World.Sky): the same switches as in "Дополнительно" (Flares, Eclipses).
-        flares = UiKit.Check("Солнечные вспышки", true, on => SetLaw("Flares", on), "облучение освещённой стороны: мутации, износ белков, урон; закон Flares");
-        eclipses = UiKit.Check("Затмения", true, on => SetLaw("Eclipses", on), "тень спутника проходит по дневной стороне; закон Eclipses");
-        cycles = UiKit.Check("Климатические циклы", true, on => SetLaw("ClimateCycles", on), "наклон оси, эксцентриситет и солнце меняются: ледниковья и вулканические зимы; закон ClimateCycles");
+        abio = UiKit.Check(Loc.T("Abiogenesis", "Самозарождение"), false, null, Loc.T("now and then a new random creature from local matter (A — toggle while running)", "время от времени новое случайное существо из местного вещества (A — переключить на ходу)"));
+        strikes = UiKit.Check(Loc.T("Orbital strikes", "Удары с орбиты"), false, null, Loc.T("mutagenic strikes from space now and then (⇧X — toggle while running)", "мутагенные удары из космоса время от времени (⇧X — переключить на ходу)"));
+        // Laws of the sky (World.Sky): the same switches as in "More" (Flares, Eclipses).
+        flares = UiKit.Check(Loc.T("Solar flares", "Солнечные вспышки"), true, on => SetLaw("Flares", on), Loc.T("irradiation of the lit side: mutations, protein wear, damage; law Flares", "облучение освещённой стороны: мутации, износ белков, урон; закон Flares"));
+        eclipses = UiKit.Check(Loc.T("Eclipses", "Затмения"), true, on => SetLaw("Eclipses", on), Loc.T("the moon's shadow crosses the day side; law Eclipses", "тень спутника проходит по дневной стороне; закон Eclipses"));
+        cycles = UiKit.Check(Loc.T("Climate cycles", "Климатические циклы"), true, on => SetLaw("ClimateCycles", on), Loc.T("obliquity, eccentricity and the sun vary: ice ages and volcanic winters; law ClimateCycles", "наклон оси, эксцентриситет и солнце меняются: ледниковья и вулканические зимы; закон ClimateCycles"));
         Body.AddChild(UiKit.Row(18, UiKit.Spacer(84, 0, false), abio, strikes, flares, eclipses, cycles));
 
         preset = UiKit.Options();
         preset.CustomMinimumSize = new Vector2(220, 0);
         preset.ItemSelected += _ => FillDraft();
-        more = UiKit.Button("Дополнительно ▸", ToggleMore, "все законы нового мира");
+        more = UiKit.Button(Loc.T("More ▸", "Дополнительно ▸"), ToggleMore, Loc.T("all the laws of the new world", "все законы нового мира"));
         more.ToggleMode = true;
-        Body.AddChild(UiKit.Row(8, Label("Законы"), preset, UiKit.Spacer(), more));
+        Body.AddChild(UiKit.Row(8, Label(Loc.T("Laws", "Законы")), preset, UiKit.Spacer(), more));
 
         editor = new ParamEditor(draft) { Visible = false, LockHint = "" };
         Body.AddChild(editor);
 
         note = UiKit.Text("", 12, UiKit.Dim, null, true);
-        var create = UiKit.Button("Создать мир", Create, "заменить текущий мир новым (несохранённое пропадёт)");
+        var create = UiKit.Button(Loc.T("Create world", "Создать мир"), Create, Loc.T("replace the current world with a new one (anything unsaved is lost)", "заменить текущий мир новым (несохранённое пропадёт)"));
         create.AddThemeColorOverride("font_color", UiKit.Acc);
         Body.AddChild(UiKit.Spacer(0, 0, false));
         Body.AddChild(UiKit.Row(8, note, create));
@@ -76,12 +76,13 @@ public partial class NewWorldWindow : UiWindow
         strikes.ButtonPressed = w?.AutoStrikes ?? false;
         presetList = Presets.List();
         preset.Clear();
-        preset.AddItem("текущие законы");
-        preset.AddItem("по умолчанию");
-        foreach (var (name, _) in presetList) preset.AddItem("набор: " + name);
+        preset.AddItem(Loc.T("current laws", "текущие законы"));
+        preset.AddItem(Loc.T("defaults", "по умолчанию"));
+        foreach (var (name, _) in presetList) preset.AddItem(Loc.T("preset: ", "набор: ") + name);
         preset.Selected = 0;
         FillDraft();
-        note.Text = $"сейчас: seed {w?.Seed}, тик {w?.Tick:N0}. R — новый seed, ⇧R — тот же заново (с текущими законами).";
+        note.Text = Loc.T($"now: seed {w?.Seed}, tick {w?.Tick:N0}. R — new seed, ⇧R — the same one again (with the current laws).",
+            $"сейчас: seed {w?.Seed}, тик {w?.Tick:N0}. R — новый seed, ⇧R — тот же заново (с текущими законами).");
     }
 
     void FillDraft()
@@ -96,7 +97,7 @@ public partial class NewWorldWindow : UiWindow
         else
         {
             try { draft.Fill(ParamRegistry.LoadPreset(presetList[k - 2].path).Values); }
-            catch (Exception e) { Ui.Toast("не прочитать набор: " + e.Message, true); draft.Fill(null); }
+            catch (Exception e) { Ui.Toast(Loc.T("cannot read the preset: ", "не прочитать набор: ") + e.Message, true); draft.Fill(null); }
         }
         editor.Refresh(true);
         flares.SetPressedNoSignal(draft.Values.TryGetValue("Flares", out var f) && f != 0);
@@ -115,7 +116,7 @@ public partial class NewWorldWindow : UiWindow
     void ToggleMore()
     {
         editor.Visible = more.ButtonPressed;
-        more.Text = more.ButtonPressed ? "Дополнительно ▾" : "Дополнительно ▸";
+        more.Text = more.ButtonPressed ? Loc.T("More ▾", "Дополнительно ▾") : Loc.T("More ▸", "Дополнительно ▸");
         float h = more.ButtonPressed ? 640 : 270;
         Size = new Vector2(more.ButtonPressed ? Math.Max(Size.X, 780) : Size.X, h);
         MinSize = new Vector2(480, more.ButtonPressed ? 420 : 240);
@@ -125,7 +126,7 @@ public partial class NewWorldWindow : UiWindow
     void Create()
     {
         double s = UiKit.ParseNumber(seed.Text, out bool ok);
-        if (!ok || s < int.MinValue || s > int.MaxValue) { Ui.Toast("seed — целое число", true); return; }
+        if (!ok || s < int.MinValue || s > int.MaxValue) { Ui.Toast(Loc.T("seed must be an integer", "seed — целое число"), true); return; }
         var settings = new WorldSettings
         {
             Seed = (int)s,

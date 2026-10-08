@@ -330,12 +330,16 @@ public sealed partial class World
         }
         MegaEruptions++;
         Add(player ? EvType.Player : EvType.Climate,
-            $"{(player ? "катастрофа игрока — " : "")}мегаизвержение вулкана ({cx}, {cy}): {laid} {Plural(laid, "блок", "блока", "блоков")} из недр, пепел в стратосфере (оптическая толщина {ash:0.00} над планетой, когда разойдётся)",
+            Loc.Both($"{(player ? "player catastrophe — " : "")}volcanic megaeruption at ({cx}, {cy}): {laid} {EnPlural(laid, "block", "blocks")} from the depths, ash in the stratosphere (optical depth {ash:0.00} over the planet once it spreads)",
+                $"{(player ? "катастрофа игрока — " : "")}мегаизвержение вулкана ({cx}, {cy}): {laid} {Plural(laid, "блок", "блока", "блоков")} из недр, пепел в стратосфере (оптическая толщина {ash:0.00} над планетой, когда разойдётся)"),
             null, laid, true, null, cx, cy);
         return laid;
     }
 
     // ---- the chronicle of epochs ----
+
+    // English counterpart of Plural (the Russian one, in World.Chronicle.cs): "1 block", "3 blocks".
+    static string EnPlural(long n, string one, string many) => Math.Abs(n) == 1 ? one : many;
 
     void ChronEpochs()
     {
@@ -346,10 +350,14 @@ public sealed partial class World
             var (liquid, ice, snow, _) = WaterParts();
             iceLiquid0 = iceLiquidMin = liquid; iceFrozen0 = iceFrozenMax = ice + snow; iceSnowMax = SnowCover();
             iceSea0 = SeaCells();
-            string where = GlaciN >= 0.5f && GlaciS >= 0.5f ? "в обоих полушариях" : GlaciN >= GlaciS ? "на севере" : "на юге";
+            bool both = GlaciN >= 0.5f && GlaciS >= 0.5f, north = GlaciN >= GlaciS;
+            string where = both ? "в обоих полушариях" : north ? "на севере" : "на юге";
+            string whereEn = both ? "in both hemispheres" : north ? "in the north" : "in the south";
             Add(EvType.Climate, forcedIceUntil >= Tick
-                ? $"началось ледниковье №{IceAges} {where} (вызвано игроком): ледники растут"
-                : $"началось ледниковье №{IceAges} {where}: летняя инсоляция на 65° — {SummerN:P0} нормы на севере, {SummerS:P0} на юге (порог {P.IceAgeThreshold:P0}); наклон оси {TiltNow * 180 / MathF.PI:0.0}°, эксцентриситет {EccNow:0.000}",
+                ? Loc.Both($"ice age #{IceAges} began {whereEn} (set off by the player): glaciers are growing",
+                    $"началось ледниковье №{IceAges} {where} (вызвано игроком): ледники растут")
+                : Loc.Both($"ice age #{IceAges} began {whereEn}: summer insolation at 65° is {SummerN:P0} of normal in the north, {SummerS:P0} in the south (threshold {P.IceAgeThreshold:P0}); obliquity {TiltNow * 180 / MathF.PI:0.0}°, eccentricity {EccNow:0.000}",
+                    $"началось ледниковье №{IceAges} {where}: летняя инсоляция на 65° — {SummerN:P0} нормы на севере, {SummerS:P0} на юге (порог {P.IceAgeThreshold:P0}); наклон оси {TiltNow * 180 / MathF.PI:0.0}°, эксцентриситет {EccNow:0.000}"),
                 null, g, true);
         }
         else if (iceAgeNow)
@@ -365,8 +373,10 @@ public sealed partial class World
             {
                 iceAgeNow = false;
                 double drop = (iceLiquid0 - iceLiquidMin) / Math.Max(1, iceSea0);
-                Add(EvType.Climate, $"кончилось ледниковье №{IceAges}: длилось {(Tick - iceStart) / (float)P.DayLen:0.0} сут; снег покрывал до {iceSnowMax:P0} планеты, " +
-                    $"в снегу и льду до {iceFrozenMax:0} (было {iceFrozen0:0}), уровень моря опускался на {drop:0.00} бл.",
+                Add(EvType.Climate, Loc.Both($"ice age #{IceAges} ended: it lasted {(Tick - iceStart) / (float)P.DayLen:0.0} days; snow covered up to {iceSnowMax:P0} of the planet, " +
+                    $"up to {iceFrozenMax:0} in snow and ice (was {iceFrozen0:0}), sea level fell by up to {drop:0.00} bl.",
+                    $"кончилось ледниковье №{IceAges}: длилось {(Tick - iceStart) / (float)P.DayLen:0.0} сут; снег покрывал до {iceSnowMax:P0} планеты, " +
+                    $"в снегу и льду до {iceFrozenMax:0} (было {iceFrozen0:0}), уровень моря опускался на {drop:0.00} бл."),
                     null, (float)drop, true);
             }
         }
@@ -374,7 +384,8 @@ public sealed partial class World
         {
             winterNow = true; winterStart = Tick; VolcanicWinters++;
             winterTransMin = VeilTransMean; winterT0 = winterTMin = MeanTemp();
-            Add(EvType.Climate, $"вулканическая зима №{VolcanicWinters}: пепел пропускает {VeilTransMean:P0} света", null, VeilTransMean, true);
+            Add(EvType.Climate, Loc.Both($"volcanic winter #{VolcanicWinters}: the ash lets through {VeilTransMean:P0} of the light",
+                $"вулканическая зима №{VolcanicWinters}: пепел пропускает {VeilTransMean:P0} света"), null, VeilTransMean, true);
         }
         else if (winterNow)
         {
@@ -383,8 +394,10 @@ public sealed partial class World
             if (!veilOn || VeilTransMean > 0.97f)
             {
                 winterNow = false;
-                Add(EvType.Climate, $"кончилась вулканическая зима №{VolcanicWinters}: {(Tick - winterStart) / (float)P.DayLen:0.0} сут, свет падал до {winterTransMin:P0}, " +
-                    $"средняя температура {winterT0:+0.0;-0.0} → {winterTMin:+0.0;-0.0} °C", null, winterT0 - winterTMin, true);
+                Add(EvType.Climate, Loc.Both($"volcanic winter #{VolcanicWinters} ended: {(Tick - winterStart) / (float)P.DayLen:0.0} days, light fell to {winterTransMin:P0}, " +
+                    $"mean temperature {winterT0:+0.0;-0.0} → {winterTMin:+0.0;-0.0} °C",
+                    $"кончилась вулканическая зима №{VolcanicWinters}: {(Tick - winterStart) / (float)P.DayLen:0.0} сут, свет падал до {winterTransMin:P0}, " +
+                    $"средняя температура {winterT0:+0.0;-0.0} → {winterTMin:+0.0;-0.0} °C"), null, winterT0 - winterTMin, true);
             }
         }
     }
@@ -461,14 +474,15 @@ public sealed partial class World
     public string Catastrophe(Catastrophe c, out string error)
     {
         error = null;
-        string text;
+        string text, ru;   // what happened, in English and in Russian
         switch (c.Kind)
         {
             case CatastropheKind.IceAge:
             {
                 float days = Math.Clamp(c.Days, 0.1f, 1000);
                 forcedIceUntil = Math.Max(forcedIceUntil, Tick + (long)(days * P.DayLen));
-                text = $"ледниковье на {days:0.#} сут: ледники растут (постоянная {P.IceAgeTau:0.#} сут, до {P.IceAgeDT:0.#} °C холоднее у полюсов)";
+                text = $"ice age for {days:0.#} days: glaciers are growing (time constant {P.IceAgeTau:0.#} days, up to {P.IceAgeDT:0.#} °C colder at the poles)";
+                ru = $"ледниковье на {days:0.#} сут: ледники растут (постоянная {P.IceAgeTau:0.#} сут, до {P.IceAgeDT:0.#} °C холоднее у полюсов)";
                 break;
             }
             case CatastropheKind.Flood:
@@ -484,9 +498,10 @@ public sealed partial class World
                     after += Water[i];
                     cells++;
                 }
-                if (cells == 0) { error = "в мире нет моря — нечему подниматься"; return null; }
+                if (cells == 0) { error = Loc.T("there is no sea in this world — nothing to rise", "в мире нет моря — нечему подниматься"); return null; }
                 WaterHand += after - before;
-                text = $"потоп: море поднялось на {k:0.##} бл. над {cells} {Plural(cells, "клеткой", "клетками", "клетками")} ({after - before:0} воды извне, водный баланс учитывает её)";
+                text = $"flood: the sea rose by {k:0.##} bl. over {cells} {EnPlural(cells, "cell", "cells")} ({after - before:0} water from outside, counted in the water balance)";
+                ru = $"потоп: море поднялось на {k:0.##} бл. над {cells} {Plural(cells, "клеткой", "клетками", "клетками")} ({after - before:0} воды извне, водный баланс учитывает её)";
                 break;
             }
             case CatastropheKind.VolcanicWinter:
@@ -497,29 +512,32 @@ public sealed partial class World
                 Erupt(x, y, blocks, ash, true);
                 // Logged with what was taken from the laws and the hash: a replay does the same even if they change.
                 c = new Catastrophe { Kind = c.Kind, X = x, Y = y, Amount = blocks, R = ash };
-                text = $"вулканическая зима: мегаизвержение в ({x}, {y})";
+                text = $"volcanic winter: megaeruption at ({x}, {y})";
+                ru = $"вулканическая зима: мегаизвержение в ({x}, {y})";
                 break;
             }
             case CatastropheKind.SolarFlare:
             {
                 float power = Math.Clamp(c.Amount, 0.1f, 500), len = Math.Clamp(c.Days > 0 ? c.Days * P.DayLen : 300, 10, 100000);
                 forcedFlares.Add(new ForcedFlare { Start = Tick + 1, Len = len, Power = power });
-                text = $"сильная солнечная вспышка: мощность {power:0.#}, {len:0} тиков (доза, мутации и нагрев — как у вспышек солнца)";
+                text = $"strong solar flare: power {power:0.#}, {len:0} ticks (dose, mutations and heating as with the sun's own flares)";
+                ru = $"сильная солнечная вспышка: мощность {power:0.#}, {len:0} тиков (доза, мутации и нагрев — как у вспышек солнца)";
                 break;
             }
             case CatastropheKind.Drought:
             {
-                if (c.X < 0 || c.Y < 0) { error = "засухе нужно место"; return null; }
+                if (c.X < 0 || c.Y < 0) { error = Loc.T("a drought needs a place", "засухе нужно место"); return null; }
                 float days = Math.Clamp(c.Days, 0.1f, 1000), r = Math.Clamp(c.R > 0 ? c.R : 24, 2, 120), dt = c.Amount > 0 ? Math.Min(c.Amount, 40) : 8;
                 droughts.Add(new Drought { X = ((c.X % W) + W) % W, Y = Math.Clamp(c.Y, 0, H - 1), R = r, DT = dt, Start = Tick, Until = Tick + (long)(days * P.DayLen) });
                 RebuildDroughts();
-                text = $"засуха в ({c.X}, {c.Y}), радиус {r:0}, на {days:0.#} сут: ни облаков, ни дождя (влага выпадает в других местах), на {dt:0.#} °C теплее";
+                text = $"drought at ({c.X}, {c.Y}), radius {r:0}, for {days:0.#} days: no clouds, no rain (the moisture falls elsewhere), {dt:0.#} °C warmer";
+                ru = $"засуха в ({c.X}, {c.Y}), радиус {r:0}, на {days:0.#} сут: ни облаков, ни дождя (влага выпадает в других местах), на {dt:0.#} °C теплее";
                 break;
             }
             case CatastropheKind.Poison:
             {
-                if (Chem.Toxic.Length == 0) { error = "в химии этого мира нет ядовитых молекул"; return null; }
-                if (c.X < 0 || c.Y < 0) { error = "отравлению нужно место"; return null; }
+                if (Chem.Toxic.Length == 0) { error = Loc.T("this world's chemistry has no toxic molecules", "в химии этого мира нет ядовитых молекул"); return null; }
+                if (c.X < 0 || c.Y < 0) { error = Loc.T("poisoning needs a place", "отравлению нужно место"); return null; }
                 int s = Chem.Toxic[0];
                 float r = Math.Clamp(c.R > 0 ? c.R : 8, 1, 60), amount = Math.Clamp(c.Amount > 0 ? c.Amount : 30, 1, 5000);
                 long total = 0;
@@ -532,17 +550,18 @@ public sealed partial class World
                     Flows[FHand] += (double)n * Chem.E[s];
                     total += n;
                 }
-                text = $"отравление в ({c.X}, {c.Y}), радиус {r:0}: {total} молекул яда {Chem.Name[s]} ({Chem.Formula(s)}) рассыпано рукой (вещество извне, учтено)";
+                text = $"poisoning at ({c.X}, {c.Y}), radius {r:0}: {total} molecules of the toxin {Chem.NameEn[s]} ({Chem.Formula(s)}) scattered by hand (matter from outside, accounted for)";
+                ru = $"отравление в ({c.X}, {c.Y}), радиус {r:0}: {total} молекул яда {Chem.NameRu[s]} ({Chem.Formula(s)}) рассыпано рукой (вещество извне, учтено)";
                 break;
             }
-            default: error = "неизвестная катастрофа"; return null;
+            default: error = Loc.T("unknown catastrophe", "неизвестная катастрофа"); return null;
         }
         CatastropheCount++;
         climOn = true;
         ParamLog.Add(new ParamChange { Tick = Tick, Name = "catastrophe " + c.Spec(), Value = (int)c.Kind });
         if (c.Kind != CatastropheKind.VolcanicWinter)   // the eruption is chronicled by Erupt
-            Add(EvType.Player, "катастрофа игрока — " + text, null, (float)c.Kind, true, null, c.X, c.Y);
-        return text;
+            Add(EvType.Player, Loc.Both("player catastrophe — " + text, "катастрофа игрока — " + ru), null, (float)c.Kind, true, null, c.X, c.Y);
+        return Loc.T(text, ru);
     }
 
     // ---- save (version 10): its own block after the sky ----
@@ -610,20 +629,26 @@ public sealed partial class World
     // A line for the HUD: the epoch and the phase of the cycles.
     public string EpochLine(bool full)
     {
-        if (!climOn && !CyclesLaw) return "климат стационарен";
-        string epoch = iceAgeNow ? $"ЛЕДНИКОВЬЕ (север {GlaciN:P0}, юг {GlaciS:P0})"
-                     : GlaciN > 0.05f || GlaciS > 0.05f ? $"межледниковье, ледники: север {GlaciN:P0}, юг {GlaciS:P0}" : "межледниковье";
-        if (winterNow) epoch += $" · ВУЛКАНИЧЕСКАЯ ЗИМА: свет {VeilTransMean:P0}";
-        else if (veilOn) epoch += $" · пепел: свет {VeilTransMean:P0}";
-        if (dryOn) epoch += $" · засух {droughts.Count}";
-        if (!CyclesLaw) return "эпоха: " + epoch + " (циклы выключены)";
+        if (!climOn && !CyclesLaw) return Loc.T("climate is stationary", "климат стационарен");
+        string epoch = iceAgeNow ? Loc.T($"ICE AGE (north {GlaciN:P0}, south {GlaciS:P0})", $"ЛЕДНИКОВЬЕ (север {GlaciN:P0}, юг {GlaciS:P0})")
+                     : GlaciN > 0.05f || GlaciS > 0.05f ? Loc.T($"interglacial, glaciers: north {GlaciN:P0}, south {GlaciS:P0}", $"межледниковье, ледники: север {GlaciN:P0}, юг {GlaciS:P0}")
+                     : Loc.T("interglacial", "межледниковье");
+        if (winterNow) epoch += Loc.T($" · VOLCANIC WINTER: light {VeilTransMean:P0}", $" · ВУЛКАНИЧЕСКАЯ ЗИМА: свет {VeilTransMean:P0}");
+        else if (veilOn) epoch += Loc.T($" · ash: light {VeilTransMean:P0}", $" · пепел: свет {VeilTransMean:P0}");
+        if (dryOn) epoch += Loc.T($" · droughts {droughts.Count}", $" · засух {droughts.Count}");
+        if (!CyclesLaw) return Loc.T("epoch: " + epoch + " (cycles off)", "эпоха: " + epoch + " (циклы выключены)");
         float tiltDeg = TiltNow * 180 / MathF.PI, dir = TiltAt(Tick + P.DayLen) - TiltNow;
         double peri = PeriNow, toN = Math.Cos(peri - Math.PI / 2);
-        string periText = EccNow < 0.004f ? "орбита почти круглая" : $"эксц. {EccNow:0.000}, перигелий {(toN > 0.5 ? "летом севера" : toN < -0.5 ? "летом юга" : "в межсезонье")}";
-        string phase = $"наклон {tiltDeg:0.0}° {(dir >= 0 ? "↑" : "↓")} (фаза {(CycleDays(Tick) / TiltPeriodDays % 1.0):0.00} из {TiltPeriodDays:0} сут)";
+        string periText = EccNow < 0.004f ? Loc.T("orbit nearly circular", "орбита почти круглая")
+            : Loc.T($"ecc. {EccNow:0.000}, perihelion {(toN > 0.5 ? "in northern summer" : toN < -0.5 ? "in southern summer" : "between the seasons")}",
+                $"эксц. {EccNow:0.000}, перигелий {(toN > 0.5 ? "летом севера" : toN < -0.5 ? "летом юга" : "в межсезонье")}");
+        string phase = Loc.T($"obliquity {tiltDeg:0.0}° {(dir >= 0 ? "↑" : "↓")} (phase {(CycleDays(Tick) / TiltPeriodDays % 1.0):0.00} of {TiltPeriodDays:0} days)",
+            $"наклон {tiltDeg:0.0}° {(dir >= 0 ? "↑" : "↓")} (фаза {(CycleDays(Tick) / TiltPeriodDays % 1.0):0.00} из {TiltPeriodDays:0} сут)");
         return full
-            ? $"эпоха: {epoch} · {phase} · {periText} · солнце {(SunOutNow - 1) * 100:+0.0;-0.0;0.0}% · лето на 65°: с. {SummerN:P0}, ю. {SummerS:P0} (порог {P.IceAgeThreshold:P0})"
-            : $"эпоха: {epoch} · наклон {tiltDeg:0.0}° · лето 65°: {SummerN:P0}/{SummerS:P0}";
+            ? Loc.T($"epoch: {epoch} · {phase} · {periText} · sun {(SunOutNow - 1) * 100:+0.0;-0.0;0.0}% · summer at 65°: N {SummerN:P0}, S {SummerS:P0} (threshold {P.IceAgeThreshold:P0})",
+                $"эпоха: {epoch} · {phase} · {periText} · солнце {(SunOutNow - 1) * 100:+0.0;-0.0;0.0}% · лето на 65°: с. {SummerN:P0}, ю. {SummerS:P0} (порог {P.IceAgeThreshold:P0})")
+            : Loc.T($"epoch: {epoch} · obliquity {tiltDeg:0.0}° · summer 65°: {SummerN:P0}/{SummerS:P0}",
+                $"эпоха: {epoch} · наклон {tiltDeg:0.0}° · лето 65°: {SummerN:P0}/{SummerS:P0}");
     }
 }
 
@@ -639,7 +664,9 @@ public sealed class Catastrophe
     public float R, Days, Amount;
 
     static readonly string[] Words = { "iceage", "flood", "volcano", "flare", "drought", "poison" };
-    public static readonly string[] Names = { "ледниковье", "потоп", "вулканическая зима", "сильная солнечная вспышка", "засуха", "отравление" };
+    static readonly string[] NamesEn = { "ice age", "flood", "volcanic winter", "strong solar flare", "drought", "poisoning" };
+    static readonly string[] NamesRu = { "ледниковье", "потоп", "вулканическая зима", "сильная солнечная вспышка", "засуха", "отравление" };
+    public static string[] Names => Loc.T(NamesEn, NamesRu);
 
     static string N(float v) => v.ToString("R", CultureInfo.InvariantCulture);
 

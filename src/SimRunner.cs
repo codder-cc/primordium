@@ -563,36 +563,42 @@ public sealed class SimRunner
     public void SetParam(string name, double value, Action<bool> done = null) => Do(w =>
     {
         bool ok = w.SetParam(name, value);
-        if (ok) Notice($"закон {name} = {ParamRegistry.Get(name).ToString(System.Globalization.CultureInfo.InvariantCulture)}"); else Fail($"нет закона {name}");
+        if (ok)
+        {
+            string v = ParamRegistry.Get(name).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            Notice(Loc.T($"law {name} = {v}", $"закон {name} = {v}"));
+        }
+        else Fail(Loc.T($"no law {name}", $"нет закона {name}"));
         done?.Invoke(ok);
     });
 
-    public void ResetParams() => Do(w => { w.ResetParams(); Notice("законы мира — по умолчанию"); });
+    public void ResetParams() => Do(w => { w.ResetParams(); Notice(Loc.T("world laws reset to defaults", "законы мира — по умолчанию")); });
 
     public void ApplyPreset(ParamPreset preset) => Do(w =>
     {
         var unknown = w.ApplyParams(preset.Values);
-        Notice($"набор законов «{preset.Name}»" + (unknown.Count > 0 ? $", неизвестны: {string.Join(", ", unknown)}" : ""));
+        Notice(Loc.T($"law preset \"{preset.Name}\"" + (unknown.Count > 0 ? $", unknown: {string.Join(", ", unknown)}" : ""),
+            $"набор законов «{preset.Name}»" + (unknown.Count > 0 ? $", неизвестны: {string.Join(", ", unknown)}" : "")));
     });
 
     public void LoadPreset(string path, Action<ParamPreset, string> done = null) => Do(w =>
     {
-        try { var p = ParamRegistry.LoadPreset(path); w.ApplyParams(p.Values); Notice($"законы из {path}"); done?.Invoke(p, null); }
-        catch (Exception e) { Fail($"не прочитать {path}: {e.Message}"); done?.Invoke(null, e.Message); }
+        try { var p = ParamRegistry.LoadPreset(path); w.ApplyParams(p.Values); Notice(Loc.T($"laws from {path}", $"законы из {path}")); done?.Invoke(p, null); }
+        catch (Exception e) { Fail(Loc.T($"cannot read {path}: {e.Message}", $"не прочитать {path}: {e.Message}")); done?.Invoke(null, e.Message); }
     });
 
     // Saves the current laws as a preset (only those that differ from the defaults unless full).
     public void SavePreset(string path, string name, string description = "", bool full = false) => Do(_ =>
     {
-        try { ParamRegistry.SavePreset(path, ParamRegistry.Capture(name, description, full)); Notice($"законы сохранены: {path}"); }
-        catch (Exception e) { Fail($"не сохранить {path}: {e.Message}"); }
+        try { ParamRegistry.SavePreset(path, ParamRegistry.Capture(name, description, full)); Notice(Loc.T($"laws saved: {path}", $"законы сохранены: {path}")); }
+        catch (Exception e) { Fail(Loc.T($"cannot save {path}: {e.Message}", $"не сохранить {path}: {e.Message}")); }
     });
 
     // A catastrophe (World.Catastrophe, ROADMAP 9.4): applied between ticks, chronicled and logged with the laws.
     public void Catastrophe(Catastrophe c, Action<string> done = null) => Do(w =>
     {
         string text = w.Catastrophe(c, out string error);
-        if (text != null) { Notice("катастрофа: " + text); PublishChronicle(w, true); } else Fail($"{Primordium.Catastrophe.Names[(int)c.Kind]}: {error}");
+        if (text != null) { Notice(Loc.T("catastrophe: ", "катастрофа: ") + text); PublishChronicle(w, true); } else Fail($"{Primordium.Catastrophe.Names[(int)c.Kind]}: {error}");
         done?.Invoke(text);
     });
 
@@ -606,7 +612,7 @@ public sealed class SimRunner
         var w = new World(settings);
         for (int i = 0; i < warm; i++) w.Step();
         ReplaceWorld(w);
-        Notice($"новый мир: seed {w.Seed}");
+        Notice(Loc.T($"new world: seed {w.Seed}", $"новый мир: seed {w.Seed}"));
         done?.Invoke(w);
     });
 
@@ -623,13 +629,15 @@ public sealed class SimRunner
     SaveOutcome SaveNow(World w, string path, string note)
     {
         var o = new SaveOutcome { Path = path, Tick = w.Tick };
-        w.Add(EvType.Player, $"{(note == "autosave" ? "автосохранение" : "сохранено")}: {System.IO.Path.GetFileName(path)}");
+        string name = System.IO.Path.GetFileName(path);
+        w.Add(EvType.Player, Loc.Both($"{(note == "autosave" ? "autosave" : "saved")}: {name}", $"{(note == "autosave" ? "автосохранение" : "сохранено")}: {name}"));
         var t0 = Stopwatch.GetTimestamp();
         try { w.Save(path, note); o.Bytes = new System.IO.FileInfo(path).Length; }
         catch (Exception e) { o.Error = e.Message; }
         o.Ms = (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency;
         string file = System.IO.Path.GetFileName(path);
-        if (o.Ok) Notice($"сохранено: {file} (тик {o.Tick:N0}, {o.Bytes / 1048576.0:F1} МБ, {o.Ms:F0} мс)"); else Fail($"не сохранить {file}: {o.Error}");
+        if (o.Ok) Notice(Loc.T($"saved: {file} (tick {o.Tick:N0}, {o.Bytes / 1048576.0:F1} MB, {o.Ms:F0} ms)", $"сохранено: {file} (тик {o.Tick:N0}, {o.Bytes / 1048576.0:F1} МБ, {o.Ms:F0} мс)"));
+        else Fail(Loc.T($"cannot save {file}: {o.Error}", $"не сохранить {file}: {o.Error}"));
         return o;
     }
 
@@ -639,12 +647,13 @@ public sealed class SimRunner
         try
         {
             var w = World.Load(path);
-            w.Add(EvType.Player, $"загружено: {System.IO.Path.GetFileName(path)} (тик {w.Tick:N0})");
+            string file = System.IO.Path.GetFileName(path);
+            w.Add(EvType.Player, Loc.Both($"loaded: {file} (tick {w.Tick:N0})", $"загружено: {file} (тик {w.Tick:N0})"));
             ReplaceWorld(w);
-            Notice($"загружено: {System.IO.Path.GetFileName(path)} (seed {w.Seed}, тик {w.Tick:N0}, особей {w.Agents.Count:N0})");
+            Notice(Loc.T($"loaded: {file} (seed {w.Seed}, tick {w.Tick:N0}, {w.Agents.Count:N0} bodies)", $"загружено: {file} (seed {w.Seed}, тик {w.Tick:N0}, особей {w.Agents.Count:N0})"));
             done?.Invoke(w, null);
         }
-        catch (Exception e) { Fail($"не загрузить {System.IO.Path.GetFileName(path)}: {e.Message}"); done?.Invoke(null, e.Message); }
+        catch (Exception e) { Fail(Loc.T($"cannot load {System.IO.Path.GetFileName(path)}: {e.Message}", $"не загрузить {System.IO.Path.GetFileName(path)}: {e.Message}")); done?.Invoke(null, e.Message); }
     });
 
     public static SaveInfo ReadSaveInfo(string path) => World.ReadInfo(path);
@@ -664,13 +673,17 @@ public sealed class SimRunner
 
     static string SpawnText(World w, CreatureDesign d, SpawnResult r, SpawnOptions o)
     {
-        if (r.Made == 0) return $"«{d.Name}» не посажен: {r.Error ?? "нет места"}";
+        if (r.Made == 0) return Loc.T($"\"{CreatureExamples.DisplayName(d.Name)}\" not planted: {r.Error ?? "no room"}", $"«{CreatureExamples.DisplayName(d.Name)}» не посажен: {r.Error ?? "нет места"}");
+        string atoms = string.Join(", ", Enumerable.Range(0, Chemistry.ElementCount).Where(e => r.AtomsImported[e] > 0).Select(e => $"{w.Chem.ElementName[e]} {r.AtomsImported[e]:0}"));
         string matter = o.Matter == MatterSource.Import
-            ? $"атомы принесены извне ({string.Join(", ", Enumerable.Range(0, Chemistry.ElementCount).Where(e => r.AtomsImported[e] > 0).Select(e => $"{w.Chem.ElementName[e]} {r.AtomsImported[e]:0}"))})"
-            : "вещество местное";
-        string energy = o.Energy == EnergySource.Import ? $"энергия извне {r.EnergyImported:0.#}" : $"энергия местных реакций {r.EnergyLocal:0.#}";
-        string s = $"«{d.Name}»: посажено {r.Made} из {r.Requested} · {matter} · {energy} · линия #{r.Lineage}";
-        if (r.Error != null) s += $" (остальным: {r.Error})";
+            ? Loc.T($"atoms brought from outside ({atoms})", $"атомы принесены извне ({atoms})")
+            : Loc.T("local matter", "вещество местное");
+        string energy = o.Energy == EnergySource.Import
+            ? Loc.T($"energy from outside {r.EnergyImported:0.#}", $"энергия извне {r.EnergyImported:0.#}")
+            : Loc.T($"energy of local reactions {r.EnergyLocal:0.#}", $"энергия местных реакций {r.EnergyLocal:0.#}");
+        string s = Loc.T($"\"{CreatureExamples.DisplayName(d.Name)}\": planted {r.Made} of {r.Requested} · {matter} · {energy} · lineage #{r.Lineage}",
+            $"«{CreatureExamples.DisplayName(d.Name)}»: посажено {r.Made} из {r.Requested} · {matter} · {energy} · линия #{r.Lineage}");
+        if (r.Error != null) s += Loc.T($" (the rest: {r.Error})", $" (остальным: {r.Error})");
         return s;
     }
 

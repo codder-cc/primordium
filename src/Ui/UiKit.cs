@@ -219,11 +219,11 @@ public static class UiKit
 }
 
 // A button that asks once more before doing something irreversible: the first click turns it into
-// "точно?" for a few seconds, the second does it.
+// "sure?" for a few seconds, the second does it.
 public partial class ConfirmButton : Button
 {
     public Action Confirmed;
-    public string Ask = "точно?";
+    public string Ask = Loc.T("sure?", "точно?");
     string text;
     bool armed;
     ulong armedAt;
