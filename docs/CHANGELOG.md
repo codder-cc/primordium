@@ -1,3 +1,5 @@
+*This document is in Russian (development log). See [SIMULATION.md](SIMULATION.md) for the English description of the model.*
+
 # Журнал изменений
 
 Новые записи сверху. В каждой: что изменилось, зачем, как проверено, что осталось приближением. Числа скорости — Release, Apple M4 (10 ядер), один процесс `tools/bench` без других нагрузок; при сравнении указывать seed, тики и популяцию: разные версии мира дают разные траектории.

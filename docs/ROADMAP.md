@@ -1,3 +1,5 @@
+*This document is in Russian (development log). See [SIMULATION.md](SIMULATION.md) for the English description of the model.*
+
 # План: открытая эволюция
 
 Актуально: 2026-10-07. Это проектный документ: что делаем, как, в каких файлах и как проверяем. Сделанный пункт отмечать `[x]`, а подробности (числа, команды, что осталось приближением) переносить в `CHANGELOG.md` и `SIMULATION.md`.
