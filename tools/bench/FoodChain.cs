@@ -44,7 +44,7 @@ public sealed partial class World
                 probe.Ticks++;
                 if (t % every != 0 && t != ticks) continue;
                 var s = probe.Summarize(edge, minShare);
-                Console.WriteLine($"{seed,4} {w.Tick,7} {w.Agents.Count,6} {s.Lineages,8} {s.Predators,9}  {s.PreyShare,10:P2} {s.MeanLevel,8:F3} {s.MaxLevel,6:F2} {s.Chain,5} {(s.PreyMolecules > 0 ? s.OwnLineagePrey / (double)s.PreyMolecules : 0),10:P0} {s.Kills,7}  {w.StateHash():x16}");
+                Console.WriteLine($"{seed,4} {w.Tick,7} {w.Agents.Count,6} {s.Lineages,8} {s.Predators,9}  {s.PreyShare,10:P2} {s.MeanLevel,8:F3} {(s.MaxLevel > 0 ? s.MaxLevel.ToString("F2", inv) : "-"),6} {s.Chain,5} {(s.PreyMolecules > 0 ? s.OwnLineagePrey / (double)s.PreyMolecules : 0),10:P0} {s.Kills,7}  {w.StateHash():x16}");
                 string Id(long k) => byGenome ? ((ulong)k).ToString("x16") : k.ToString();
                 string Lvl(long k) => s.Level.TryGetValue(k, out double l) ? l.ToString("F2", inv) : "-";
                 foreach (var e in s.Top.Take(top))
