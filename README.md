@@ -57,7 +57,7 @@ dotnet build
 
 Then open `project.godot` in Godot 4.3 mono and press **Play**. A new world starts without life: press **N** to assemble creatures from local matter, **A** to turn on abiogenesis, or **F7** to plant your own design.
 
-Useful launch flags (after `--`): `--seed N`, `--abio`, `--warm N` (pre-simulate N ticks), `--lang en|ru`, `--open laws,evolution,…`, `--shot path.png`.
+Useful launch flags (after `--`): `--seed N`, `--abio`, `--warm N` (pre-simulate N ticks), `--lang en|ru`, `--open laws,evolution,tree,metrics,…`, `--shot path.png`.
 
 ```sh
 Godot --path . -- --seed 3 --abio --warm 6000
@@ -72,12 +72,14 @@ Godot --path . -- --seed 3 --abio --warm 6000
 | T / ⇧T | Skip N days / skip 10 days |
 | LMB drag, WASD · RMB drag, Q / E · wheel, G | Pan · rotate · zoom, whole map |
 | Click · K · F · O | Select a creature · highlight kin · follow · oldest |
-| V · M · L · C, `[` `]` | Color mode · surface overlays · sunlight · cross-section and its position |
+| V · M · L · C, `[` `]` | Color mode · surface overlays (among them the ranges of clades) · sunlight · cross-section and its position |
 | N · A · X | Assemble life from local matter · abiogenesis · orbital strike |
 | 1–4 · 5 | Brushes (pour, water, kill, dig) · plant a design |
+| Z · ⇧Z · I | With brush 1: keep the material for every stroke · next material · take the material under the cursor |
 | F2 · F4 · F6 · F7 | World laws · new world · saves · creature designer |
 | F5 / F9 | Quick save / quick load |
 | F8 · F10 · F11 | Chronicle · course of evolution · catastrophes |
+| F1 · F12 | Tree of life (cladogram of living clades, lineages over time) · metrics over time with CSV export |
 | F3 · R / ⇧R · P | Performance overlay · new seed / same seed · screenshot |
 
 ## Headless bench

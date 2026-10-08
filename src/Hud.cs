@@ -85,6 +85,19 @@ public partial class Hud : Control
 
     float TW(string s, int size = 13, Font f = null) => (f ?? ui).GetStringSize(s, HorizontalAlignment.Left, -1, size).X;
 
+    // The text cut to `width` with an ellipsis (the whole of it if it fits).
+    string Clip(string s, float width, int size = 13, Font f = null)
+    {
+        if (TW(s, size, f) <= width) return s;
+        int lo = 0, hi = s.Length;
+        while (lo < hi)
+        {
+            int mid = (lo + hi + 1) / 2;
+            if (TW(s[..mid] + "…", size, f) <= width) lo = mid; else hi = mid - 1;
+        }
+        return s[..lo].TrimEnd(' ', '·', ',', '(') + "…";
+    }
+
     ImageTexture Portrait(Agent a)
     {
         if (portraits.Count > 300) portraits.Clear();
@@ -329,24 +342,34 @@ public partial class Hud : Control
                                   $" (голод {w.DeathsStarve:N0}, убиты {w.DeathsKilled:N0}, распад {w.DeathsBroken:N0}, климат {w.DeathsClimate:N0}{(w.DeathsHand > 0 ? $", рукой {w.DeathsHand:N0}" : "")})") + tail;
         if (TW(line) > px - 32) line = pop + Loc.T($" (killed {w.DeathsKilled:N0})", $" (убиты {w.DeathsKilled:N0})") + tail;
         if (TW(line) > px - 32) line = pop + tail;
-        T(16, 44, line, Fg, 13);
+        T(16, 44, Clip(line, px - 32, 13), Fg, 13);
         var v = Main.View;
         string OnOff(bool b) => b ? Loc.T("on", "вкл") : Loc.T("off", "выкл");
-        string mode = Loc.T($"surface: {OverlayName(w, v.Overlay)} · coloring: {View3D.ColorModeNames[v.ColorMode]} · ",
-                            $"поверхность: {OverlayName(w, v.Overlay)} · окраска: {View3D.ColorModeNames[v.ColorMode]} · ") +
-                      (v.Lighting ? Loc.T("sunlight", "освещение солнца") : Loc.T("no lighting", "без освещения")) +
-                      (v.Slice >= 0 ? Loc.T($" · cross-section at row {v.Slice}", $" · разрез по строке {v.Slice}") : "") +
-                      (v.Follow ? Loc.T(" · following the agent", " · слежу за агентом") : "") +
-                      Loc.T($" · abiogenesis {OnOff(w.Abiogenesis)} (A) · orbital strikes {OnOff(w.AutoStrikes)} (⇧X), so far {w.StrikeCount}",
+        // The overlay's name can be long: the other parts of the line give way first, then the name is cut
+        // with an ellipsis, so the line never runs under the panel.
+        string surface = Loc.T($"surface: {OverlayName(w, v.Overlay)}", $"поверхность: {OverlayName(w, v.Overlay)}");
+        string coloring = Loc.T($" · coloring: {View3D.ColorModeNames[v.ColorMode]} · ", $" · окраска: {View3D.ColorModeNames[v.ColorMode]} · ") +
+                          (v.Lighting ? Loc.T("sunlight", "освещение солнца") : Loc.T("no lighting", "без освещения")) +
+                          (v.Slice >= 0 ? Loc.T($" · cross-section at row {v.Slice}", $" · разрез по строке {v.Slice}") : "") +
+                          (v.Follow ? Loc.T(" · following the agent", " · слежу за агентом") : "");
+        string life = Loc.T($" · abiogenesis {OnOff(w.Abiogenesis)} (A) · orbital strikes {OnOff(w.AutoStrikes)} (⇧X), so far {w.StrikeCount}",
                             $" · самозарождение {OnOff(w.Abiogenesis)} (A) · удары с орбиты {OnOff(w.AutoStrikes)} (⇧X), было {w.StrikeCount}");
+        float room = px - 32;
+        string mode = surface + coloring + life;
+        if (TW(mode, 12) > room) mode = surface + coloring + Loc.T($" · abiogenesis {OnOff(w.Abiogenesis)}", $" · самозарождение {OnOff(w.Abiogenesis)}");
+        if (TW(mode, 12) > room)
+        {
+            string brief = Loc.T($" · {View3D.ColorModeNames[v.ColorMode]} · abiogenesis {OnOff(w.Abiogenesis)}", $" · {View3D.ColorModeNames[v.ColorMode]} · самозарождение {OnOff(w.Abiogenesis)}");
+            mode = Clip(surface, room - TW(brief, 12), 12) + brief;
+        }
         T(16, 60, mode, Dim, 12);
         string skyLine = SkyLine(w, v.CursorCell, true);
         if (TW(skyLine, 12) > px - 32) skyLine = SkyLine(w, v.CursorCell, false);
-        T(16, 76, skyLine, Dim, 12);
+        T(16, 76, Clip(skyLine, px - 32, 12), Dim, 12);
         // The climate epoch (World.ClimateCycles): ice age or interglacial, the phase of the cycles, ash, droughts.
         string epoch = w.EpochLine(true);
         if (TW(epoch, 12) > px - 32) epoch = w.EpochLine(false);
-        T(16, 92, epoch, w.IceAgeNow || w.VolcanicWinterNow ? Acc : Dim, 12);
+        T(16, 92, Clip(epoch, px - 32, 12), w.IceAgeNow || w.VolcanicWinterNow ? Acc : Dim, 12);
     }
 
     // The sky (World.Sky): the sun's activity and flares, the next eclipse, and the column under the cursor —
@@ -416,7 +439,7 @@ public partial class Hud : Control
                       $"вокруг {w.LocalTemp(cell, a.Z):+0.0;-0.0} °C: климат глубины {w.CaveTemp(cell, a.Z):+0.0;-0.0}, поверхность {surf:+0.0;-0.0}"));
     }
 
-    static string OverlayName(World w, int o) => o switch
+    string OverlayName(World w, int o) => o switch
     {
         0 => Loc.T("rock and soil", "породы и почва"),
         1 => Loc.T("temperature", "температура"),
@@ -440,6 +463,7 @@ public partial class Hud : Control
         View3D.DeepOverlay => Loc.T($"deep element {w.Chem.ElementName[w.DeepElement]} (bias {w.DepthBias[w.DeepElement]:+0.00;-0.00}): share of atoms in the top block, in the cross-section (C) — by level, veins lighter",
                                     $"глубинный элемент {w.Chem.ElementName[w.DeepElement]} (смещение {w.DepthBias[w.DeepElement]:+0.00;-0.00}): доля в атомах верхнего блока, в разрезе (C) — по уровням, жилы светлее")
                               + (w.GeoOn ? "" : Loc.T(" (world created without a depth profile)", " (мир создан без профиля глубины)")),
+        View3D.RangeOverlay => RangeName(),
         View3D.StockOverlay => Loc.T("food and gas stock: loose matter on the ground — green → yellow, air gas — blue, black — eaten out",
                                      "запас еды и газа: рыхлое на земле — зелёный → жёлтый, газ воздуха — синий, чёрное — выедено")
                                + (P.GasDiffK != 1 ? Loc.T($" (gas diffusion ×{P.GasDiffK:0.##})", $" (диффузия газа ×{P.GasDiffK:0.##})") : ""),
@@ -447,6 +471,20 @@ public partial class Hud : Control
         _ => Loc.T($"molecule {w.Chem.Name[o - View3D.FirstSpecies]} on the ground (E{w.Chem.E[o - View3D.FirstSpecies]}", $"молекула {w.Chem.Name[o - View3D.FirstSpecies]} на земле (E{w.Chem.E[o - View3D.FirstSpecies]}") +
              $"{(w.Chem.Poison[o - View3D.FirstSpecies] ? Loc.T(", poison", ", яд") : w.Chem.Solid[o - View3D.FirstSpecies] ? Loc.T(", solid", ", твёрдая") : "")})",
     };
+
+    // The range overlay: what is shown and from which tree (SimObserver.Tree, built while it is on).
+    // A design's name in the language of the moment (the examples are stored under their Russian key).
+    public static string DesignName(string name) => name == null ? null : Loc.En ? CreatureExamples.NameEn(name) : CreatureExamples.NameRu(name);
+
+    string RangeName()
+    {
+        var t = Main.View.Ranges;
+        if (t.CellClade == null) return Loc.T("ranges of clades (building the tree…)", "ареалы ветвей (строю дерево…)");
+        string pick = Main.View.RangeHash != 0 && t.Find(Main.View.RangeHash, Main.View.RangeOrigin) is int k and >= 0
+            ? Loc.T($", picked: branch {k + 1} bright", $", выбрана ветвь {k + 1} — ярко") : "";
+        return Loc.T($"ranges of clades: {t.Nodes.Length} branches of ≥ {t.Threshold} bodies, color as in the tree of life (F1){pick}",
+                     $"ареалы ветвей: {t.Nodes.Length} ветвей от {t.Threshold} тел, цвет как в древе жизни (F1){pick}");
+    }
 
     void Hints(Vector2 vs, float px)
     {
@@ -457,8 +495,11 @@ public partial class Hud : Control
             // The hand's brush is out: what it does and how to steer it.
             string what = m.Tool switch
             {
-                1 => Loc.T($"pour: {m.World.Chem.MatName[m.PourSpecies + 2]} (each stroke is a new random material, a fresh loose heap)",
-                           $"насыпать: {m.World.Chem.MatName[m.PourSpecies + 2]} (каждый мазок — новый случайный материал, свежая рыхлая насыпь)"),
+                1 => m.PourLock
+                    ? Loc.T($"pour: {m.World.Chem.MatName[m.PourSpecies + 2]} — locked: every stroke pours it (Z — random again)",
+                            $"насыпать: {m.World.Chem.MatName[m.PourSpecies + 2]} — закреплён: каждый мазок сыплет его (Z — снова случайный)")
+                    : Loc.T($"pour: {m.World.Chem.MatName[m.PourSpecies + 2]} (each stroke is a new random material, a fresh loose heap)",
+                            $"насыпать: {m.World.Chem.MatName[m.PourSpecies + 2]} (каждый мазок — новый случайный материал, свежая рыхлая насыпь)"),
                 2 => Loc.T("flood with water (then it flows, evaporates and falls as rain like any other)", "залить водой (дальше она течёт, испаряется и выпадает дождём как обычная)"),
                 3 => Loc.T("kill everyone in the circle (remains stay in place)", "убить всех в круге (останки остаются на месте)"),
                 5 => m.Ui.Creator.BrushText,
@@ -468,9 +509,14 @@ public partial class Hud : Control
             string l2 = m.Tool == 5
                 ? Loc.T($"click — plant in this cell · spread {m.BrushR:0} ([ ]) · F7 — designer · 5, 0 or Esc — put away",
                         $"клик — посадить в эту клетку · разброс {m.BrushR:0} ([ ]) · F7 — конструктор · 5, 0 или Esc — убрать")
+                : m.Tool == 1
+                ? Loc.T($"radius {m.BrushR:0} · LMB — pour · [ ] — size · Z — lock this material, ⇧Z — next one, I — take the one under the cursor · 1, 0 or Esc — put away",
+                        $"радиус {m.BrushR:0} · ЛКМ — сыпать · [ ] — размер · Z — закрепить материал, ⇧Z — следующий, I — взять тот, что под курсором · 1, 0 или Esc — убрать")
                 : Loc.T($"radius {m.BrushR:0} · LMB — paint · [ ] — size · 1–5 — other tool · same digit, 0 or Esc — put away",
                         $"радиус {m.BrushR:0} · ЛКМ — рисовать · [ ] — размер · 1–5 — другой инструмент · та же цифра, 0 или Esc — убрать");
-            float tw = Math.Min(px - 20, Math.Max(TW(l1, 13), TW(l2, 12)) + 40);
+            l1 = Clip(l1, px - 76, 13);
+            l2 = Clip(l2, px - 62, 12);
+            float tw = Math.Min(px - 20, Math.Max(TW(l1, 13) + 14, TW(l2, 12)) + 40);
             DrawRect(new Rect2(10, vs.Y - 120, tw, 42), new Color(0.08f, 0.09f, 0.12f, 0.92f));
             float tx = 22;
             if (m.Tool == 1)
@@ -482,14 +528,14 @@ public partial class Hud : Control
             T(tx, vs.Y - 101, l1, Fg, 13);
             T(22, vs.Y - 85, l2, Dim, 12);
         }
-        T(16, vs.Y - 56, Loc.T("Space pause · . step · +/− speed · T skip N days, ⇧T 10 · R new world, ⇧R same one · P snapshot · 1–4 brush · F3 benchmark",
-                               "Space пауза · . шаг · +/− скорость · T промотка на N суток, ⇧T на 10 · R новый мир, ⇧R тот же · P снимок · 1–4 кисть · F3 замер"), Dim, 12);
-        T(16, vs.Y - 40, Loc.T("F2 world laws · F4 new world · F5 quick save, F9 load · F6 saves · F7 creature designer · 5 plant a design · F8 chronicle",
-                               "F2 законы мира · F4 новый мир · F5 быстро сохранить, F9 загрузить · F6 сохранения · F7 конструктор существ · 5 посадить дизайн · F8 хроника"), Dim, 12);
-        T(16, vs.Y - 24, Loc.T("LMB / WASD / two fingers — pan · RMB / Q E — rotate · wheel / pinch — zoom · G whole map · C cross-section, [ ] shift",
-                               "ЛКМ / WASD / два пальца — сдвиг · ПКМ / Q E — поворот · колесо / щипок — зум · G вся карта · C разрез, [ ] сдвиг"), Dim, 12);
-        T(16, vs.Y - 8, Loc.T("click — agent · H legend · B records · O oldest · K kin · F follow · V coloring · M surface · L light · N life · A abiogenesis · X strike",
-                              "клик — агент · H легенда · B рекорды · O старейший · K родня · F следить · V окраска · M поверхность · L свет · N жизнь · A абиогенез · X удар"), Dim, 12);
+        T(16, vs.Y - 56, Clip(Loc.T("Space pause · . step · +/− speed · T skip N days, ⇧T 10 · R new world, ⇧R same one · P snapshot · 1–4 brush · F3 benchmark",
+                               "Space пауза · . шаг · +/− скорость · T промотка на N суток, ⇧T на 10 · R новый мир, ⇧R тот же · P снимок · 1–4 кисть · F3 замер"), px - 32, 12), Dim, 12);
+        T(16, vs.Y - 40, Clip(Loc.T("F1 tree of life · F2 laws · F4 new world · F5 quick save, F9 load · F6 saves · F7 designer · 5 plant a design · F8 chronicle · F10 evolution · F12 metrics",
+                                    "F1 древо жизни · F2 законы · F4 новый мир · F5 сохранить, F9 загрузить · F6 сохранения · F7 конструктор · 5 посадить · F8 хроника · F10 эволюция · F12 метрики"), px - 32, 12), Dim, 12);
+        T(16, vs.Y - 24, Clip(Loc.T("LMB / WASD / two fingers — pan · RMB / Q E — rotate · wheel / pinch — zoom · G whole map · C cross-section, [ ] shift",
+                               "ЛКМ / WASD / два пальца — сдвиг · ПКМ / Q E — поворот · колесо / щипок — зум · G вся карта · C разрез, [ ] сдвиг"), px - 32, 12), Dim, 12);
+        T(16, vs.Y - 8, Clip(Loc.T("click — agent · H legend · B records · O oldest · K kin · F follow · V coloring · M surface · L light · N life · A abiogenesis · X strike",
+                              "клик — агент · H легенда · B рекорды · O старейший · K родня · F следить · V окраска · M поверхность · L свет · N жизнь · A абиогенез · X удар"), px - 32, 12), Dim, 12);
     }
 
     float Header(float x, float y, string s)
@@ -708,7 +754,7 @@ public partial class Hud : Control
                             $"энергия {e:F1} (удобный запас {cap:F0}, сверх — утекает быстрее) · {a.LastCycles} тактов/тик"), Dim, 12);
         y += 74;
         // The player's creatures: planted from a design, or descended from one.
-        string design = Main.Sim.DesignedLineages.TryGetValue(a.Lineage, out var dn) ? dn : null;
+        string design = Main.Sim.DesignedLineages.TryGetValue(a.Lineage, out var dn) ? DesignName(dn) : null;
         if (a.Designed || design != null)
         {
             string mark = a.Designed ? Loc.T($"player's: planted from design “{design ?? "?"}”", $"от игрока: посажен из дизайна «{design ?? "?"}»")

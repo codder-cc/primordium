@@ -21,7 +21,7 @@ public partial class View3D : Node3D
     public SimFrame Frame;           // set by Main every frame
     public float[] Stress;           // per column, for the load overlay (filled by the simulation thread)
     public Camera3D Cam { get; private set; }
-    public int Overlay;              // 0 surface, 1 temperature, 2 light, 3 remains, 4 density, 5 deaths, 6 body heat, 7 load, 8 lattice, 9 temperature at depth, 10 deep element, 11 food and gas stock, FirstSpecies+s one species
+    public int Overlay;              // 0 surface, 1 temperature, 2 light, 3 remains, 4 density, 5 deaths, 6 body heat, 7 load, 8 lattice, 9 temperature at depth, 10 deep element, 11 food and gas stock, 12 transparency, 13 day length, 14 flare dose, 15 ranges of clades, FirstSpecies+s one species
     public int ColorMode;            // see ColorModeNames
     public bool Lighting = true;
     public int Slice = -1;           // cut-away: rows south of this are hidden
@@ -30,8 +30,18 @@ public partial class View3D : Node3D
     public float PanelWidth = 440;   // logical px covered by the HUD panel on the right
 
     public int OverlayCount => FirstSpecies + Chemistry.S;
-    public const int FirstSpecies = 15;  // overlays before the per-molecule ones
-    public const int DepthTempOverlay = 9, DeepOverlay = 10, StockOverlay = 11, TranspOverlay = 12, DayOverlay = 13, FlareOverlay = 14;
+    public const int FirstSpecies = 16;  // overlays before the per-molecule ones
+    public const int DepthTempOverlay = 9, DeepOverlay = 10, StockOverlay = 11, TranspOverlay = 12, DayOverlay = 13, FlareOverlay = 14, RangeOverlay = 15;
+
+    // The range overlay: where the branches of the clade tree live (SimObserver.Tree, set by Main), and
+    // the branch picked in the tree window (its start genome and origin; 0: none) shown bright.
+    public TreeView Ranges = TreeView.Empty;
+    public ulong RangeHash;
+    public long RangeOrigin;
+    readonly Rgb[] rangeCol = new Rgb[N];
+    long rangeVersion = -2;
+    ulong rangeHashDone;
+    long rangeOriginDone;
 
     // Timings of the steps of Refresh, ms summed since Main last cleared them (perf overlay).
     public const int ProfSlots = 10;
@@ -348,6 +358,7 @@ void fragment() {
         // Colours: everything when the overlay or the lighting changed; otherwise one band a frame,
         // for a full round after the world last changed (nothing while it stands paused).
         if (Frame.Tick != colouredTick || changed || Overlay == 7) { colouredTick = Frame.Tick; sweepLeft = Bands; }
+        if (Overlay == RangeOverlay && FillRanges()) sweepLeft = Bands;
         if (colouredOverlay != Overlay || colouredLighting != Lighting || all)
         {
             colouredOverlay = Overlay; colouredLighting = Lighting;
@@ -417,6 +428,10 @@ void fragment() {
                 c = StockColour(w, i);
                 lit = 1;
                 break;
+            case RangeOverlay:
+                c = rangeCol[i];
+                lit = 1;
+                break;
             case 2:
                 // The sun's power at the surface now (World.Sun: cosine law, sky, shadows, clouds, eclipse).
                 c = new Rgb(0.08f, 0.08f, 0.14f).Lerp(new Rgb(1f, 0.92f, 0.55f), MathF.Min(1, w.Sun[i]));
@@ -484,6 +499,47 @@ void fragment() {
         // Volcanic ash in the stratosphere (World.ClimateCycles) greys the surface under it.
         if (Overlay == 0 && w.Veil[i] > 0.01f) c = c.Lerp(new Rgb(0.42f, 0.38f, 0.36f), Math.Min(0.6f, 0.6f * (1 - MathF.Exp(-w.Veil[i]))));
         buf[o + 12] = c.R; buf[o + 13] = c.G; buf[o + 14] = c.B; buf[o + 15] = lit;
+    }
+
+    // The colours of the range overlay, again when a new tree came or another branch was picked: a cell
+    // with bodies of a branch in its colour (brighter with more bodies), the cells around it (2 cells)
+    // faintly, so a range reads as an area; with a branch picked, it and its sub-branches bright, the
+    // rest grey. Returns whether anything changed.
+    bool FillRanges()
+    {
+        var t = Ranges;
+        if (t.Version == rangeVersion && RangeHash == rangeHashDone && RangeOrigin == rangeOriginDone) return false;
+        rangeVersion = t.Version; rangeHashDone = RangeHash; rangeOriginDone = RangeOrigin;
+        var bg = new Rgb(0.07f, 0.07f, 0.08f);
+        if (t.CellClade == null) { Array.Fill(rangeCol, bg); return true; }
+        int pick = RangeHash != 0 ? t.Find(RangeHash, RangeOrigin) : -1;
+        var col = new Rgb[t.Nodes.Length];
+        for (int k = 0; k < col.Length; k++)
+        {
+            col[k] = pick >= 0 && !t.Under(k, pick) ? new Rgb(0.32f, 0.32f, 0.34f) : Rgb.Hsv(t.Nodes[k].Hue, 0.75f, 1f);
+        }
+        var cc = t.CellClade;
+        for (int i = 0; i < N; i++)
+        {
+            int d = cc[i];
+            if (d >= 0) { rangeCol[i] = bg.Lerp(col[d], 0.55f + 0.45f * Math.Min(1f, t.CellN[i] / 4f)); continue; }
+            // The nearest occupied cell within two (the map wraps around in x).
+            int x = i % W, y = i / W, near = -1, best = 99;
+            for (int dy = -2; dy <= 2; dy++)
+            {
+                int yy = y + dy;
+                if (yy < 0 || yy >= H) continue;
+                for (int dx = -2; dx <= 2; dx++)
+                {
+                    int dd = dx * dx + dy * dy;
+                    if (dd >= best || dd > 5) continue;
+                    int j = yy * W + (x + dx + W) % W;
+                    if (cc[j] >= 0) { best = dd; near = cc[j]; }
+                }
+            }
+            rangeCol[i] = near >= 0 ? bg.Lerp(col[near], best <= 2 ? 0.32f : 0.2f) : bg;
+        }
+        return true;
     }
 
     // Food and gas within reach on the surface of a column (World.Resources): loose molecules (the air's

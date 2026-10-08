@@ -59,10 +59,12 @@ public partial class Main : Node
     public static string[] ToolNames => Loc.T(ToolNamesEn, ToolNamesRu);
     public int Tool;
     public volatile int PourSpecies = -1;   // chosen on the simulation thread (it draws from the world's random numbers)
+    public bool PourLock;                   // brush 1 keeps its material from stroke to stroke (Z; I takes the one under the cursor)
     public float BrushR = 3;
     bool painting;
     double paintWait;
     int startTool, paintDabs;   // for screenshots: a brush and a number of dabs at the centre of the screen
+    int plantAtStart;           // --plant N: N bodies of the first example design brought in near the busiest lineage, one selected (screenshots of the mark)
 
     public override void _Ready()
     {
@@ -85,6 +87,7 @@ public partial class Main : Node
             if (args[i] == "--zoom") zoom = float.Parse(args[i + 1], System.Globalization.CultureInfo.InvariantCulture);
             if (args[i] == "--tool") startTool = int.Parse(args[i + 1]);
             if (args[i] == "--paint") paintDabs = int.Parse(args[i + 1]);
+            if (args[i] == "--plant") plantAtStart = int.Parse(args[i + 1]);
             if (args[i] == "--overlay") startOverlay = int.Parse(args[i + 1]);
             if (args[i] == "--perf") perfEvery = int.Parse(args[i + 1]);
             if (args[i] == "--perfquit") perfQuit = int.Parse(args[i + 1]);
@@ -117,7 +120,7 @@ public partial class Main : Node
                 // "window" or "window:view" (newworld:more, creator:looks, creator:help) — for screenshots.
                 if (item == "none") continue;   // no window, and none restored from ui.json either
                 var part = item.Split(':');
-                var win = Ui.ById(part[0] == "params" ? "laws" : part[0]) ?? throw new ArgumentException("--open: laws|params, newworld[:more], saves, creator[:looks|:help], chronicle[:fossils], fossil[:bio|:ancestry], evolution");
+                var win = Ui.ById(part[0] == "params" ? "laws" : part[0]) ?? throw new ArgumentException("--open: laws|params, newworld[:more], saves, creator[:looks|:help], chronicle[:fossils], fossil[:bio|:ancestry], evolution, tree[:lineages], metrics, catastrophes");
                 win.Open();
                 if (part.Length > 1) win.ShowView(part[1]);
             }
@@ -180,6 +183,7 @@ public partial class Main : Node
             if (perfEvery > 0 && i % 1000 == 999) GD.Print($"warm {i + 1} pop {sim.World.Agents.Count} {sw.Elapsed.TotalSeconds:F0}s");
         }
         painting = false;
+        PourLock = false;   // another world, other matter
         if (Tool == 1) PourSpecies = sim.World.RandomPourable();
         View.SetWorld(sim.World);
         worldGeneration = sim.WorldGeneration;
@@ -229,6 +233,9 @@ public partial class Main : Node
         Sim.Selected = View.Selected;
         Sim.Hover = View.Hover;
         Sim.WantStress = View.Overlay == 7;
+        // The clade tree is built on the simulation thread only while the tree window or the range overlay shows it.
+        Sim.Obs.WantTree = View.Overlay == View3D.RangeOverlay || (Ui?.Tree?.Visible ?? false);
+        View.Ranges = Sim.Obs.Tree;
         frame++;
         if (FastForward)
         {
@@ -310,6 +317,17 @@ public partial class Main : Node
         if (shotFrames == 8 && Array.IndexOf(OS.GetCmdlineUserArgs(), "--oldest") >= 0)
         {
             if (Records.Count > 0) { View.Selected = Records[0].a; View.LookAt(Records[0].a); }
+        }
+        if (frame == 20 && plantAtStart > 0 && CreatureExamples.All.Count > 0)
+        {
+            var at = Lineages.Count > 0 ? Lineages[0].rep : null;
+            int cx = at?.X ?? World.W / 2, cy = at?.Y ?? World.H / 2;
+            Sim.SpawnDesign(CreatureExamples.All[0], cx, cy, new SpawnOptions { Matter = MatterSource.Import, Energy = EnergySource.Import, Count = plantAtStart, Radius = 4 });
+            Sim.Do(w =>
+            {
+                var a = w.Agents.FirstOrDefault(x => x.Designed && !x.Dead);
+                if (a != null) Ui.Post(() => { View.Selected = a; View.LookAt(a); View.ZoomAt(24); });
+            });
         }
         if (shotFrames == 30 && paintDabs > 0)
         {
@@ -477,7 +495,46 @@ public partial class Main : Node
     {
         Tool = Tool == t ? 0 : t;   // the same key again puts the brush away
         painting = false;
-        if (Tool == 1) NewPourSpecies();
+        if (Tool == 1 && !(PourLock && PourSpecies >= 0)) NewPourSpecies();
+    }
+
+    // Brush 1: keep the material (Z), step to the next one and keep it (⇧Z), or take the one of the top
+    // block under the cursor (I). Choosing reads the world only (no random numbers drawn).
+    void PourKey(Key key, bool shift)
+    {
+        var w = World;
+        if (key == Key.Z && !shift)
+        {
+            PourLock = !PourLock;
+            if (!PourLock) NewPourSpecies();
+            Ui.Toast(PourLock ? Loc.T($"brush 1 keeps {w.Chem.MatName[PourSpecies + 2]} for every stroke", $"кисть 1 сыплет {w.Chem.MatName[PourSpecies + 2]} каждым мазком")
+                              : Loc.T("brush 1: a new random material each stroke", "кисть 1: каждый мазок — новый случайный материал"));
+            return;
+        }
+        int s = PourSpecies;
+        if (key == Key.Z)
+        {
+            do s = (s + 1) % Chemistry.S; while (s == w.Chem.Gas);
+        }
+        else
+        {
+            int c = View.PickCell(GetViewport().GetMousePosition());
+            if (c < 0) { Ui.Toast(Loc.T("point at the ground to take its material", "наведите на землю, чтобы взять её материал"), true); return; }
+            int h = w.Height[c];
+            int m = h > 0 ? w.Mat[c * World.Z + h - 1] : 0;
+            if (m < 2 || m - 2 == w.Chem.Gas)
+            {
+                // No aggregate on top: the most plentiful loose molecule lying there, if any.
+                float best = 0.5f; m = -1;
+                for (int k = 0; k < Chemistry.S; k++)
+                    if (k != w.Chem.Gas && w.C[k][c].F > best) { best = w.C[k][c].F; m = k + 2; }
+                if (m < 0) { Ui.Toast(Loc.T("nothing to take here: no rock and no loose matter on top", "здесь нечего взять: сверху нет ни породы, ни рыхлого"), true); return; }
+            }
+            s = m - 2;
+        }
+        PourSpecies = s;
+        PourLock = true;
+        Ui.Toast(Loc.T($"brush 1 keeps {w.Chem.MatName[s + 2]} for every stroke (Z — random again)", $"кисть 1 сыплет {w.Chem.MatName[s + 2]} каждым мазком (Z — снова случайный)"));
     }
 
     public override void _UnhandledInput(InputEvent e)
@@ -529,6 +586,10 @@ public partial class Main : Node
                 v.Follow = !v.Follow && v.Selected != null;
                 if (v.Follow) v.LookAt(v.Selected);
                 break;
+            case Key.F1: Ui.Tree.Toggle(); break;
+            case Key.F12: Ui.Metrics.Toggle(); break;
+            case Key.Z when Tool == 1: PourKey(Key.Z, k.ShiftPressed); break;
+            case Key.I when Tool == 1: PourKey(Key.I, false); break;
             case Key.F3: perf.Visible = !perf.Visible; perf.Reset(Sim); break;
             case Key.F2: Ui.Laws.Toggle(); break;
             case Key.F4: Ui.NewWorld.Toggle(); break;
@@ -624,8 +685,8 @@ public partial class Main : Node
                     }
                     if (Tool > 0)
                     {
-                        // A stroke: pouring takes a new random kind of matter each time.
-                        if (Tool == 1) NewPourSpecies();
+                        // A stroke: pouring takes a new random kind of matter each time, unless it is locked (Z, I).
+                        if (Tool == 1 && !PourLock) NewPourSpecies();
                         painting = true; paintWait = 0;
                         return;
                     }

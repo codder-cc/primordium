@@ -25,8 +25,9 @@ public partial class View3D
     readonly MultiMesh[] bodies = new MultiMesh[Looks.ShapeCount];
     readonly Mesh[] nearMesh = new Mesh[Looks.ShapeCount], farMesh = new Mesh[Looks.ShapeCount];
     readonly float[][] bodyBuf = new float[Looks.ShapeCount][];
-    MultiMesh caps, marks, links, flashes, foots;
-    float[] capBuf = Array.Empty<float>(), markBuf = Array.Empty<float>(), linkBuf = Array.Empty<float>(), footBuf = Array.Empty<float>();
+    MultiMesh caps, marks, links, flashes, foots, pins;
+    float[] capBuf = Array.Empty<float>(), markBuf = Array.Empty<float>(), linkBuf = Array.Empty<float>(), footBuf = Array.Empty<float>(), pinBuf = Array.Empty<float>();
+    static readonly Color PinPlanted = new(1f, 0.84f, 0.3f), PinKin = new(0.62f, 0.92f, 0.5f);
     readonly float[] flashBuf = new float[World.FlashCap * 16];
     MeshInstance3D selRing, hoverRing, brushRing;
     Mesh capNear, capFar;
@@ -39,7 +40,7 @@ public partial class View3D
     bool lodApplied;
 
     // Parallel fill: per chunk, how many instances of each kind it adds (and where they start).
-    const int MaxChunks = 32, Kinds = Looks.ShapeCount + 3;   // shapes, caps, marks, feet
+    const int MaxChunks = 32, Kinds = Looks.ShapeCount + 4;   // shapes, caps, marks, feet, pins
     readonly int[] chunkCount = new int[MaxChunks * Kinds], chunkStart = new int[MaxChunks * Kinds];
     byte[] visible = Array.Empty<byte>();
     public static int ViewWorkers = Math.Clamp(System.Environment.ProcessorCount / 3, 1, 4);   // --viewthreads
@@ -82,6 +83,7 @@ public partial class View3D
         marks = NewMM(new BoxMesh(), flat);
         links = NewMM(new BoxMesh(), flat);
         foots = NewMM(new BoxMesh(), flat);
+        pins = NewMM(new BoxMesh(), flat);   // a spinning diamond over the player's planted bodies (and a small one over their lineage)
         flashes = NewMM(new BoxMesh(), flat);
         flashes.InstanceCount = World.FlashCap;
 
@@ -270,6 +272,7 @@ public partial class View3D
                     if (!far && s.EnzTotal >= 0.5f) chunkCount[o + Looks.ShapeCount + 1]++;
                 }
                 if (s.Cells > 1) chunkCount[o + Looks.ShapeCount + 2] += s.Cells;
+                if (s.Mark > 0 && !dim) chunkCount[o + Looks.ShapeCount + 3]++;
             }
         });
         int drawn = 0;
@@ -280,7 +283,8 @@ public partial class View3D
             if (k < Looks.ShapeCount) { Ensure(bodies[k], ref bodyBuf[k], sum); drawn += sum; }
             else if (k == Looks.ShapeCount) Ensure(caps, ref capBuf, sum);
             else if (k == Looks.ShapeCount + 1) Ensure(marks, ref markBuf, sum);
-            else Ensure(foots, ref footBuf, sum);
+            else if (k == Looks.ShapeCount + 2) Ensure(foots, ref footBuf, sum);
+            else Ensure(pins, ref pinBuf, sum);
         }
         AgentsDrawn = drawn;
 
@@ -290,7 +294,7 @@ public partial class View3D
             int from = (int)((long)n * ch / chunks), to = (int)((long)n * (ch + 1) / chunks), o = ch * Kinds;
             Span<int> at = stackalloc int[Kinds];
             for (int k = 0; k < Kinds; k++) at[k] = chunkStart[o + k];
-            int capK = Looks.ShapeCount, markK = capK + 1, footK = capK + 2;
+            int capK = Looks.ShapeCount, markK = capK + 1, footK = capK + 2, pinK = capK + 3;
             for (int i = from; i < to; i++)
             {
                 if (visible[i] == 0) continue;
@@ -391,6 +395,18 @@ public partial class View3D
                 Put(bodyBuf[sh], at[sh]++, new Vector3(cr * sx, 0, -sr * sx), new Vector3(0, sy, 0), new Vector3(sr * sz, 0, cr * sz), pos, col);
                 if (dim) continue;
 
+                if (s.Mark > 0)
+                {
+                    // The player's mark: a diamond above the body, turning; from far away it stays a few pixels big.
+                    float ps = (s.Mark == 2 ? 0.34f : 0.2f) * (far ? Math.Max(1f, zoom / 90f) : 1f);
+                    float spin = t * 1.6f + s.Id * 0.7f, c1 = MathF.Cos(spin) * ps, s1 = MathF.Sin(spin) * ps;
+                    var pp = pos + new Vector3(0, sy * 0.5f + 0.35f + ps + 0.06f * MathF.Sin(t * 3f + s.Id), 0);
+                    // A cube stood on its corner: its x and z edges turn about the vertical, tilted by 45°.
+                    const float h = 0.7071f;
+                    Put(pinBuf, at[pinK]++, new Vector3(c1 * h, ps * h, -s1 * h), new Vector3(-c1 * h, ps * h, s1 * h), new Vector3(s1, 0, c1), pp,
+                        s.Mark == 2 ? PinPlanted : PinKin);
+                }
+
                 var cc = DietColor(s.EmaPhoto, s.EmaChem, s.EmaMine, s.EmaAttack);
                 PutBox(capBuf, at[capK]++, pos + new Vector3(0, sy * 0.5f + 0.06f, 0), new Vector3(0.42f * sc, 0.16f * sc, 0.42f * sc), new Color(cc.R * lum, cc.G * lum, cc.B * lum));
                 if (!far && s.EnzTotal >= 0.5f)
@@ -413,6 +429,8 @@ public partial class View3D
         marks.VisibleInstanceCount = chunkTotal(Looks.ShapeCount + 1, chunks);
         foots.Buffer = footBuf;
         foots.VisibleInstanceCount = chunkTotal(Looks.ShapeCount + 2, chunks);
+        pins.Buffer = pinBuf;
+        pins.VisibleInstanceCount = chunkTotal(Looks.ShapeCount + 3, chunks);
     }
 
     int chunkTotal(int k, int chunks) => chunkStart[(chunks - 1) * Kinds + k] + chunkCount[(chunks - 1) * Kinds + k];

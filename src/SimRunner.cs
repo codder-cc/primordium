@@ -18,6 +18,7 @@ public struct AgentSnap
     public float EnzPhoto, EnzChem, EnzMotor, EnzTotal;
     public int Act, ActDir;
     public long ActTick;
+    public byte Mark;                       // 2: planted by the player (Agent.Designed), 1: of a planted design's lineage
 }
 
 // One published picture of the world for the view and the panel. Three of them rotate (SimRunner):
@@ -130,6 +131,7 @@ public sealed class SimRunner
     public volatile string Error;
     public volatile ChronicleView Chronicle = ChronicleView.Empty;   // replaced, never changed (see ChronicleView)
     public volatile EvolutionView Evolution = EvolutionView.Empty;   // replaced, never changed (see EvolutionView)
+    public readonly SimObserver Obs = new();                          // metrics, lineages and the clade tree over time (observation only)
     long evolutionSeen = -1;
     long chronicleSeen = -1;
     double chronicleAt;
@@ -250,6 +252,7 @@ public sealed class SimRunner
             for (int k = 0; k < evRate.Length; k++) evRate[k] = w.Ev[k] - evPrev[k];
             Array.Copy(w.Ev, evPrev, evPrev.Length);
         }
+        Obs.AfterTick(w);
         double ms = (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency;
         TotalTickMs += ms;
         TotalTicks++;
@@ -277,6 +280,7 @@ public sealed class SimRunner
             {
                 bool acted = false;
                 while (commands.TryDequeue(out var c)) { c(World); acted = true; }
+                Obs.Between(World, clock.Elapsed.TotalSeconds);
                 if (!FastForward) MaybeAutosave(clock.Elapsed.TotalSeconds);
                 bool ticked = false;
                 double now = clock.Elapsed.TotalSeconds;
@@ -370,6 +374,7 @@ public sealed class SimRunner
         if (f.Feet.Length < f.Agents.Length * P.MaxCells) f.Feet = new int[f.Agents.Length * P.MaxCells];
         var snaps = f.Agents;
         var feet = f.Feet;
+        var designed = w.DesignedLineages;   // only read here (the world is not stepping)
         // Snapshot i is body i of the list (a body killed by the hand since the tick gets Ref = null).
         // Chunks in parallel: the world is not stepping while this runs.
         int chunks = Math.Clamp(n / 4096, 1, chunkLinks.Length);
@@ -403,6 +408,7 @@ public sealed class SimRunner
                 }
                 s.EnzPhoto = ph; s.EnzChem = chem; s.EnzMotor = mo; s.EnzTotal = tot;
                 s.Act = a.Act; s.ActDir = a.ActDir; s.ActTick = a.ActTick;
+                s.Mark = a.Designed ? (byte)2 : designed.Count > 0 && designed.ContainsKey(a.Lineage) ? (byte)1 : (byte)0;
                 int cell = a.Y * World.W + a.X;
                 s.Crowd = w.Count[cell];
                 s.Foot = i * P.MaxCells;

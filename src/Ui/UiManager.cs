@@ -40,6 +40,8 @@ public partial class UiManager : Control
     public FossilWindow Fossil;
     public EvolutionWindow Evolution;
     public CatastropheWindow Catastrophes;
+    public TreeWindow Tree;
+    public MetricsWindow Metrics;
 
     readonly ConcurrentQueue<Action> posted = new();
     VBoxContainer toastBox;
@@ -92,6 +94,8 @@ public partial class UiManager : Control
             (Loc.T("Designer  F7", "Конструктор  F7"), Loc.T("your own creatures: genome, body, planting with brush 5", "свои существа: геном, тело, посадка кистью 5"), () => Creator.Toggle()),
             (Loc.T("Chronicle  F8", "Хроника  F8"), Loc.T("world events, fossils; the selected body's biography is a tab in its card", "события мира, окаменелости; биография выбранного — вкладка в карточке существа"), () => Chronicle.Toggle()),
             (Loc.T("Evolution  F10", "Ход эволюции  F10"), Loc.T("novelty vs. the neutral shadow, complexity, ecology, tempo, phylogeny; a summary hint", "новизна против нейтральной тени, сложность, экология, темп, филогения; сводная подсказка"), () => Evolution.Toggle()),
+            (Loc.T("Tree of life  F1", "Древо жизни  F1"), Loc.T("lineages over time and the cladogram of living clades; a click flies to a member or opens a fossil", "линии во времени и кладограмма живых ветвей; клик — к представителю или его окаменелости"), () => Tree.Toggle()),
+            (Loc.T("Metrics  F12", "Метрики  F12"), Loc.T("evolution metrics over time: pick series, hover for values, export CSV", "метрики эволюции во времени: выбор рядов, значения под курсором, экспорт CSV"), () => Metrics.Toggle()),
             (Loc.T("Catastrophes  F11", "Катастрофы  F11"), Loc.T("ice age, flood, volcanic winter, solar flare, drought, poisoning — by the same laws as the rest of the world", "ледниковье, потоп, вулканическая зима, вспышка, засуха, отравление — теми же законами, что и в мире"), () => Catastrophes.Toggle()),
         })
         {
@@ -114,6 +118,8 @@ public partial class UiManager : Control
         Add(Fossil = new FossilWindow());
         Add(Evolution = new EvolutionWindow());
         Add(Catastrophes = new CatastropheWindow());
+        Add(Tree = new TreeWindow());
+        Add(Metrics = new MetricsWindow());
 
         toastBox = UiKit.Col(4);
         toastBox.MouseFilter = MouseFilterEnum.Ignore;
