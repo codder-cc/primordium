@@ -50,6 +50,9 @@ public partial class View3D
         if (frame % 3 != 0) return;
         int nw = 0, ni = 0;
         for (int i = 0; i < N; i++) { if (w.Water[i] > 0.04f) nw++; if (w.Ice[i] > 0.04f) ni++; }
+        var caveWater = w.CaveWaterView;   // water standing in caves (World.Waterways): a copy, safe to read here
+        nw += caveWater.Length;
+        bool floats = P.IceFloat != 0;     // ice on top of the water (World.Climate), or under it as before
         Ensure(water, ref waterBuf, nw);
         Ensure(ice, ref iceBuf, ni);
         nw = ni = 0;
@@ -60,7 +63,7 @@ public partial class View3D
             int x = i % W, y = i / W;
             if (Slice >= 0 && y > Slice) continue;
             float g = w.Height[i] * BH, lum = Lighting ? 0.45f + 0.55f * MathF.Min(1, w.Light[i] * 1.6f + 0.2f) : 1f;
-            if (id > 0.04f)
+            if (id > 0.04f && !floats)
             {
                 float h = id * BH;
                 PutBox(iceBuf, ni++, new Vector3(x + 0.5f, g + h * 0.5f, y + 0.5f), new Vector3(1, h, 1), new Color(0.78f, 0.88f, 0.95f) * lum);
@@ -68,18 +71,35 @@ public partial class View3D
             }
             if (wd > 0.04f)
             {
-                float h = wd * BH;
-                float deep = Math.Min(1, wd / 6f);
-                var c = new Color(0.2f, 0.45f, 0.75f).Lerp(new Color(0.05f, 0.15f, 0.38f), deep) * lum;
-                c.A = 0.45f + 0.35f * deep;
-                Put(waterBuf, nw++, new Vector3(1, 0, 0), new Vector3(0, h, 0), new Vector3(0, 0, 1), new Vector3(x + 0.5f, g + h * 0.5f, y + 0.5f), c);
-                waterBuf[(nw - 1) * 16 + 15] = c.A;
+                PutWater(ref nw, x, y, g, wd, lum);
+                g += wd * BH;
             }
+            if (id > 0.04f && floats)
+            {
+                float h = id * BH;
+                PutBox(iceBuf, ni++, new Vector3(x + 0.5f, g + h * 0.5f, y + 0.5f), new Vector3(1, h, 1), new Color(0.78f, 0.88f, 0.95f) * lum);
+            }
+        }
+        foreach (var (v, depth) in caveWater)
+        {
+            int i = v / Z, x = i % W, y = i / W;
+            if (Slice >= 0 && y > Slice) continue;
+            PutWater(ref nw, x, y, (v % Z) * BH, depth, 0.45f);   // under a roof: no daylight
         }
         water.Buffer = waterBuf;
         water.VisibleInstanceCount = nw;
         ice.Buffer = iceBuf;
         ice.VisibleInstanceCount = ni;
+    }
+
+    void PutWater(ref int nw, int x, int y, float g, float wd, float lum)
+    {
+        float h = wd * BH;
+        float deep = Math.Min(1, wd / 6f);
+        var c = new Color(0.2f, 0.45f, 0.75f).Lerp(new Color(0.05f, 0.15f, 0.38f), deep) * lum;
+        c.A = 0.45f + 0.35f * deep;
+        Put(waterBuf, nw++, new Vector3(1, 0, 0), new Vector3(0, h, 0), new Vector3(0, 0, 1), new Vector3(x + 0.5f, g + h * 0.5f, y + 0.5f), c);
+        waterBuf[(nw - 1) * 16 + 15] = c.A;
     }
 
     // Rain and snow fall only where clouds actually rain, near what the camera looks at.

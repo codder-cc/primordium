@@ -246,6 +246,22 @@ public static class P
     public static float Solubility = 0.01f;
     public static float Evap = 0.0004f;         // per env step from open water at 20 °C
     public static float RainShare = 0.02f;      // of the air's moisture falls per env step
+    // Water as a fluid (World.Waterways). Currents: the water's own flow between columns (runoff, rain,
+    // evaporation, sea level) is a velocity; a body off the bottom moves with the water around it (drag
+    // brings it to the water's speed within a few ticks), one free step at a time, keeping its height.
+    // Currents 0 — off: the water does not carry bodies, as before.
+    public static int Currents = 1;
+    // Ice floats: it is lighter than water and forms on top of it, so the liquid stays under the ice. The
+    // air's cold reaches IceInsulation blocks into open water per env step (the old rate, 2% of that layer),
+    // and every IceInsulation blocks of ice already on top slow further freezing as much again (heat
+    // leaves through the ice). Bodies under the ice are cut off from the air by it as by as much water.
+    // IceFloat 0 — off: water freezes through at 2% of its depth per step, as before.
+    public static int IceFloat = 1;
+    public static float IceInsulation = 0.5f;
+    // Water enters caves: liquid water runs through open faces into the voids under the surface and
+    // between them, by the same law as between columns (a share of the difference in water level),
+    // falling to each void's floor; caves flood and drain. CaveWater 0 — off: caves stay dry, as before.
+    public static int CaveWater = 1;
 
     // Resources (World.Resources): how far the air's gas travels and where bodies can reach it.
     // GasDiffK multiplies the gas's diffusion (Chemistry.Diff of the gas, from its mass): 1 — as

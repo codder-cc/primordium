@@ -269,6 +269,10 @@ public static class ParamRegistry
         F("Solubility", "Вода", "Share of bottom remains available to a swimmer", "Доля донных останков, доступная пловцу", 0, 1, 0.005);
         F("Evap", "Вода", "Evaporation per environment step at 20 °C", "Испарение за шаг среды при 20 °C", 0, 0.01, 0.0001);
         F("RainShare", "Вода", "Share of air moisture that falls per environment step", "Доля влаги воздуха, выпадающая за шаг среды", 0, 0.5, 0.005);
+        I("Currents", "Вода", "Currents: water flowing between columns carries bodies off the bottom with it (1 on, 0 off)", "Течения: вода, текущая между столбами, несёт с собой тела над дном (1 — вкл, 0 — выкл)", 0, 1, 1);
+        I("IceFloat", "Вода", "Ice floats: it forms on top of the water and insulates it, the water stays liquid under it (1 on, 0 water freezes through as before)", "Лёд плавает: нарастает поверх воды и укрывает её, под ним вода остаётся жидкой (1 — вкл, 0 — вода промерзает насквозь, как раньше)", 0, 1, 1);
+        F("IceInsulation", "Вода", "Ice floats: how deep the cold reaches into open water per step, and how much ice slows freezing as much again, blocks", "Лёд плавает: на сколько блоков холод проникает в открытую воду за шаг и сколько льда вдвое замедляет промерзание, блоков", 0.05, 10, 0.05);
+        I("CaveWater", "Вода", "Water enters caves through open faces, floods and drains them (1 on, 0 caves stay dry)", "Вода затекает в пещеры через открытые грани, затапливает их и уходит (1 — вкл, 0 — пещеры сухие)", 0, 1, 1);
         // Resources (World.Resources)
         F("GasDiffK", "Ресурсы", "Air gas diffusion multiplier (1 as before; less makes gas more local, eaten out on the spot)", "Множитель диффузии газа воздуха (1 — как раньше; меньше — газ локальнее, выедается на месте)", 0, 2, 0.01);
         F("CaveGasK", "Ресурсы", "Gas under a roof: roof blocks per e-fold weakening of access to the column's gas (0 off: under a roof, only what lies on the cavity floor)", "Газ под крышей: блоков крыши на e-кратное ослабление доступа к газу столба (0 — выкл: под крышей только лежащее на полу полости)", 0, 50, 0.5);

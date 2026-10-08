@@ -47,7 +47,9 @@ public sealed partial class World
     // 10: the climate cycles block (SyncClimateCycles, World.ClimateCycles) after the sky.
     // 11: the sky block ends with every body's canopy store (Agent.LightQuota, World.Sky); before it the
     // stores start empty.
-    public const int SaveVersion = 11, OldestSaveVersion = 1;
+    // 12: the waterways block (SyncWaterways, World.Waterways) after the climate cycles: currents, the
+    // water standing in caves, the drift of every body. Older files load with still water and dry caves.
+    public const int SaveVersion = 12, OldestSaveVersion = 1;
     static readonly byte[] SaveMagic = Encoding.ASCII.GetBytes("PRIMSAVE");
     const int EndMarker = 0x21444E45;   // "END!"
 
@@ -269,6 +271,7 @@ public sealed partial class World
         SyncGeochem(s);                           // version 7: its own block after the course of evolution
         SyncSky(s);                               // version 8: its own block after the geochemistry (World.Sky)
         SyncClimateCycles(s);                     // version 10: its own block after the sky (World.ClimateCycles)
+        SyncWaterways(s);                         // version 12: its own block after the climate cycles (World.Waterways)
     }
 
     // ---- cave climate (save version 5, World.Cave) ----

@@ -54,7 +54,7 @@ public static class Batch
     }
 
     public static readonly string[] RunColumns = new[] { "seed", "rep", "tick", "pop", "births", "deaths", "ms_tick", "mean_temp" }
-        .Concat(EvoMetrics.Names.Skip(1)).Concat(EvolutionHistory.Names.Skip(1)).Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames).Concat(World.GeoNames).Concat(World.ResNames).Concat(World.SkyNames).Concat(World.ClimNames).Concat(World.WearNames).Concat(new[] { "energy_drift", "energy_tolerance", "atom_drift", "hash", "params" }).ToArray();
+        .Concat(EvoMetrics.Names.Skip(1)).Concat(EvolutionHistory.Names.Skip(1)).Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames).Concat(World.GeoNames).Concat(World.ResNames).Concat(World.SkyNames).Concat(World.ClimNames).Concat(World.WearNames).Concat(World.WaterNames).Concat(new[] { "energy_drift", "energy_tolerance", "atom_drift", "hash", "params" }).ToArray();
 
     // The latest sample of the course of evolution (World.Evolution), without its tick; zeros before the first.
     public static double[] ProgressRow(World w) =>
@@ -142,6 +142,7 @@ public static class Batch
             row.AddRange(w.ClimCensus().Select(x => F(x)));
             var wear = w.WearCensus();
             row.AddRange(wear.Select(x => F(x)));
+            row.AddRange(w.WaterCensus().Select(x => F(x)));
             row.AddRange(new[] { drift, tol, atomDrift, w.StateHash().ToString("x16"), paramText });
             o.WriteLine(string.Join(",", row));
             o.Flush();
@@ -410,7 +411,7 @@ public static class Batch
     // ---- summary ----
 
     static readonly string[] SummaryColumns = new[] { "pop", "births", "deaths", "ms_tick", "mean_temp" }.Concat(EvoMetrics.Names.Skip(1)).Concat(EvolutionHistory.Names.Skip(1))
-        .Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames).Concat(World.GeoNames).Concat(World.ResNames).Concat(World.SkyNames).Concat(World.ClimNames).Concat(World.WearNames).Concat(new[] { "energy_drift", "atom_drift" }).ToArray();
+        .Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames).Concat(World.GeoNames).Concat(World.ResNames).Concat(World.SkyNames).Concat(World.ClimNames).Concat(World.WearNames).Concat(World.WaterNames).Concat(new[] { "energy_drift", "atom_drift" }).ToArray();
 
     static void WriteSummary(RunTable t, string path, double extinct, double boom)
     {
@@ -550,7 +551,7 @@ public static class Batch
         }
         foreach (int c in Checkpoints(common)) Line($"pop @{c}", c, "pop", "F0");
         foreach (var col in new[] { "mean_temp", "ms_tick", "births", "deaths" }) Line($"{col} @{end}", end, col, "F2");
-        foreach (var col in EvoMetrics.Names.Skip(1).Concat(EvolutionHistory.Names.Skip(1)).Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames).Concat(World.GeoNames).Concat(World.ResNames).Concat(World.SkyNames).Concat(World.ClimNames).Concat(World.WearNames)) Line($"{col} @{end}", end, col, "F3");
+        foreach (var col in EvoMetrics.Names.Skip(1).Concat(EvolutionHistory.Names.Skip(1)).Concat(new[] { "falls", "crushed", "buried_bodies", "pressure_reactions", "sediments" }).Concat(World.CaveNames).Concat(World.GeoNames).Concat(World.ResNames).Concat(World.SkyNames).Concat(World.ClimNames).Concat(World.WearNames).Concat(World.WaterNames)) Line($"{col} @{end}", end, col, "F3");
         PrintAligned(lines);
         int Count(RunTable t, Func<double, bool> f, bool max) => (max ? t.RunMax("pop") : t.RunLast("pop")).Count(f);
         int na = a.Runs.Count, nb = b.Runs.Count;

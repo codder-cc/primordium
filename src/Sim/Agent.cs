@@ -32,6 +32,7 @@ public sealed class Agent
     public int X, Y, Z; // Z is the free voxel occupied above a floor, also inside caves
     public float Vx, Vy;
     public float Lift, Vz;   // in water: how high above its floor it swims (blocks), and how fast it rises
+    public float DriftX, DriftY;   // in water: how far the current has carried it towards the next cell (World.Waterways)
     public double Energy;                      // free energy: double, so the energy ledger closes (see World.Energy)
     public float Tb;                           // body temperature, °C
     public int Age;

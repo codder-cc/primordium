@@ -242,13 +242,13 @@ public sealed partial class World
             // Room by volume: a body gets in if it fits once everybody smaller has been pushed aside.
             bool ok = to != cell && targetZ >= 0 && Fits(to, targetZ, Share(a), a);
             bool wet = InWater(cell, a.Z), toWet = ok && InWater(to, targetZ);
-            float lift = toWet ? Math.Clamp(level - targetZ, 0, Water[to]) : 0;
+            float lift = toWet ? Math.Clamp(level - targetZ, 0, WaterTop(to, targetZ)) : 0;
             if (ok)
             {
                 float dh = targetZ + lift - level, cost = 0;
                 if (dh > 1) ok = false;
                 else if (dh > 0) cost = P.CostClimb * dh * (toWet ? Weight(a) : a.Mass);
-                if (wet || toWet) cost += Stroke(a, wet ? Below(a, cell) : Math.Max(0, Water[to] - lift));
+                if (wet || toWet) cost += Stroke(a, wet ? Below(a, cell) : Math.Max(0, WaterOver(to, targetZ) - lift));
                 if (ok && cost > 0)
                 {
                     if (a.Energy > cost + 1) Dissipate(a, cost); else ok = false;
@@ -268,6 +268,7 @@ public sealed partial class World
             else if (dir % 2 == 0) a.Vx = 0; else a.Vy = 0;
         }
         Float(a, cell);
+        if (P.Currents != 0) Drift(a, ref cell);   // the current carries a body off the bottom (World.Waterways)
         float fr = InWater(cell, a.Z) ? P.WaterFriction : P.Friction;
         a.Vx *= fr; a.Vy *= fr;
     }

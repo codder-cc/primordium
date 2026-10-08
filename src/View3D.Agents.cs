@@ -347,7 +347,8 @@ public partial class View3D
                 // Height follows the ground smoothly; climbing a step is a little hop.
                 int cell = s.Y * W + s.X;
                 float ground = s.Z == height[cell] ? groundTop[cell] : s.Z * BH;
-                if (s.Lift > 0) ground += (s.Lift + w.Ice[cell]) * BH;   // swimming above the bottom (the ice lies under the water here)
+                // Swimming above the bottom: floating ice is above the water (P.IceFloat), without the law it lies under it.
+                if (s.Lift > 0) ground += (s.Lift + (P.IceFloat != 0 || s.Z < height[cell] ? 0 : w.Ice[cell])) * BH;
                 if (s.Cells > 1)
                 {
                     // A big body: drawn larger, centred over all its cells, which get a tinted floor.

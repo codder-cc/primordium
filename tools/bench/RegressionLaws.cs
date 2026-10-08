@@ -100,12 +100,14 @@ public sealed partial class World
         for (int v = 0; v < N * Z; v++) if (Pressure[v] != 0) { Mix((ulong)v); F(Pressure[v]); }
         for (int i = 0; i < N; i++) { F(Temp[i]); F(Water[i]); F(Ice[i]); F(Photon[i]); F(Bite[i]); }
         for (int i = 0; i < N; i++) { F(Tmean[i]); F(CaveWarm[i]); F(caveHeatIn[i]); }
+        for (int i = 0; i < N; i++) if (CurX[i] != 0 || CurY[i] != 0) { Mix((ulong)i); F(CurX[i]); F(CurY[i]); }
+        foreach (int v in SortedKeys(cave)) { Mix((ulong)v); F(cave[v]); }
         F(GlaciN); F(GlaciS); Mix((ulong)climT0); Mix((ulong)forcedIceUntil);
         for (int i = 0; i < N; i++) if (Veil[i] != 0) { Mix((ulong)i); F(Veil[i]); }
         foreach (var kv in Buried.OrderBy(kv => kv.Key)) { Mix((ulong)kv.Key); foreach (var m in kv.Value.Matter) Mix((ulong)m.Raw); F(kv.Value.Order); }
         foreach (var a in Agents)
         {
-            F(a.Mass); F(a.Volume); F(a.Tb); F(a.Lift); F(a.Vx); F(a.LightQuota); Mix((ulong)BitConverter.DoubleToInt64Bits(a.HeatHeld));
+            F(a.Mass); F(a.Volume); F(a.Tb); F(a.Lift); F(a.Vx); F(a.LightQuota); F(a.DriftX); F(a.DriftY); Mix((ulong)BitConverter.DoubleToInt64Bits(a.HeatHeld));
             Mix((ulong)a.Ip << 32 ^ (ulong)a.Sp << 16 ^ (ulong)a.InvTotal ^ (ulong)a.EnzN << 48 ^ (ulong)a.Links.Count << 56);
             for (int k = 0; k < a.EnzN; k++) F(a.Enz[k].Amount);
         }
@@ -184,14 +186,19 @@ public sealed partial class World
                 // the original is first rounded to what they can hold (the rounding the writer does);
                 // then the loaded world is the same world and goes on the same way. Version 2 keeps
                 // the ledger; version 1 has none: it starts from zero and closes from the load.
-                foreach (int version in new[] { 8, 4, 2, 1 })
+                // Newest first: each older version drops what the newer ones still kept (the original
+                // is brought to it step by step), so 11 and 10 check that the later blocks are read only
+                // from their own versions on.
+                foreach (int version in new[] { 11, 10, 8, 4, 2, 1 })
                 {
                     double[] exact = a.ElementBudget();
-                    a.RoundAmountsToFloat();
-                    a.InitCaveClimate();   // nor do they hold the cave climate (version 5): it starts again from Temp
-                    a.SkyFromOldFile();    // nor the sky (version 8): rebuilt at the load
-                    a.ClimateFromOldFile();   // nor the climate cycles (version 10): neutral phase from the load, nothing running
-                    a.EnergyToFloat();     // nor energies as doubles (version 9)
+                    a.WaterwaysFromOldFile();   // they hold no currents, drift and cave water (version 12)
+                    if (version < 11) foreach (var x in a.Agents) x.LightQuota = 0;   // nor the canopy's stores (version 11)
+                    if (version < 10) a.ClimateFromOldFile();   // nor the climate cycles (version 10): neutral phase from the load, nothing running
+                    if (version < 9) a.EnergyToFloat();     // nor energies as doubles (version 9)
+                    if (version < 8) a.SkyFromOldFile();    // nor the sky (version 8): rebuilt at the load
+                    if (version < 5) a.InitCaveClimate();   // nor the cave climate (version 5): it starts again from Temp
+                    if (version < 4) a.RoundAmountsToFloat();   // amounts of matter as floats before version 4
                     if (version < 7) a.GeoOn = false;   // nor the geochemistry (version 7): such a file loads with the depth profile off
                     double[] rounded = a.ElementBudget();
                     for (int e = 0; e < exact.Length; e++)

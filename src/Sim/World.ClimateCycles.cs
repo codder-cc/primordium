@@ -425,7 +425,7 @@ public sealed partial class World
 
     // ---- the water budget ----
 
-    // All the water of the world: on the ground, as ice, as snow and in the air. Closed but for the hand
+    // All the water of the world: on the ground and in caves, as ice, as snow and in the air. Closed but for the hand
     // and floods (WaterHand): the water cycle only moves it.
     public double WaterTotal()
     {
@@ -437,7 +437,7 @@ public sealed partial class World
     {
         double w = 0, ice = 0, snow = 0;
         for (int i = 0; i < N; i++) { w += Water[i]; ice += Ice[i]; snow += Snow[i]; }
-        return (w, ice, snow, Moisture);
+        return (w + CaveWaterTotal(), ice, snow, Moisture);   // the liquid in caves too (World.Waterways)
     }
 
     // ---- droughts ----

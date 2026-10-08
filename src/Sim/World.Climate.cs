@@ -117,8 +117,8 @@ public sealed partial class World
     void Hydro()
     {
         float rainNow = RainSum > 1e-3f ? Moisture * P.RainShare : 0, perRain = rainNow / Math.Max(1e-3f, RainSum);
-        bool sky = TranspLaw;
-        float hydro = P.TranspHydro;
+        bool sky = TranspLaw, floats = P.IceFloat != 0;
+        float hydro = P.TranspHydro, ins = P.IceInsulation;
         Parallel.For(0, H, y =>
         {
             float ev = 0;
@@ -128,7 +128,13 @@ public sealed partial class World
                 float T = Temp[i], add = Rain[i] * perRain;
                 if (add > 0) { if (T < 0) Snow[i] += add; else Water[i] += add; }
                 if (Snow[i] > 0 && T > 0) { float m = Math.Min(Snow[i], 0.003f * T); Snow[i] -= m; Water[i] += m; }
-                if (T < -1 && Water[i] > 0.01f) { float f = Water[i] * 0.02f; Water[i] -= f; Ice[i] += f; }
+                if (T < -1 && Water[i] > 0.01f)
+                {
+                    // Floating ice (IceFloat) freezes from the top: the cold reaches the top `ins` blocks
+                    // of open water, and the ice already there keeps it from the water below.
+                    float f = floats ? 0.02f * Math.Min(Water[i], ins) * ins / (ins + Ice[i]) : Water[i] * 0.02f;
+                    Water[i] -= f; Ice[i] += f;
+                }
                 else if (T > 1 && Ice[i] > 0) { float m = Math.Min(Ice[i], 0.003f * T); Ice[i] -= m; Water[i] += m; }
                 if (Water[i] > 0 && T > -5)
                 {
@@ -144,11 +150,17 @@ public sealed partial class World
         for (int y = 0; y < H; y++) evap += rowSum[y];
         Moisture = Math.Max(0, Moisture + evap - rainNow);
         Flow();
+        CaveFlow();   // into and out of the caves, between them (World.Waterways)
     }
 
-    // Water runs to neighbours whose surface (ground + ice + water) is lower.
+    // Water runs to neighbours whose surface (ground + ice + water) is lower. What runs through a
+    // column is its current (World.Waterways): the net flow through its faces over its depth.
     void Flow()
     {
+        bool currents = P.Currents != 0;
+        if (!currents && currentsOn) { Array.Clear(CurX); Array.Clear(CurY); }
+        currentsOn = currents;
+        float perTick = 0.5f / P.EnvEvery, deep = P.SwimDepth;
         Parallel.For(0, H, y =>
         {
             for (int x = 0; x < W; x++)
@@ -167,13 +179,25 @@ public sealed partial class World
             for (int x = 0; x < W; x++)
             {
                 int i = y * W + x, b = i * 4;
-                float w = Water[i] - (flowOut[b] + flowOut[b + 1] + flowOut[b + 2] + flowOut[b + 3]);
+                float w0 = Water[i], w = w0 - (flowOut[b] + flowOut[b + 1] + flowOut[b + 2] + flowOut[b + 3]);
+                float in0 = 0, in1 = 0, in2 = 0, in3 = 0;
                 for (int d = 0; d < 4; d++)
                 {
                     int j = nb[b + d];
-                    if (j != i) w += flowOut[j * 4 + ((d + 2) & 3)];
+                    if (j == i) continue;
+                    float q = flowOut[j * 4 + ((d + 2) & 3)];
+                    w += q;
+                    if (d == 0) in0 = q; else if (d == 1) in1 = q; else if (d == 2) in2 = q; else in3 = q;
                 }
                 Water[i] = Math.Max(0, w);
+                if (currents)
+                {
+                    // Through the east face out minus in, through the west face in minus out: the mean of
+                    // the two over the depth is the water's speed east (cells a tick); the same north.
+                    float k = perTick / Math.Max(w0, deep);
+                    CurX[i] = (flowOut[b] - in0 + in2 - flowOut[b + 2]) * k;
+                    CurY[i] = (flowOut[b + 1] - in1 + in3 - flowOut[b + 3]) * k;
+                }
             }
         });
     }

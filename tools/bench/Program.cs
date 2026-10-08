@@ -31,6 +31,7 @@ if (Array.IndexOf(args, "--self-test-react") >= 0) { World.ReactRegression(); Wo
 if (Array.IndexOf(args, "--self-test-leach") >= 0) { World.LeachRegression(); return; }   // just the leaching test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-geochem") >= 0) { World.GeochemRegression(); return; }   // just the geochemistry test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-population") >= 0) { World.PopulationRegression(); return; }   // just the population templates test (also in --self-test)
+if (Array.IndexOf(args, "--self-test-water") >= 0) { World.WaterwaysRegression(); return; }   // just currents, floating ice and cave water (also in --self-test)
 if (Array.IndexOf(args, "--self-test-climate") >= 0) { World.ClimateCyclesRegression(); return; }   // just the climate cycles test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-region") >= 0) { World.RegionRegression(); return; }   // just the regions test (also in --self-test)
 if (Array.IndexOf(args, "--list-params") >= 0)

@@ -60,6 +60,7 @@ public sealed partial class World
         Array.Clear(w.Mat); Array.Clear(w.Units); Array.Clear(w.Order);
         foreach (var c in w.C) Array.Clear(c);
         Array.Clear(w.Water); Array.Clear(w.Ice); Array.Clear(w.Snow);
+        Array.Clear(w.CurX); Array.Clear(w.CurY);   // still water (World.Waterways)
         for (int c = 0; c < N; c++)
         {
             w.Height[c] = 2;
@@ -161,6 +162,7 @@ public sealed partial class World
         VolumeRegression();
         FaceRegression();
         WaterRegression();
+        WaterwaysRegression();
         HandRegression();
         RegionRegression();
         RubbleRegression();
