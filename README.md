@@ -98,15 +98,21 @@ dotnet run -c Release --project tools/bench -- --seed 1 --ticks 10000 --every 10
 dotnet run -c Release --project tools/bench -- --list-params               # all 201 world laws
 dotnet run -c Release --project tools/bench -- --batch --seeds 1-16 --reps 3 --ticks 6000 --out runs/base
 dotnet run -c Release --project tools/bench -- --compare runs/base/runs.csv runs/try/runs.csv
+dotnet run -c Release --project tools/bench -- --batch ... --resume                  # after a crash: only the unfinished runs
+dotnet run -c Release --project tools/bench -- --batch ... --shard 1/2 --machine a   # split a batch over machines, then:
+dotnet run -c Release --project tools/bench -- --merge runs/all runs/a runs/b        # one runs.csv; hashes checked across machines
+dotnet run -c Release --project tools/bench -- --punctuated runs/ice --control runs/ctrl   # tempo after catastrophes vs the same worlds without
 dotnet run -c Release --project tools/bench -- --invade my_design.json --seeds 1-6   # plant a creature-designer file, follow its lineage
 dotnet run -c Release --project tools/bench -- --seed 3 --ticks 2000 --copy-population pop.json         # copy the biggest lineage at the end
 dotnet run -c Release --project tools/bench -- --seed 5 --plant-population pop.json --at 100,60 --audit   # paste it first (another chemistry is mapped); --local, --local-energy
 dotnet run -c Release --project tools/bench -- --tournament --seed 2 --ticks 8000    # ancestors vs moderns in a copy of the world
 dotnet run -c Release --project tools/bench -- --food-chain --seeds 1-2              # who eats whom: trophic levels, chain length
 dotnet run -c Release --project tools/bench -- --perf-baseline --make                # once: make the reference boom save
-dotnet run -c Release --project tools/bench -- --perf-baseline --ticks 2000          # ms/tick by stage on it, end hash
+dotnet run -c Release --project tools/bench -- --perf-baseline --ticks 2000 --repeat 3   # ms/tick by stage, median of 3, end hash
 dotnet run -c Release --project tools/bench -- --seed 4 --audit --paste-region valley.region --at 100,40 --rotate 1   # paste a region file (made by the game or --copy-region x,y,w,h file)
 ```
+
+`--batch` runs as many processes as there are performance cores by default (macOS: `hw.perflevel0.physicalcpu`); every row of `runs.csv` carries the `machine` and the `code_version` (git commit). The evolution metrics also cover depth (`roofed_share`, `body_depth_*`, `mine_depth`), spatial heterogeneity over 32×32 regions (`pop_moran`, `diet_moran`, `diet_beta_rel`) and oscillation of diet shares against shuffled surrogates (`osc_*`, `hunt_*`; sample with `--every 100`–`250`).
 
 Decide on laws with batches, not single runs: `--compare` reports medians with bootstrap intervals, Mann–Whitney, a sign test across seeds and Fisher's test for extinctions and booms. Add `--lang ru` for Russian output. The full flag reference is in [README.ru.md](README.ru.md) and [docs/SIMULATION.md](docs/SIMULATION.md).
 
