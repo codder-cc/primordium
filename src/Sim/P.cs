@@ -131,6 +131,12 @@ public static class P
     // Wear: every held molecule, WearK·TempFactor(Tb)·e^(−WearHold·Bond) per tick. 0 switches a law off.
     public static float PhotoDamage = 0f, PhotoHold = 10f, PhotoCage = 1f;
     public static float WearK = 0f, WearHold = 3f;
+    // Reactive damage (World.Life), one law for every species: a molecule a body holds reacts with its
+    // protein substrate with chance ReactK·Reactivity·TempFactor(Tb) per tick (Reactivity = mean atom
+    // affinity × excitation energy, Chemistry); one lying in the cell it stands on, ReactContact times
+    // that. A reaction wears one protein by ReactWear (its substrate returns to the body, atoms kept)
+    // and spends the molecule's excitation as heat (it drops to its ground state). ReactK 0 switches it off.
+    public static float ReactK = 3e-4f, ReactContact = 0.2f, ReactWear = 0.5f;
     public static float UvK = 3e-6f;            // somatic mutation chance per genome byte per tick in full light
     public static float HeatToTemp = 0.12f;     // °C a cell warms per unit of energy its bodies dissipate (a quarter of that in water)
     // Bodies that outgrow one cell: covering k+1 cells needs mass GrowMass·k^GrowPow (80, ~211, ~373 … ~1720 for 10).

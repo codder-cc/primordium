@@ -61,7 +61,12 @@ public partial class Main : Node
     public volatile int PourSpecies = -1;   // chosen on the simulation thread (it draws from the world's random numbers)
     public bool PourLock;                   // brush 1 keeps its material from stroke to stroke (Z; I takes the one under the cursor)
     public float BrushR = 3;
-    bool painting;
+    // Brush 1 with a recipe of the matter library (J): exactly that mix, order and form every stroke
+    // (null: a single random or locked species as before). Set by MatterWindow or by I (exact sample).
+    public MatterRecipe PourRecipe;
+    public double[] PourMix;
+    public Rgb PourColour;
+    bool painting, strokeOpen;
     double paintWait;
     int startTool, paintDabs;   // for screenshots: a brush and a number of dabs at the centre of the screen
     int plantAtStart;           // --plant N: N bodies of the first example design brought in near the busiest lineage, one selected (screenshots of the mark)
@@ -120,7 +125,7 @@ public partial class Main : Node
                 // "window" or "window:view" (newworld:more, creator:looks, creator:help) — for screenshots.
                 if (item == "none") continue;   // no window, and none restored from ui.json either
                 var part = item.Split(':');
-                var win = Ui.ById(part[0] == "params" ? "laws" : part[0]) ?? throw new ArgumentException("--open: laws|params, newworld[:more], saves, creator[:looks|:help], chronicle[:fossils], fossil[:bio|:ancestry], evolution, tree[:lineages], metrics, catastrophes, life[:creatures|:populations], regions[:select|:paste]");
+                var win = Ui.ById(part[0] == "params" ? "laws" : part[0]) ?? throw new ArgumentException("--open: laws|params, newworld[:more], saves, creator[:looks|:help], chronicle[:fossils], fossil[:bio|:ancestry], evolution, tree[:lineages], metrics, catastrophes, life[:creatures|:populations], regions[:select|:paste], matter[:N|:pN]");
                 win.Open();
                 if (part.Length > 1) win.ShowView(part[1]);
             }
@@ -247,6 +252,7 @@ public partial class Main : Node
         var mouse = GetViewport().GetMousePosition();
         // A press that started on the map but was let go over a window never reaches _UnhandledInput.
         if (!Input.IsMouseButtonPressed(MouseButton.Left)) { lDown = false; painting = false; }
+        if (strokeOpen && !painting) { strokeOpen = false; Sim.EndStroke(); }   // the stroke is over: its line in the chronicle
         if (!Input.IsMouseButtonPressed(MouseButton.Right)) rDown = false;
         if (!Input.IsMouseButtonPressed(MouseButton.Middle)) mDown = false;
         if (uiTest >= 0) UiTest();
@@ -481,6 +487,12 @@ public partial class Main : Node
         float r = BrushR;
         switch (Tool)
         {
+            case 1 when PourMix != null:
+                {
+                    var mix = PourMix; int order = PourRecipe.Order; bool loose = PourRecipe.Loose;
+                    Sim.Do(w => w.PourMatter(x, y, r, mix, order, loose, 0.25f));   // the library recipe, a quarter of a voxel's room per dab
+                    break;
+                }
             case 1: Sim.Do(w => { if (PourSpecies >= 0) w.Pour(x, y, r, PourSpecies, 0.25f); }); break;   // a quarter of a block at the centre per dab
             case 2: Sim.Do(w => w.PourWater(x, y, r, 0.15f)); break;
             case 3: Sim.Do(w => w.KillIn(x, y, r)); break;
@@ -493,6 +505,41 @@ public partial class Main : Node
 
     public bool PerfShown => perf.Visible;
     public void TogglePerf() { perf.Visible = !perf.Visible; perf.Reset(Sim); }
+    // Brush 1 pours a library recipe (resolved to this world's molecules) from now on; null goes back to
+    // single species.
+    public void SetPourRecipe(MatterRecipe r, double[] mix)
+    {
+        PourRecipe = mix == null ? null : r;
+        PourMix = mix;
+        if (mix == null) return;
+        PourLock = true;
+        PourColour = MatterColour(World, r, mix);
+        if (Tool != 1) SetTool(1);
+    }
+
+    // The colour of a recipe: its own tag, or the molecules' colours by share.
+    public static Rgb MatterColour(World w, MatterRecipe r, double[] mix)
+    {
+        if (r?.Colour != null && r.Colour.Length == 7 && r.Colour[0] == '#') { var c = Color.FromHtml(r.Colour); return new Rgb(c.R, c.G, c.B); }
+        float cr = 0, cg = 0, cb = 0;
+        for (int s = 0; s < Chemistry.S; s++) { var c = w.Chem.Col[s]; cr += (float)mix[s] * c.R; cg += (float)mix[s] * c.G; cb += (float)mix[s] * c.B; }
+        return new Rgb(cr, cg, cb);
+    }
+
+    // The chronicle line of a stroke opens with its first dab (the label is read on the simulation thread,
+    // after a new random species was drawn) and is written when the button is let go (SimRunner.EndStroke).
+    void BeginStroke(int c)
+    {
+        int tool = Tool, x = c % World.W, y = c / World.W;
+        string name = PourMix != null ? (string.IsNullOrWhiteSpace(PourRecipe.Name) ? "—" : PourRecipe.Name.Trim()) : null;
+        Sim.Do(w =>
+        {
+            string en = name != null ? $"'{name}' (library recipe)" : PourSpecies >= 0 ? w.Chem.MatNameEn[PourSpecies + 2] : "?";
+            string ru = name != null ? $"«{name}» (рецепт библиотеки)" : PourSpecies >= 0 ? w.Chem.MatNameRu[PourSpecies + 2] : "?";
+            w.BeginStroke(tool, x, y, en, ru);
+        });
+        strokeOpen = true;
+    }
 
     public void SetTool(int t)
     {
@@ -508,6 +555,7 @@ public partial class Main : Node
         var w = World;
         if (key == Key.Z && !shift)
         {
+            if (PourMix != null) { SetPourRecipe(null, null); PourLock = true; }   // a library recipe → back to single species
             PourLock = !PourLock;
             if (!PourLock) NewPourSpecies();
             Ui.Toast(PourLock ? Loc.T($"brush 1 keeps {w.Chem.MatName[PourSpecies + 2]} for every stroke", $"кисть 1 сыплет {w.Chem.MatName[PourSpecies + 2]} каждым мазком")
@@ -521,20 +569,15 @@ public partial class Main : Node
         }
         else
         {
+            // I: the exact recipe of the top block under the cursor (its molecules and lattice order), or
+            // of the loose matter lying there — read between ticks, then brush 1 pours exactly that and the
+            // sample waits in the matter library (J) to be saved.
             int c = View.PickCell(GetViewport().GetMousePosition());
             if (c < 0) { Ui.Toast(Loc.T("point at the ground to take its material", "наведите на землю, чтобы взять её материал"), true); return; }
-            int h = w.Height[c];
-            int m = h > 0 ? w.Mat[c * World.Z + h - 1] : 0;
-            if (m < 2 || m - 2 == w.Chem.Gas)
-            {
-                // No aggregate on top: the most plentiful loose molecule lying there, if any.
-                float best = 0.5f; m = -1;
-                for (int k = 0; k < Chemistry.S; k++)
-                    if (k != w.Chem.Gas && w.C[k][c].F > best) { best = w.C[k][c].F; m = k + 2; }
-                if (m < 0) { Ui.Toast(Loc.T("nothing to take here: no rock and no loose matter on top", "здесь нечего взять: сверху нет ни породы, ни рыхлого"), true); return; }
-            }
-            s = m - 2;
+            Ui.Matter.SampleAt(c, MatterWindow.SampleKind.Auto, true);
+            return;
         }
+        SetPourRecipe(null, null);
         PourSpecies = s;
         PourLock = true;
         Ui.Toast(Loc.T($"brush 1 keeps {w.Chem.MatName[s + 2]} for every stroke (Z — random again)", $"кисть 1 сыплет {w.Chem.MatName[s + 2]} каждым мазком (Z — снова случайный)"));
@@ -606,6 +649,7 @@ public partial class Main : Node
             case Key.U: Ui.Life.Toggle(); break;
             case Key.Y: Ui.Regions.Toggle(); break;
             case Key.K: v.KinFocus = !v.KinFocus; break;
+            case Key.J: Ui.Matter.Toggle(); break;
             case Key.B: ShowRecords = !ShowRecords; break;
             case Key.O:
                 if (Records.Count > 0) { Focus(Records[0].a); v.Follow = true; }
@@ -694,6 +738,8 @@ public partial class Main : Node
                     {
                         // A stroke: pouring takes a new random kind of matter each time, unless it is locked (Z, I).
                         if (Tool == 1 && !PourLock) NewPourSpecies();
+                        int sc = View.PickCell(mb.Position);
+                        if (sc >= 0) BeginStroke(sc);
                         painting = true; paintWait = 0;
                         return;
                     }

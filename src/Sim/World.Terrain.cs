@@ -10,6 +10,9 @@ namespace Primordium;
 // Every injected element is recorded in InteriorInput. Vents die out and open elsewhere.
 public sealed class Vent
 {
+    // High, Mid, Toxic: species drawn when the vent opened, kept in the save format (version ≤ current)
+    // but read by no law (the cone is built from VentMolecule / VentHigh). Toxic is now
+    // an excited species drawn at random (there is no poison class any more; the draw keeps the stream).
     public int X, Y, High, Mid, Toxic;
     public float Strength;
     public long Life, Age;
@@ -175,7 +178,7 @@ public sealed partial class World
                 Life = Rng.Next(60000, 160000),
                 High = Chem.VentHigh[Rng.Next(Chem.VentHigh.Length)],
                 Mid = Chem.VentMid[Rng.Next(Chem.VentMid.Length)],
-                Toxic = Chem.Toxic.Length > 0 ? Chem.Toxic[Rng.Next(Chem.Toxic.Length)] : Chem.Gas,
+                Toxic = Chem.Excited[Rng.Next(Chem.Excited.Length)],   // kept for the save format; no law reads it (see Vent)
             });
             ventsDirty = true;
             return;

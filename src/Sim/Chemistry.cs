@@ -22,14 +22,20 @@ public sealed class Chemistry
     public readonly float[] Looseness = new float[S];
     public readonly float[] Volume = new float[S];   // room one molecule takes: its mass over how tightly it packs
     public readonly float[] BodyVolume = new float[S];   // room it takes held in a body: the gas is a bubble there
-    public readonly bool[] SplitExo = new bool[S], Poison = new bool[S], Solid = new bool[S];
+    public readonly bool[] SplitExo = new bool[S], Solid = new bool[S];
+    // The reactive-damage law's species factor (World.Life, P.ReactK): how hard a molecule hits the
+    // protein substrate of a body it touches — the mean affinity of its atoms × the excitation energy it
+    // carries (E above its own ground state; 0 for a ground state). Computed for every species alike:
+    // there is no poison class, a "poison" is whatever this law makes harmful.
+    public readonly float[] AffinityPerAtom = new float[S], Excitation = new float[S], Reactivity = new float[S];
     public readonly Rgb[] Col = new Rgb[S];
     // Molecule names in both languages (built from the same syllable draws, so the language never
     // touches the random stream); Name gives the current language's.
     public readonly string[] NameEn = new string[S], NameRu = new string[S];
     public string[] Name => Loc.En ? NameEn : NameRu;
-    public readonly int[] Low, Unstable, Toxic, Solids, VentHigh, VentMid;
+    public readonly int[] Low, Unstable, Solids, VentHigh, VentMid, Excited;
     public readonly int Richest, Gas;
+    public readonly int MostReactive;   // the species with the highest Reactivity (ties: the lower index)
     public readonly int MatCount = S + 2;
     public readonly string[] MatNameEn = new string[S + 2], MatNameRu = new string[S + 2];
     public string[] MatName => Loc.En ? MatNameEn : MatNameRu;
@@ -101,7 +107,7 @@ public sealed class Chemistry
                 Volume[t] = mass / (0.5f + Packing[t]);
                 Diff[t] = 0.13f / MathF.Sqrt(mass);
                 Solid[t] = Bond[t] >= 0.85f;
-                Poison[t] = t != s && affinity / count > 1.1f;
+                AffinityPerAtom[t] = affinity / count;
                 Col[t] = new Rgb(cr / count, cg / count, cb / count).Mul(t == s ? 0.8f : 1f);
                 SplitA[t] = a; SplitB[t] = b;
             }
@@ -124,10 +130,14 @@ public sealed class Chemistry
         {
             SplitExo[s] = SplitA[s] >= 0 && SplitEnergy(s) > 0;
             if (E[s] > E[Richest]) Richest = s;
+            Excitation[s] = E[s] - E[Ground(s)];
+            Reactivity[s] = AffinityPerAtom[s] * Excitation[s];
+            if (Reactivity[s] > Reactivity[MostReactive]) MostReactive = s;
         }
         int[] Where(Func<int, bool> f) => Enumerable.Range(0, S).Where(f).ToArray();
-        Low = Where(s => E[s] <= 5 && !Poison[s]);
-        Unstable = Where(s => SplitExo[s]); Toxic = Where(s => Poison[s]); Solids = Where(s => Solid[s]);
+        // Low-energy ground states: nothing in them for the reactive-damage law to spend.
+        Low = Where(s => E[s] <= 5 && Excitation[s] == 0);
+        Unstable = Where(s => SplitExo[s]); Solids = Where(s => Solid[s]); Excited = Where(s => Excitation[s] > 0);
         // The most volatile species has an atmospheric reservoir. It is never destroyed by water.
         Gas = Enumerable.Range(0, S).OrderBy(s => Mass[s] * (0.1f + Bond[s])).First();
         VentHigh = Enumerable.Range(0, S).OrderByDescending(s => E[s]).Take(8).ToArray();
@@ -174,6 +184,8 @@ public sealed class Chemistry
             MatCap[s + 2] = Math.Clamp((int)MathF.Round(P.VoxelSpace / Volume[s]), 1, ushort.MaxValue);
         }
     }
+
+    public static int Ground(int s) => s & ~1;   // the ground state of the formula (species come in ground/excited pairs)
 
     public int AtomCount(int s) { int n = 0; for (int e = 0; e < ElementCount; e++) n += Atoms[s, e]; return n; }
     public bool SameFormula(int a, int b) { for (int e = 0; e < ElementCount; e++) if (Atoms[a, e] != Atoms[b, e]) return false; return true; }

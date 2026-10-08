@@ -27,6 +27,7 @@ if (Array.IndexOf(args, "--self-test-cave") >= 0) { World.CaveClimateRegression(
 if (Array.IndexOf(args, "--self-test-evolution") >= 0) { World.RunEvolutionRegression(); return; }
 if (Array.IndexOf(args, "--self-test-resources") >= 0) { World.ResourcesRegression(); return; }   // just the resources test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-wear") >= 0) { World.WearRegression(); return; }   // just the photodamage and wear test (also in --self-test)
+if (Array.IndexOf(args, "--self-test-react") >= 0) { World.ReactRegression(); World.MatterLibraryRegression(); return; }   // just the reactive-damage and matter library tests (also in --self-test)
 if (Array.IndexOf(args, "--self-test-geochem") >= 0) { World.GeochemRegression(); return; }   // just the geochemistry test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-population") >= 0) { World.PopulationRegression(); return; }   // just the population templates test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-climate") >= 0) { World.ClimateCyclesRegression(); return; }   // just the climate cycles test (also in --self-test)

@@ -120,7 +120,7 @@ public sealed partial class World
             (300, new Catastrophe { Kind = CatastropheKind.Flood, Amount = 0.5f }),
             (350, new Catastrophe { Kind = CatastropheKind.VolcanicWinter }),
         };
-        bool poison = a.Chem.Toxic.Length > 0;
+        bool poison = true;   // every world has excited molecules: the most reactive by the law is always there
         var atomsA = a.ElementBudget();
         for (int t = 1; t <= 420; t++)
         {

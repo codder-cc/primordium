@@ -472,7 +472,7 @@ public partial class Hud : Control
         5 => Loc.T("recent deaths", "недавние смерти"),
         6 => Loc.T("body heat", "тепло от тел"),
         7 => Loc.T("load / strength (green → red)", "нагрузка / прочность (зелёный → красный)"),
-        8 => Loc.T("lattice order (dark → light)", "порядок решётки (тёмный → светлый)"),
+        8 => Loc.T("matter: lattice order and packing — brighter with facets and gloss = ordered, darker = more mass per volume (C: every level)", "вещество: порядок решётки и упаковка — ярче, с гранями и блеском = упорядочено, темнее = больше массы на объём (C: все уровни)"),
         View3D.DepthTempOverlay => P.CaveClimate == 0 ? Loc.T("temperature at depth (law off: same as the surface everywhere)", "температура на глубине (закон выключен: везде как на поверхности)")
                                   : Loc.T("temperature at depth: on top — yearly mean, in the cross-section (C) — what a body feels at each level",
                                           "температура на глубине: сверху — средняя за год, в разрезе (C) — что чувствует тело на каждом уровне"),
@@ -485,7 +485,7 @@ public partial class Hud : Control
                                + (P.GasDiffK != 1 ? Loc.T($" (gas diffusion ×{P.GasDiffK:0.##})", $" (диффузия газа ×{P.GasDiffK:0.##})") : ""),
         _ when o - View3D.FirstSpecies == w.Chem.Gas => Loc.T($"gas {w.Chem.Name[w.Chem.Gas]} in the air (E{w.Chem.E[w.Chem.Gas]})", $"газ {w.Chem.Name[w.Chem.Gas]} в воздухе (E{w.Chem.E[w.Chem.Gas]})"),
         _ => Loc.T($"molecule {w.Chem.Name[o - View3D.FirstSpecies]} on the ground (E{w.Chem.E[o - View3D.FirstSpecies]}", $"молекула {w.Chem.Name[o - View3D.FirstSpecies]} на земле (E{w.Chem.E[o - View3D.FirstSpecies]}") +
-             $"{(w.Chem.Poison[o - View3D.FirstSpecies] ? Loc.T(", poison", ", яд") : w.Chem.Solid[o - View3D.FirstSpecies] ? Loc.T(", solid", ", твёрдая") : "")})",
+             $"{(World.Harmful(w.Chem, o - View3D.FirstSpecies) ? Loc.T(", reactive (harms proteins)", ", реакционная (вредит белкам)") : w.Chem.Solid[o - View3D.FirstSpecies] ? Loc.T(", solid", ", твёрдая") : "")})",
     };
 
     // The range overlay: what is shown and from which tree (SimObserver.Tree, built while it is on).
@@ -511,6 +511,7 @@ public partial class Hud : Control
             // The hand's brush is out: what it does and how to steer it.
             string what = m.Tool switch
             {
+                1 when m.PourMix != null => Loc.T($"pour: {m.Ui.Matter.BrushLabel} (library recipe, J) — Z: single species again", $"насыпать: {m.Ui.Matter.BrushLabel} (рецепт библиотеки, J) — Z: снова один вид"),
                 1 => m.PourLock
                     ? Loc.T($"pour: {m.World.Chem.MatName[m.PourSpecies + 2]} — locked: every stroke pours it (Z — random again)",
                             $"насыпать: {m.World.Chem.MatName[m.PourSpecies + 2]} — закреплён: каждый мазок сыплет его (Z — снова случайный)")
@@ -527,8 +528,8 @@ public partial class Hud : Control
                 ? Loc.T($"click — plant in this cell · spread {m.BrushR:0} ([ ]) · F7 — designer · 5, 0 or Esc — put away",
                         $"клик — посадить в эту клетку · разброс {m.BrushR:0} ([ ]) · F7 — конструктор · 5, 0 или Esc — убрать")
                 : m.Tool == 1
-                ? Loc.T($"radius {m.BrushR:0} · LMB — pour · [ ] — size · Z — lock this material, ⇧Z — next one, I — take the one under the cursor · 1, 0 or Esc — put away",
-                        $"радиус {m.BrushR:0} · ЛКМ — сыпать · [ ] — размер · Z — закрепить материал, ⇧Z — следующий, I — взять тот, что под курсором · 1, 0 или Esc — убрать")
+                ? Loc.T($"radius {m.BrushR:0} · LMB — pour · [ ] — size · Z — lock this material, ⇧Z — next one, I — exact sample under the cursor · J — matter library · 1, 0 or Esc — put away",
+                        $"радиус {m.BrushR:0} · ЛКМ — сыпать · [ ] — размер · Z — закрепить материал, ⇧Z — следующий, I — точный образец под курсором · J — библиотека веществ · 1, 0 или Esc — убрать")
                 : Loc.T($"radius {m.BrushR:0} · LMB — paint · [ ] — size · 1–5 — other tool · same digit, 0 or Esc — put away",
                         $"радиус {m.BrushR:0} · ЛКМ — рисовать · [ ] — размер · 1–5 — другой инструмент · та же цифра, 0 или Esc — убрать");
             l1 = Clip(l1, px - 76, 13);
@@ -538,7 +539,7 @@ public partial class Hud : Control
             float tx = 22;
             if (m.Tool == 1)
             {
-                var col = m.World.Chem.MatCol[m.PourSpecies + 2];
+                var col = m.PourMix != null ? m.PourColour : m.World.Chem.MatCol[Math.Max(0, m.PourSpecies) + 2];
                 DrawRect(new Rect2(18, vs.Y - 112, 12, 12), new Color(col.R, col.G, col.B));
                 tx = 36;
             }
@@ -547,8 +548,8 @@ public partial class Hud : Control
         }
         T(16, vs.Y - 56, Clip(Loc.T("Space pause · . step · +/− speed · T skip N days, ⇧T 10 · R new world, ⇧R same one · P snapshot · 1–4 brush · F3 benchmark",
                                "Space пауза · . шаг · +/− скорость · T промотка на N суток, ⇧T на 10 · R новый мир, ⇧R тот же · P снимок · 1–4 кисть · F3 замер"), px - 32, 12), Dim, 12);
-        T(16, vs.Y - 40, Clip(Loc.T("Tab sidebar · F1 tree of life · F2 laws · F4 new world · F5 quick save, F9 load · F6 saves · F7 designer · 5 plant a design · F8 chronicle · F10 evolution · F12 metrics",
-                                    "Tab панель · F1 древо жизни · F2 законы · F4 новый мир · F5 сохранить, F9 загрузить · F6 сохранения · F7 конструктор · 5 посадить · F8 хроника · F10 эволюция · F12 метрики"), px - 32, 12), Dim, 12);
+        T(16, vs.Y - 40, Clip(Loc.T("Tab sidebar · F1 tree of life · F2 laws · F4 new world · F5 quick save, F9 load · F6 saves · F7 designer · 5 plant a design · F8 chronicle · F10 evolution · F12 metrics · J matter",
+                                    "Tab панель · F1 древо жизни · F2 законы · F4 новый мир · F5 сохранить, F9 загрузить · F6 сохранения · F7 конструктор · 5 посадить · F8 хроника · F10 эволюция · F12 метрики · J вещества"), px - 32, 12), Dim, 12);
         T(16, vs.Y - 24, Clip(Loc.T("LMB / WASD / two fingers — pan · RMB / Q E — rotate · wheel / pinch — zoom · G whole map · C cross-section, [ ] shift",
                                "ЛКМ / WASD / два пальца — сдвиг · ПКМ / Q E — поворот · колесо / щипок — зум · G вся карта · C разрез, [ ] сдвиг"), px - 32, 12), Dim, 12);
         T(16, vs.Y - 8, Clip(Loc.T("click — agent · H legend · B records · O oldest · K kin · F follow · V coloring · M surface · L light · N life · A abiogenesis · X strike",
@@ -748,8 +749,8 @@ public partial class Hud : Control
             float cx = x + (s / rows) * colw, cy = y + 12 + (s % rows) * 14;
             var c = ch.Col[s];
             R(new Rect2(cx, cy - 9, 9, 9), new Color(c.R, c.G, c.B));
-            var tc = ch.Poison[s] ? new Color(1f, 0.45f, 0.45f) : ch.Solid[s] ? Acc : Dim;
-            string label = $"{ch.Name[s]} {ch.Formula(s)} E{ch.E[s]}" + (ch.Poison[s] ? Loc.T(" poison", " яд") : ch.Solid[s] ? Loc.T(" solid", " твёрд") : s == ch.Gas ? Loc.T(" gas", " газ") : "");
+            var tc = World.Harmful(ch, s) ? new Color(1f, 0.45f, 0.45f) : ch.Solid[s] ? Acc : Dim;
+            string label = $"{ch.Name[s]} {ch.Formula(s)} E{ch.E[s]}" + (World.Harmful(ch, s) ? Loc.T(" reactive", " реакц.") : ch.Solid[s] ? Loc.T(" solid", " твёрд") : s == ch.Gas ? Loc.T(" gas", " газ") : "");
             T(cx + 13, cy, label, s == ch.Gas ? new Color(0.6f, 0.85f, 1f) : tc, 11);
         }
         return y + 12 + rows * 14 + 10;
@@ -879,7 +880,7 @@ public partial class Hud : Control
             if (lx > x + cw - 40) { lx = x; y += 15; }
             var col = ch.Col[s];
             R(new Rect2(lx, y - 9, 9, 9), new Color(col.R, col.G, col.B));
-            T(lx + 12, y, a.Inv[s].ToString(), ch.Poison[s] ? new Color(1f, 0.45f, 0.45f) : ch.Solid[s] ? Acc : Fg, 12);
+            T(lx + 12, y, a.Inv[s].ToString(), World.Harmful(ch, s) ? new Color(1f, 0.45f, 0.45f) : ch.Solid[s] ? Acc : Fg, 12);
             lx += 34;
         }
         y += 14;

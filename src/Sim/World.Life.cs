@@ -111,20 +111,9 @@ public sealed partial class World
         // body; its mutations go with the UV below.
         float flareHarm = 0, dose = FlarePower > 0 ? Flare(a, out flareHarm) : (a.FlareDose = 0);
 
-        // Poisons lying around seep in (from any of its cells); inside they wreck proteins.
-        int pc = FootCell(a, Rng.Next(a.Cells));
-        var pb = FloorBurial(a, pc);
-        foreach (int s in Chem.Toxic)
-        {
-            float lying = Loose(a, pc, pb, s);
-            if (lying >= 1f && Rng.NextDouble() < lying * 0.02)
-            {
-                ChangeLoose(a, pc, s, -1f);
-                AddMol(a, s);
-            }
-            if (a.Inv[s] > 0 && a.EnzN > 0 && Rng.NextDouble() < 0.02 * a.Inv[s])
-                WearProtein(a, Rng.Next(a.EnzN), 0.5f);
-        }
+        // Reactive damage (World.React): what it holds and what lies where it stands reacts with its
+        // proteins by one law for every species.
+        if (ReactLaw && a.EnzN > 0) ReactiveDamage(a);
 
         // Outside the comfortable band harm grows exponentially: frost tears molecules out of the
         // body (one packed with molecules freezes later), heat unfolds proteins (except those whose

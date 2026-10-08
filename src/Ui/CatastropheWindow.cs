@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Godot;
 
 namespace Primordium;
@@ -14,6 +15,7 @@ public partial class CatastropheWindow : UiWindow
     CheckBox volcHere;
     Label status, poisonNote;
     ConfirmButton poisonGo;
+    OptionButton poisonWhat;
     double refreshIn;
 
     public CatastropheWindow() : base("catastrophes", Loc.T("Catastrophes", "Катастрофы"), new Vector2(720, 520))
@@ -64,10 +66,14 @@ public partial class CatastropheWindow : UiWindow
             UiKit.Text(Loc.T("days", "суток"), 12, UiKit.Dim), droughtDays, UiKit.Text("°C", 12, UiKit.Dim), droughtDT);
 
         poisonN = UiKit.Spin(1, 5000, 1, 30, 80);
-        poisonGo = Line(Loc.T("Poisoning", "Отравление"), Loc.T("the hand scatters this world's toxic molecule (it damages the proteins of those who take it in); matter from outside, accounted for",
-                "рука рассыпает ядовитую молекулу этого мира (она портит белки тех, кто её впитал); вещество извне, учитывается"),
-            () => new Catastrophe { Kind = CatastropheKind.Poison, X = (int)x.Value, Y = (int)y.Value, R = Math.Min(60, (float)r.Value), Amount = (float)poisonN.Value },
-            UiKit.Text(Loc.T("molecules at the centre", "молекул в центре"), 12, UiKit.Dim), poisonN);
+        poisonWhat = UiKit.Options();
+        poisonWhat.FitToLongestItem = false;
+        poisonWhat.ClipText = true;
+        poisonWhat.CustomMinimumSize = new Vector2(200, 0);
+        poisonWhat.ItemSelected += _ => Refresh();
+        poisonGo = Line(Loc.T("Poisoning", "Отравление"), Loc.T("the hand scatters a substance: the most reactive molecule by the reactive-damage law, or one from the matter library (J); whether it harms is that law's business (excited, high-affinity molecules wear the proteins of bodies that hold or touch them); matter from outside, accounted for",
+                "рука рассыпает вещество: самую реакционную по закону реактивного урона молекулу или вещество из библиотеки (J); вредит ли оно — решает этот закон (возбуждённые молекулы с высоким сродством портят белки тех, кто их держит или касается); вещество извне, учитывается"),
+            MakePoison, poisonWhat, UiKit.Text(Loc.T("molecules at the centre", "молекул в центре"), 12, UiKit.Dim), poisonN);
         poisonNote = UiKit.Text("", 12, UiKit.Dim);
         Body.AddChild(poisonNote);
 
@@ -111,13 +117,68 @@ public partial class CatastropheWindow : UiWindow
     {
         var w = Main.World;
         if (w == null) return;
-        bool poison = w.Chem.Toxic.Length > 0;
-        poisonGo.Disabled = !poison;
-        poisonNote.Text = poison
-            ? Loc.T($"this world's toxin: {w.Chem.Name[w.Chem.Toxic[0]]} ({w.Chem.Formula(w.Chem.Toxic[0])})", $"яд этого мира: {w.Chem.Name[w.Chem.Toxic[0]]} ({w.Chem.Formula(w.Chem.Toxic[0])})")
-            : Loc.T("this world's chemistry has no toxic molecules — nothing to poison with", "в химии этого мира нет ядовитых молекул — отравить нечем");
+        ListPoisons(w);
+        var ch = w.Chem;
+        int sel = poisonWhat.Selected;
+        double[] mix = PoisonMix(w, sel, out var mapping);
+        var p = MatterRecipe.Props(ch, mix, 0);
+        string what = MatterRecipe.MixText(ch, mix, Loc.En, 3);
+        poisonNote.Text = Loc.T($"{what}: {p.ReactHeld:0.0000} reactions per held molecule a tick at 15 °C (×{p.HarmVsDecay:0.0} the proteins' own decay), lying {p.ReactLying:0.0000}",
+                                $"{what}: {p.ReactHeld:0.0000} реакций на молекулу в теле за тик при 15 °C (×{p.HarmVsDecay:0.0} собственного распада белков), лёжа {p.ReactLying:0.0000}")
+                          + (p.ReactHeld <= 0 ? Loc.T(" — inert, it will not poison anyone", " — инертно, никого не отравит") : "")
+                          + (mapping is { Exact: false } ? "\n" + mapping.Warning : "");
         status.Text = w.EpochLine(true) + Loc.T($"\nice ages {w.IceAges}, volcanic winters {w.VolcanicWinters}, megaeruptions {w.MegaEruptions}, player catastrophes {w.CatastropheCount}",
             $"\nледниковий {w.IceAges}, вулканических зим {w.VolcanicWinters}, мегаизвержений {w.MegaEruptions}, катастроф игрока {w.CatastropheCount}");
+    }
+
+    // The substances offered for poisoning: the law's most reactive species, then the matter library (J).
+    readonly System.Collections.Generic.List<MatterRecipe> poisons = new();
+    MatterRecipe wanted;
+
+    void ListPoisons(World w)
+    {
+        var all = Ui.Matter?.All.ToList() ?? new System.Collections.Generic.List<MatterRecipe>();
+        var keep = poisonWhat.Selected > 0 && poisonWhat.Selected - 1 < poisons.Count ? poisons[poisonWhat.Selected - 1] : null;
+        if (wanted != null) { keep = wanted; if (!all.Contains(wanted)) all.Add(wanted); wanted = null; }
+        if (!all.SequenceEqual(poisons) || poisonWhat.ItemCount != all.Count + 1)
+        {
+            poisons.Clear(); poisons.AddRange(all);
+            poisonWhat.Clear();
+            int most = w.Chem.MostReactive;
+            poisonWhat.AddItem(Loc.T($"most reactive by the law: {w.Chem.Name[most]} ({w.Chem.Formula(most)}*)", $"самое реакционное по закону: {w.Chem.Name[most]} ({w.Chem.Formula(most)}*)"));
+            foreach (var r in poisons) poisonWhat.AddItem($"{(string.IsNullOrWhiteSpace(r.Name) ? Loc.T("untitled", "без имени") : r.Name)} · {MatterRecipe.KindName(r.Kind)}");
+        }
+        int at = keep != null ? poisons.FindIndex(p => p == keep || (keep.Path != null && p.Path == keep.Path)) : -1;
+        poisonWhat.Selected = at >= 0 ? at + 1 : Math.Clamp(poisonWhat.Selected, 0, poisonWhat.ItemCount - 1);
+    }
+
+    double[] PoisonMix(World w, int sel, out MatterMapping mapping)
+    {
+        mapping = null;
+        if (sel <= 0 || sel - 1 >= poisons.Count) { var m = new double[Chemistry.S]; m[w.Chem.MostReactive] = 1; return m; }
+        mapping = poisons[sel - 1].Resolve(w);
+        return mapping.Mix;
+    }
+
+    Catastrophe MakePoison()
+    {
+        var c = new Catastrophe { Kind = CatastropheKind.Poison, X = (int)x.Value, Y = (int)y.Value, R = Math.Min(60, (float)r.Value), Amount = (float)poisonN.Value };
+        int sel = poisonWhat.Selected;
+        var w = Main.World;
+        if (w != null && sel > 0 && sel - 1 < poisons.Count)
+        {
+            var mix = PoisonMix(w, sel, out _);
+            c.Mix = mix.Select(v => (float)Math.Round(v, 5)).ToArray();
+            c.Label = poisons[sel - 1].Name;
+        }
+        return c;
+    }
+
+    // The matter library's "spray as poisoning": that substance is chosen here.
+    public void ChoosePoison(MatterRecipe r)
+    {
+        wanted = r;
+        if (Main.World != null) Refresh();
     }
 
     public override void _Process(double delta)

@@ -608,6 +608,9 @@ public sealed class SimRunner
         done?.Invoke(text);
     });
 
+    // A brush stroke ended: its summary goes to the chronicle (World.EndStroke), between ticks.
+    public void EndStroke() => Do(w => { if (w.EndStroke()) PublishChronicle(w, true); });
+
     public void SetAbiogenesis(bool on) => Do(w => w.Abiogenesis = on);
     public void SetStrikes(bool on) => Do(w => w.AutoStrikes = on);
 

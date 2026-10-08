@@ -373,7 +373,7 @@ public partial class CreatorWindow : UiWindow
         opt.AddItem(Loc.T("any: whatever is at hand", "any — что найдётся"), 0);
         opt.AddItem(chem != null ? Loc.T($"gas: the gas ({chem.Name[chem.Gas]})", $"gas — газ ({chem.Name[chem.Gas]})") : Loc.T("gas: the world's gas", "gas — газ мира"), 1);
         for (int s = 0; s < Chemistry.S; s++)
-            opt.AddItem(chem != null ? $"{s}: {chem.Name[s]} {chem.Formula(s)} · E{chem.E[s]}{(chem.Solid[s] ? Loc.T(" · solid", " · твёрд") : "")}{(chem.Poison[s] ? Loc.T(" · poison", " · яд") : "")}" : s.ToString(), 2 + s);
+            opt.AddItem(chem != null ? $"{s}: {chem.Name[s]} {chem.Formula(s)} · E{chem.E[s]}{(chem.Solid[s] ? Loc.T(" · solid", " · твёрд") : "")}{(World.Harmful(chem, s) ? Loc.T(" · reactive", " · реакц.") : "")}" : s.ToString(), 2 + s);
         int sel;
         if (key.Equals("any", StringComparison.OrdinalIgnoreCase) || key == "*") sel = 0;
         else if (key.Equals("gas", StringComparison.OrdinalIgnoreCase)) sel = 1;

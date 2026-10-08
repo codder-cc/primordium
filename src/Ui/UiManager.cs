@@ -49,6 +49,7 @@ public partial class UiManager : Control
     public MetricsWindow Metrics;
     public LifeLibraryWindow Life;
     public RegionsWindow Regions;
+    public MatterWindow Matter;
 
     readonly ConcurrentQueue<Action> posted = new();
     VBoxContainer toastBox;
@@ -63,6 +64,7 @@ public partial class UiManager : Control
     public static string PresetsDir => UiKit.Global("user://presets");
     public static string CreaturesDir => UiKit.Global("user://creatures");
     public static string PopulationsDir => UiKit.Global("user://populations");
+    public static string MaterialsDir => UiKit.Global("user://materials");
 
     public override void _Ready()
     {
@@ -115,6 +117,7 @@ public partial class UiManager : Control
         Add(Metrics = new MetricsWindow());
         Add(Life = new LifeLibraryWindow());
         Add(Regions = new RegionsWindow());
+        Add(Matter = new MatterWindow());
 
         toastBox = UiKit.Col(4);
         toastBox.MouseFilter = MouseFilterEnum.Ignore;

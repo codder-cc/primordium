@@ -536,22 +536,32 @@ public sealed partial class World
             }
             case CatastropheKind.Poison:
             {
-                if (Chem.Toxic.Length == 0) { error = Loc.T("this world's chemistry has no toxic molecules", "в химии этого мира нет ядовитых молекул"); return null; }
+                // The hand sprays a substance: a recipe from the matter library (Mix: number fractions by
+                // species) or, with none given, the world's most reactive species by the reactive-damage law
+                // (World.React), computed from its chemistry. Whether it harms anyone is that law's business.
                 if (c.X < 0 || c.Y < 0) { error = Loc.T("poisoning needs a place", "отравлению нужно место"); return null; }
-                int s = Chem.Toxic[0];
+                var mix = new double[Chemistry.S];
+                double sum = 0;
+                if (c.Mix != null) for (int k = 0; k < Chemistry.S && k < c.Mix.Length; k++) { mix[k] = Math.Max(0, c.Mix[k]); sum += mix[k]; }
+                bool law = sum <= 0;
+                if (law) { mix[Chem.MostReactive] = 1; sum = 1; }
                 float r = Math.Clamp(c.R > 0 ? c.R : 8, 1, 60), amount = Math.Clamp(c.Amount > 0 ? c.Amount : 30, 1, 5000);
                 long total = 0;
+                var given = new long[Chemistry.S];
                 foreach (var (cell, w) in Brush(c.X, c.Y, r))
-                {
-                    int n = (int)(amount * w);
-                    if (n <= 0) continue;
-                    C[s][cell] += n;
-                    for (int e = 0; e < Chemistry.ElementCount; e++) HandInput[e] += (double)n * Chem.Atoms[s, e];
-                    Flows[FHand] += (double)n * Chem.E[s];
-                    total += n;
-                }
-                text = $"poisoning at ({c.X}, {c.Y}), radius {r:0}: {total} molecules of the toxin {Chem.NameEn[s]} ({Chem.Formula(s)}) scattered by hand (matter from outside, accounted for)";
-                ru = $"отравление в ({c.X}, {c.Y}), радиус {r:0}: {total} молекул яда {Chem.NameRu[s]} ({Chem.Formula(s)}) рассыпано рукой (вещество извне, учтено)";
+                    for (int s = 0; s < Chemistry.S; s++)
+                    {
+                        if (mix[s] <= 0) continue;
+                        int n = (int)(amount * w * mix[s] / sum);
+                        if (n <= 0) continue;
+                        C[s][cell] += n;
+                        for (int e = 0; e < Chemistry.ElementCount; e++) HandInput[e] += (double)n * Chem.Atoms[s, e];
+                        Flows[FHand] += (double)n * Chem.E[s];
+                        total += n; given[s] += n;
+                    }
+                string label = string.IsNullOrWhiteSpace(c.Label) ? "" : c.Label.Trim();
+                text = $"poisoning at ({c.X}, {c.Y}), radius {r:0}: {total} molecules {(law ? "of the most reactive species by the law" : "of a library substance" + (label == "" ? "" : $" '{label}'"))} ({MatterRecipe.CountsText(Chem, given, true)}) scattered by hand (matter from outside, accounted for)";
+                ru = $"отравление в ({c.X}, {c.Y}), радиус {r:0}: {total} молекул {(law ? "самого реакционного по закону вида" : "вещества из библиотеки" + (label == "" ? "" : $" «{label}»"))} ({MatterRecipe.CountsText(Chem, given, false)}) рассыпано рукой (вещество извне, учтено)";
                 break;
             }
             default: error = Loc.T("unknown catastrophe", "неизвестная катастрофа"); return null;
@@ -656,12 +666,17 @@ public enum CatastropheKind { IceAge, Flood, VolcanicWinter, SolarFlare, Drought
 
 // A catastrophe the player sets off (World.Catastrophe). Its spec — "iceage days=5", "flood k=1.5",
 // "volcano x=10 y=40 blocks=60 ash=0.4", "flare power=20 days=0.25", "drought x=… y=… r=24 days=5 dt=8",
-// "poison x=… y=… r=8 n=30" — is what the law log keeps and the bench replays.
+// "poison x=… y=… r=8 n=30 [s5=0.6 s13=0.4]" — is what the law log keeps and the bench replays.
 public sealed class Catastrophe
 {
     public CatastropheKind Kind;
     public int X = -1, Y = -1;
     public float R, Days, Amount;
+    // Poisoning: the substance as number fractions by species ("s5=0.6 s13=0.4" in the spec); none: the
+    // world's most reactive species by the reactive-damage law. Label: the library name, for the chronicle
+    // only (not in the spec: a replay does not depend on it).
+    public float[] Mix;
+    public string Label;
 
     static readonly string[] Words = { "iceage", "flood", "volcano", "flare", "drought", "poison" };
     static readonly string[] NamesEn = { "ice age", "flood", "volcanic winter", "strong solar flare", "drought", "poisoning" };
@@ -677,8 +692,16 @@ public sealed class Catastrophe
         CatastropheKind.VolcanicWinter => $"volcano x={X} y={Y} blocks={N(Amount)} ash={N(R)}",
         CatastropheKind.SolarFlare => $"flare power={N(Amount)} days={N(Days)}",
         CatastropheKind.Drought => $"drought x={X} y={Y} r={N(R)} days={N(Days)} dt={N(Amount)}",
-        _ => $"poison x={X} y={Y} r={N(R)} n={N(Amount)}",
+        _ => $"poison x={X} y={Y} r={N(R)} n={N(Amount)}" + MixSpec(),
     };
+
+    string MixSpec()
+    {
+        if (Mix == null) return "";
+        var sb = new System.Text.StringBuilder();
+        for (int s = 0; s < Mix.Length; s++) if (Mix[s] > 0) sb.Append($" s{s}={N(Mix[s])}");
+        return sb.ToString();
+    }
 
     public override string ToString() => Spec();
 
@@ -695,6 +718,11 @@ public sealed class Catastrophe
             if (eq <= 0) throw new FormatException($"'{p}': expected key=value");
             string key = p[..eq].ToLowerInvariant();
             float v = float.Parse(p[(eq + 1)..], NumberStyles.Float, CultureInfo.InvariantCulture);
+            if (key.Length > 1 && key[0] == 's' && int.TryParse(key[1..], NumberStyles.None, CultureInfo.InvariantCulture, out int sp) && sp < Chemistry.S)
+            {
+                (c.Mix ??= new float[Chemistry.S])[sp] = v;
+                continue;
+            }
             switch (key)
             {
                 case "x": c.X = (int)v; break;

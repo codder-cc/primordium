@@ -101,6 +101,8 @@ uniform int ytiles;
 uniform float bh;
 uniform float side_lit;
 uniform int cut_row = -1;
+uniform int facets = 0;                          // the matter overlay: crystal facets on the tops by lattice order
+uniform sampler2D facet_map : filter_nearest;    // per column: r = order of the top block, g = its density
 uniform sampler2D cut_temp : filter_nearest;
 varying vec3 wpos;
 varying vec3 nrm;
@@ -119,6 +121,21 @@ void fragment() {
     float l = cust.a;
     if (nrm.y > 0.5) {
         col = cust.rgb;
+        if (facets == 1) {
+            // Ordered lattices show a few big facets with gloss and edges; disorder breaks them into grains.
+            int fxi = clamp(int(floor(wpos.x)), 0, wmax - 1);
+            int fyi = clamp(int(floor(wpos.z)), 0, hmax - 1);
+            float o = texelFetch(facet_map, ivec2(fxi, fyi), 0).r;
+            vec2 q = wpos.xz * mix(6.0, 2.0, o);
+            vec2 id = floor(q), f = fract(q);
+            float h = fract(sin(dot(id, vec2(12.9898, 78.233))) * 43758.5453);
+            bool up = h > 0.5 ? f.x > f.y : f.x + f.y > 1.0;
+            float t = fract(sin(dot(id + (up ? 0.37 : 0.71), vec2(39.3468, 11.135))) * 24634.6345) - 0.5;
+            col *= 1.0 + t * (0.1 + 0.45 * o);
+            col += vec3(o * o * pow(max(0.0, t * 2.0), 6.0) * 0.75);
+            float edge = min(min(f.x, f.y), abs(h > 0.5 ? f.x - f.y : f.x + f.y - 1.0));
+            col *= mix(1.0, 0.72, o * (1.0 - smoothstep(0.0, 0.05, edge)));
+        }
     } else {
         l = max(l, side_lit);
         vec3 inside = wpos - vec3(nrm.x, 0.0, nrm.z) * 0.02;
@@ -178,6 +195,8 @@ void fragment() {
             pal.SetPixel(m, 0, new Color(c.R, c.G, c.B));
         }
         palTex = ImageTexture.CreateFromImage(pal);
+        densest = 0;
+        for (int s = 0; s < Chemistry.S; s++) densest = Math.Max(densest, w.Chem.Mass[s] / w.Chem.Volume[s]);   // a pure block at full order (the matter overlay)
         Array.Fill(voxVer, int.MinValue);
         Array.Fill(shapedVer, int.MinValue);
         shapedSlice = -2;
@@ -277,6 +296,7 @@ void fragment() {
         terrainMat.SetShaderParameter("side_lit", Slice >= 0 || !Lighting ? 1f : 0.55f);
         FillCutTemperature();
         FillTerrain();
+        UploadFacets();
         Lap(2);
         FillWater();
         Lap(3);
@@ -484,9 +504,9 @@ void fragment() {
                 // Pressure against strength, taken on the simulation thread (SimRunner.Stress).
                 c = new Rgb(0.15f, 0.6f, 0.35f).Lerp(new Rgb(1f, 0.15f, 0.04f), Math.Min(1, Stress?[i] ?? 0));
                 lit = 1; break;
-            case 8:
-                c = new Rgb(0.28f, 0.22f, 0.16f).Lerp(new Rgb(0.6f, 0.85f, 1f), h > 0 ? w.Order[i * Z + h - 1] / 255f : 0);
-                lit = 1; break;
+            case MatterOverlay:
+                c = MatterColour(w, i, h);
+                break;
             default:
                 {
                     int s = Overlay - FirstSpecies;
@@ -499,6 +519,75 @@ void fragment() {
         // Volcanic ash in the stratosphere (World.ClimateCycles) greys the surface under it.
         if (Overlay == 0 && w.Veil[i] > 0.01f) c = c.Lerp(new Rgb(0.42f, 0.38f, 0.36f), Math.Min(0.6f, 0.6f * (1 - MathF.Exp(-w.Veil[i]))));
         buf[o + 12] = c.R; buf[o + 13] = c.G; buf[o + 14] = c.B; buf[o + 15] = lit;
+    }
+
+    // The matter overlay (8, "lattice and packing"): the top block in its material's colour, brighter the
+    // more ordered its lattice, darker the more mass it packs per volume (molecules per volume × their
+    // mass, against the world's densest packing); the shader adds facets and gloss by order (facet_map).
+    // The cut (C) shows every level the same way. Read only; the facet map is uploaded a few times a second.
+    public const int MatterOverlay = 8;
+    readonly byte[] facetBytes = new byte[N * 2];
+    Image facetImg;
+    ImageTexture facetTex;
+    bool facetDirty;
+    double facetAt;
+    float densest = 1;
+
+    Rgb MatterColour(World w, int i, int h)
+    {
+        if (h <= 0) return new Rgb(0.05f, 0.05f, 0.06f);
+        int v = i * Z + h - 1;
+        byte m = w.Mat[v];
+        if (m < 2) return w.Chem.MatCol[m];
+        var (c, o, d) = VoxelLook(w, v);
+        facetBytes[i * 2] = (byte)(o * 255); facetBytes[i * 2 + 1] = (byte)(Math.Min(1, d) * 255);
+        facetDirty = true;
+        return c;
+    }
+
+    (Rgb c, float order, float density) VoxelLook(World w, int v)
+    {
+        float o = w.Order[v] / 255f, d = w.VoxelMass(v) / P.VoxelSpace / densest;
+        var c = w.Chem.MatCol[w.Mat[v]].Mul((0.62f + 0.5f * o) * (1.18f - 0.55f * Math.Min(1, d)));
+        return (c, o, d);
+    }
+
+    void UploadFacets()
+    {
+        bool on = Overlay == MatterOverlay;
+        terrainMat.SetShaderParameter("facets", on ? 1 : 0);
+        if (!on || !facetDirty) return;
+        double now = Time.GetTicksMsec() / 1000.0;
+        if (now - facetAt < 0.25 && facetTex != null) return;
+        facetAt = now; facetDirty = false;
+        if (facetImg == null)
+        {
+            facetImg = Image.CreateFromData(W, H, false, Image.Format.Rg8, facetBytes);
+            facetTex = ImageTexture.CreateFromImage(facetImg);
+            terrainMat.SetShaderParameter("facet_map", facetTex);
+        }
+        else
+        {
+            facetImg.SetData(W, H, false, Image.Format.Rg8, facetBytes);
+            facetTex.Update(facetImg);
+        }
+    }
+
+    // The cut in the matter overlay: each level's block by order and packing.
+    void FillCutMatter(int row)
+    {
+        var w = World;
+        for (int x = 0; x < W; x++)
+        {
+            int c = row * W + x, h = Math.Clamp(w.Height[c], 0, Z);
+            for (int z = 0; z < Z; z++)
+            {
+                int v = c * Z + z;
+                var col = z >= h || w.Mat[v] < 2 ? (z < h ? w.Chem.MatCol[w.Mat[v]] : new Rgb(0.1f, 0.1f, 0.12f)) : VoxelLook(w, v).c;
+                int o = (z * W + x) * 3;
+                cutBytes[o] = (byte)(Math.Min(1, col.R) * 255); cutBytes[o + 1] = (byte)(Math.Min(1, col.G) * 255); cutBytes[o + 2] = (byte)(Math.Min(1, col.B) * 255);
+            }
+        }
     }
 
     // The colours of the range overlay, again when a new tree came or another branch was picked: a cell
@@ -578,7 +667,7 @@ void fragment() {
     double cutAt;
     void FillCutTemperature()
     {
-        bool on = (Overlay == DepthTempOverlay || Overlay == DeepOverlay) && Slice >= 0;
+        bool on = (Overlay == DepthTempOverlay || Overlay == DeepOverlay || Overlay == MatterOverlay) && Slice >= 0;
         int row = on ? Slice : -1;
         double now = Time.GetTicksMsec() / 1000.0;
         if (row == cutShownRow && Overlay == cutShownOverlay && (!on || now - cutAt < 0.25)) return;
@@ -588,6 +677,7 @@ void fragment() {
         cutAt = now;
         var w = World;
         if (Overlay == DeepOverlay) FillCutDeep(row);
+        else if (Overlay == MatterOverlay) FillCutMatter(row);
         else FillCutTemp(row);
         if (cutImg == null)
         {

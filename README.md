@@ -25,7 +25,7 @@ Every world is grown from a seed: its own artificial elements, its own molecules
 - 🌦 **Living climate and sky.** Seasons, day length by latitude, Milankovitch-style cycles (obliquity, precession, eccentricity), ice ages, eclipses, solar flares, volcanoes, cave microclimates.
 - 📈 **Open-endedness metrics.** Bedau-style neutral shadow, novelty, complexity, ecology, tempo and phylogeny tracks, with an honest "progressing / stagnating / regressing" hint.
 - 📜 **A chronicle of the world.** First proteins, first swimmers, the first predator, speciation and extinction, plus fossils you can resurrect.
-- 🛠 **Play god, carefully.** Tune the 183 world laws live, design your own creatures in genome assembly, trigger catastrophes, save and load. Nothing appears for free: whatever you add is booked in the ledger.
+- 🛠 **Play god, carefully.** Tune the 186 world laws live, design your own creatures in genome assembly, trigger catastrophes, save and load. Nothing appears for free: whatever you add is booked in the ledger.
 - ⚙️ **Deterministic and fast.** Multithreaded checkerboard stepping with a reproducible trajectory: the same seed and laws give the same world on any run. A headless bench runs long experiments and statistical comparisons.
 
 ## Screenshots
@@ -57,7 +57,7 @@ dotnet build
 
 Then open `project.godot` in Godot 4.3 mono and press **Play**. A new world starts without life: press **N** to assemble creatures from local matter, **A** to turn on abiogenesis, or **F7** to plant your own design.
 
-Useful launch flags (after `--`): `--seed N`, `--abio`, `--warm N` (pre-simulate N ticks), `--lang en|ru`, `--sidebar expanded|collapsed`, `--open laws,evolution,tree,metrics,…`, `--shot path.png`.
+Useful launch flags (after `--`): `--seed N`, `--abio`, `--warm N` (pre-simulate N ticks), `--lang en|ru`, `--sidebar expanded|collapsed`, `--open laws,evolution,tree,metrics,matter,…`, `--shot path.png`.
 
 ```sh
 Godot --path . -- --seed 3 --abio --warm 6000
@@ -79,7 +79,8 @@ Every window and the main tools are also on the **sidebar** at the left edge: ic
 | N · A · X | Assemble life from local matter · abiogenesis · orbital strike |
 | 1–4 · 5 | Brushes (pour, water, kill, dig) · plant a design (or, from the life library, paste a population / copy the bodies in the circle) |
 | U | Library of life: creature and population templates — copy a lineage, a clade or an area, save to `user://populations`, paste here or in another world |
-| Z · ⇧Z · I | With brush 1: keep the material for every stroke · next material · take the material under the cursor |
+| Z · ⇧Z · I | With brush 1: keep the material for every stroke · next material · take the exact recipe (molecules and lattice order) of the block under the cursor |
+| J | Matter library: substances as recipes of this world's molecules — computed starters, samples from the world, your own compositions; brush 1 pours them, F11 sprays them; `user://materials` |
 | F2 · F4 · F6 · F7 | World laws · new world · saves · creature designer |
 | F5 / F9 | Quick save / quick load |
 | F8 · F10 · F11 | Chronicle · course of evolution · catastrophes |
@@ -94,7 +95,7 @@ The simulation core (`src/Sim`) does not depend on Godot. `tools/bench` runs it 
 ```sh
 dotnet run -c Release --project tools/bench -- --self-test                 # conservation, determinism, save/load, laws
 dotnet run -c Release --project tools/bench -- --seed 1 --ticks 10000 --every 1000 --audit
-dotnet run -c Release --project tools/bench -- --list-params               # all 183 world laws
+dotnet run -c Release --project tools/bench -- --list-params               # all 186 world laws
 dotnet run -c Release --project tools/bench -- --batch --seeds 1-16 --reps 3 --ticks 6000 --out runs/base
 dotnet run -c Release --project tools/bench -- --compare runs/base/runs.csv runs/try/runs.csv
 dotnet run -c Release --project tools/bench -- --invade my_design.json --seeds 1-6   # plant a creature-designer file, follow its lineage

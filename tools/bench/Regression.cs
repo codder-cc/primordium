@@ -155,6 +155,8 @@ public sealed partial class World
         GeochemRegression();
         ResourcesRegression();
         WearRegression();
+        ReactRegression();
+        MatterLibraryRegression();
         VolumeRegression();
         FaceRegression();
         WaterRegression();
