@@ -13,7 +13,7 @@ namespace Primordium;
 //
 //   --batch --seeds 1-16 --reps 3 --ticks 6000 --every 1000 [--pop N] [--noabio] [--tile N] [--audit]
 //           [--jobs J] [--out dir] [--extinct N] [--boom N] [--server-gc [--gc-heaps H]]
-//           [--resume] [--shard K/N] [--machine name]
+//           [--resume] [--shard K/N] [--machine name] [--threads T]
 //           [--preset path.json] [--set Name=value ...] [--param-at TICK:Name=value ...]   (laws: ParamHook)
 // Every (seed, rep) is its own process (`--run-one`) and gets the batch's law flags as given: laws are
 // process-wide, so all runs of a batch see the same values and nothing is shared between worlds. Rep 0 is the seed's own world;
@@ -26,7 +26,9 @@ namespace Primordium;
 // DOTNET_GCHeapCount): the trajectory is the same, each process holds more memory. Every run reports
 // its processor time and peak working set (the `resources:` line of its log), the batch the totals.
 // --jobs defaults to the performance cores (macOS: sysctl hw.perflevel0.physicalcpu; elsewhere the
-// logical processors). A finished run leaves runs/sS_rR.done holding the batch's signature (every flag
+// logical processors); --threads T (default 1) gives every run DOTNET_PROCESSOR_COUNT=T, so each world
+// steps on T threads (0: all) — one single-threaded world per core is the best throughput, and the
+// trajectory is the same with any number of threads. A finished run leaves runs/sS_rR.done holding the batch's signature (every flag
 // that changes a trajectory); --resume skips the runs whose .done matches and runs the rest (after a
 // crash or Ctrl-C: the queue is just "runs without .done"); without --resume every run is made again.
 // --shard K/N keeps the K-th of every N runs (1-based), to split one batch over N machines. Every row
@@ -295,6 +297,11 @@ public static class Batch
         bool viaDotnet = Path.GetFileNameWithoutExtension(host) == "dotnet";
         bool serverGc = Array.IndexOf(args, "--server-gc") >= 0;
         string gcHeaps = Arg(args, "--gc-heaps", null);
+        // Threads per world: DOTNET_PROCESSOR_COUNT of each run (World.Step's workers follow
+        // Environment.ProcessorCount). One single-threaded world per core is the best throughput for a batch;
+        // the trajectory does not depend on it. 0 leaves the runs as many threads as the machine has.
+        int threads = int.Parse(Arg(args, "--threads", "1"));
+        Console.WriteLine(Loc.T($"  threads per run: {(threads > 0 ? threads.ToString() : "all")}", $"  потоков на прогон: {(threads > 0 ? threads.ToString() : "все")}"));
         if (serverGc) Console.WriteLine(Loc.T($"  server GC in every run{(gcHeaps != null ? $", {gcHeaps} heaps" : "")}", $"  серверный сборщик мусора в каждом прогоне{(gcHeaps != null ? $", куч: {gcHeaps}" : "")}"));
         var total = Stopwatch.StartNew();
         int done = 0, failed = 0;
@@ -309,6 +316,7 @@ public static class Batch
                 string csv = Path.Combine(dir, "runs", $"s{run.seed}_r{run.rep}.csv"), logPath = Path.Combine(dir, "runs", $"s{run.seed}_r{run.rep}.log");
                 var psi = new ProcessStartInfo { FileName = host, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
                 if (viaDotnet) psi.ArgumentList.Add(dll);
+                if (threads > 0) psi.Environment["DOTNET_PROCESSOR_COUNT"] = threads.ToString();
                 if (serverGc)
                 {
                     psi.Environment["DOTNET_gcServer"] = "1";

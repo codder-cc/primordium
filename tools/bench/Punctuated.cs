@@ -252,8 +252,8 @@ public static class Punctuated
         var byKind = runs.SelectMany(r => r.Onsets).GroupBy(o => o.kind).OrderBy(g => g.Key, StringComparer.Ordinal).Select(g => $"{g.Key} {g.Count()}");
         Console.WriteLine(Loc.T($"punctuated: {runs.Count} runs, {withOnsets.Count} with onsets ({string.Join(", ", byKind)}); window {days:0.##} days ({win} ticks) after each onset, ticks before {burn} left out",
                                 $"прерывистое равновесие: прогонов {runs.Count}, с началами катастроф {withOnsets.Count} ({string.Join(", ", byKind)}); окно {days:0.##} сут ({win} тиков) после каждого начала, тики до {burn} не считаются"));
-        Console.WriteLine(Loc.T("events per day inside the windows vs outside; per run: median difference; pooled: rate ratio; tests across runs",
-                                "событий в сутки в окнах и вне их; по прогонам — медиана разности; в сумме — отношение темпов; тесты по прогонам"));
+        Console.WriteLine(Loc.T("events per day inside the windows vs outside, pooled over runs, and their ratio; runs with more inside; tests across runs",
+                                "событий в сутки в окнах и вне их в сумме по прогонам и их отношение; прогонов, где в окне больше; тесты по прогонам"));
         var head = new List<string> { Loc.T("tempo", "темп"), Loc.T("inside /day", "в окне /сут"), Loc.T("outside /day", "вне /сут"), Loc.T("ratio", "отношение"),
             Loc.T("runs in>out", "прогонов в>вне"), Loc.T("Wilcoxon p", "Уилкоксон p"), Loc.T("sign p", "знаков p"), Loc.T("shift perm. p (more in)", "сдвиг p (больше в окне)") };
         var lines = new List<List<string>> { head };

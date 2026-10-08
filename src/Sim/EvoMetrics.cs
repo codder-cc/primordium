@@ -51,9 +51,13 @@ namespace Primordium;
 //   OscSurrogates surrogates (every series of changes shuffled in time on its own, which destroys
 //   the timing between them) whose best |S| (the same search over pairs and lags) reaches the observed
 //   one ((1 + k) / (1 + n)): the chance of so strong a directed lag between changes that are noise.
-//   Not a proof of coupling: two diets oscillating independently with the same period also show a
-//   lag (circular-shift surrogates would accept them, but they also accept a clean cycle of 3 periods
-//   in 48 samples — too weak for windows this short). hunt_score / hunt_p — the same restricted to
+//   This null is lenient: it also destroys each series' own rhythm and bursts (a boom or crash moves
+//   all shares in a few big steps), so in default worlds it rejects in about half the samples.
+//   osc_p_circ / hunt_p_circ — the strict null: every series circularly shifted by its own offset,
+//   which keeps its rhythm and bursts and destroys only the timing between series; it cannot tell a
+//   coupled cycle from two independent ones with the same period (both show a lag), so a clean
+//   periodic pair is not rejected by it either. Trust a cycle when both are small and osc_lag and the
+//   leader stay the same over successive windows. hunt_score / hunt_p — the same restricted to
 //   pairs with the hunters. NaN with fewer than OscMin differences (sample often: --every 100–200 for cycles of a few
 //   thousand ticks). The surrogates use their own fixed-seed generator: the world's random stream is
 //   never touched.
@@ -70,7 +74,7 @@ public sealed class EvoMetrics
         "new_specs", "specs_ever", "firsts",
         "roofed_share", "body_depth_mean", "body_depth_p90", "body_depth_max", "depth_levels_eff", "mine_depth", "mined_n",
         "pop_moran", "pop_regions_eff", "diet_moran", "diet_beta_rel",
-        "osc_score", "osc_p", "osc_lag", "osc_lead", "osc_follow", "hunt_score", "hunt_p",
+        "osc_score", "osc_p", "osc_lag", "osc_lead", "osc_follow", "hunt_score", "hunt_p", "osc_p_circ", "hunt_p_circ",
     };
     public static int Col(string name) => Array.IndexOf(Names, name);
     static readonly int CRoofed = Col("roofed_share"), CPopMoran = Col("pop_moran"), COsc = Col("osc_score");
@@ -331,7 +335,7 @@ public sealed class EvoMetrics
             dietHistory.RemoveRange(0, dietHistory.Count - 1);   // the spacing changed: start again from the last one
         dietHistory.Add((tick, shares));
         if (dietHistory.Count > OscWindow + 1) dietHistory.RemoveAt(0);
-        for (int k = COsc; k < COsc + 7; k++) v[k] = double.NaN;
+        for (int k = COsc; k < COsc + 9; k++) v[k] = double.NaN;
         int n = dietHistory.Count - 1;
         if (n < OscMin) return;
         long step = dietHistory[1].tick - dietHistory[0].tick;
@@ -361,6 +365,21 @@ public sealed class EvoMetrics
         }
         v[COsc + 1] = (1 + above) / (1.0 + OscSurrogates);
         v[COsc + 6] = double.IsNaN(hunt) ? double.NaN : (1 + aboveHunt) / (1.0 + OscSurrogates);
+        // The strict null: each series circularly shifted by its own offset (keeps its own rhythm and bursts).
+        above = aboveHunt = 0;
+        for (int s = 0; s < OscSurrogates; s++)
+        {
+            for (int d = 0; d < Diets; d++)
+            {
+                int off = rng.Next(n);
+                for (int t = 0; t < n; t++) shifted[d][t] = diff[d][(t + off) % n];
+            }
+            double b = Best(shifted, -1).score;
+            if (!double.IsNaN(b) && b >= score - 1e-12) above++;
+            if (!double.IsNaN(hunt)) { double h = Best(shifted, World.DietHunter).score; if (!double.IsNaN(h) && h >= hunt - 1e-12) aboveHunt++; }
+        }
+        v[COsc + 7] = (1 + above) / (1.0 + OscSurrogates);
+        v[COsc + 8] = double.IsNaN(hunt) ? double.NaN : (1 + aboveHunt) / (1.0 + OscSurrogates);
     }
 
     // The largest |S| over pairs of diets (only pairs with `only`, if ≥ 0) and lags; which leads, which follows.
@@ -401,12 +420,12 @@ public sealed class EvoMetrics
     }
 
     // Self-check of the oscillation statistic on made-up series (no world): a lagged predator–prey pair
-    // must score far above its surrogates, independent noise must not. Returns (p cycle, p noise).
-    public static (double cycle, double noise) OscSelfCheck()
+    // must score far above its shuffled surrogates, independent noise must not (by either null).
+    public static (double cycle, double noise, double noiseCirc) OscSelfCheck()
     {
         var m = new EvoMetrics();
         var rng = new SimRng(77);
-        double pc = double.NaN, pn = double.NaN;
+        double pc = double.NaN, pn = double.NaN, pnc = double.NaN;
         for (int t = 0; t <= OscWindow; t++)
         {
             double ph = 2 * Math.PI * t / 16.0;
@@ -427,9 +446,9 @@ public sealed class EvoMetrics
             s[World.DietEater] = 1 - s[World.DietPlant] - s[World.DietHunter];
             var v = new double[Names.Length];
             q.NoteDiets(1000 + t * 100, s, v);
-            pn = v[COsc + 6];
+            pn = v[COsc + 6]; pnc = v[COsc + 8];
         }
-        return (pc, pn);
+        return (pc, pn, pnc);
     }
 
     // Greedy clusters of fingerprints, the most common first; each joins the first cluster whose
@@ -457,6 +476,6 @@ public sealed class EvoMetrics
              + $" | diet plant {v[20]:P0} eat {v[21]:P0} mine {v[22]:P0} hunt {v[23]:P0} idle {v[24]:P0} | firsts {F(27)}"
              + $" | roofed {v[CRoofed]:P1} depth {F(CRoofed + 1, "F2")} p90 {F(CRoofed + 2)} max {F(CRoofed + 3)} levels {F(CRoofed + 4, "F2")}; mined {F(CRoofed + 6)} at depth {F(CRoofed + 5, "F2")}"
              + $" | regions: pop Moran {F(CPopMoran, "F2")} eff {F(CPopMoran + 1, "F1")}, diet Moran {F(CPopMoran + 2, "F2")} beta {F(CPopMoran + 3, "F3")}"
-             + $" | diet cycles: score {F(COsc, "F2")} p {F(COsc + 1, "F3")} lag {F(COsc + 2)} ({F(COsc + 3)}→{F(COsc + 4)}), hunters {F(COsc + 5, "F2")} p {F(COsc + 6, "F3")}";
+             + $" | diet cycles: score {F(COsc, "F2")} p {F(COsc + 1, "F3")} lag {F(COsc + 2)} ({F(COsc + 3)}→{F(COsc + 4)}), hunters {F(COsc + 5, "F2")} p {F(COsc + 6, "F3")}; circular p {F(COsc + 7, "F3")}/{F(COsc + 8, "F3")}";
     }
 }
