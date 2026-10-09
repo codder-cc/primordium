@@ -57,7 +57,7 @@ public sealed partial class World
             add[s] = (ushort)n;
             for (int e = 0; e < Chemistry.ElementCount; e++) HandInput[e] += (double)n * Chem.Atoms[s, e];
             Flows[FHand] += (double)n * Chem.E[s];
-            Deposit(c, Height[c], add, 12);
+            Deposit(c, Height[c], add, (byte)P.OrderPour);
             stroke.Molecules += n;
         }
     }

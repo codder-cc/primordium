@@ -38,6 +38,16 @@ public static class P
     // it routine. Rock is eaten slowly.
     public static float RockBarrier = 4f;
     public static float CompactionPressure = 8f;
+    // Lattice order (0–255) of blocks that bodies and the world lay: a pile of one kind (OrderPile), a skin
+    // of excreted molecules (OrderGrow), loose matter settled or poured from the hand (OrderPour), lava
+    // and ash a vent throws (OrderVent). Order raises cohesion and the barrier (World.Matter).
+    public static int OrderPile = 80, OrderGrow = 25, OrderPour = 12, OrderVent = 35;
+    // Buried matter orders itself under load: per environment step MetamorphRate × (target − order) ×
+    // TempFactor, target = load/(load + CompactionPressure); two buried molecules bind under a load above
+    // CompactionPressure × (MetamorphBond + the product's bond).
+    public static float MetamorphRate = 0.04f, MetamorphBond = 0.2f;
+    // A body soaks up a block like loose remains only when its barrier is at most SoakBarrier.
+    public static float SoakBarrier = 0.5f;
     // Strength under confinement (Mohr–Coulomb, World.Strength): a block bears its uniaxial strength plus
     // FrictionQ × the least horizontal stress its neighbours press on it with; a neighbour presses with
     // LateralK × its own vertical stress (as well as their contact passes it on). FrictionQ ≈ 4 is a
@@ -65,6 +75,8 @@ public static class P
     public static int BaseCycles = 8, MaxCycles = 32;
     public const int StackSize = 16, MemSize = 16, CallDepth = 8;   // world structure: VM array sizes
     public static float CostInstr = 0.001f;     // energy per executed instruction
+    // The genome's pace by body temperature: cycles × clamp(VmTempBase + Tb/VmTempPer, VmTempMin, VmTempMax).
+    public static float VmTempBase = 0.6f, VmTempPer = 50f, VmTempMin = 0.4f, VmTempMax = 1.2f;
 
     // Upkeep
     public static float CostBase = 0.008f;      // per tick for being alive
@@ -95,6 +107,11 @@ public static class P
     // Light: each cell catches a trickle of photons that everybody in it shares.
     public static float PhotonK = 0.13f;        // photons per tick at full light (0.06 before the cosine law and the transparency: see World.Sky)
     public static float PhotonCap = 3f;         // a cell can't hoard more than this
+    // Shading of the sun: a ridge within ShadowReach cells towards the sun that rises above the sun's line
+    // leaves ShadowLight of the light; clouds take CloudDim × cloud, snow SnowDim × min(1, SnowCover × snow).
+    public static float ShadowLight = 0.15f, CloudDim = 0.3f, SnowDim = 0.7f, SnowCover = 3f;
+    public static int ShadowReach = 24;
+    public static float SightLight = 0.12f;     // look sees nothing in a cell darker than this (it looks past it)
     // Insolation (World.Sky): power = max(0, sin elevation)^InsolExp — the cosine law: the noon sun at the
     // equator gives 1, at 60° in the equinox 0.5, the polar winter 0. A soft terminator (twilight) between
     // TwilightLo and TwilightHi. The climate of a latitude follows the day's insolation sum, held back by
@@ -124,6 +141,12 @@ public static class P
     public static float ComfortLo = 2f, ComfortHi = 26f, TempTau = 7f;
     public static float FreezeK = 0.004f;       // energy per tick at 1·(e−1) below the band
     public static float HarmExpMax = 20f;       // harm exponent cap: e^20·0.004 ≈ 2·10⁶ a tick is death anyway, but finite
+    // Reaction speed by temperature (World.TempFactor): 2^((t − TempRef)/TempDoubling), within
+    // TempFactorMin…TempFactorMax.
+    public static float TempRef = 15f, TempDoubling = 15f, TempFactorMin = 0.25f, TempFactorMax = 3f;
+    // A body's heat capacity: heat q warms it by q·HeatCapK/(HeatCapMass + mass); its temperature follows
+    // the surroundings by 1/(BodyRelax + BodyRelaxMass·mass) per tick (and sheds held heat at that pace).
+    public static float HeatCapK = 6f, HeatCapMass = 5f, BodyRelax = 6f, BodyRelaxMass = 0.15f;
     public static float HeatK = 0.004f;
     public static float Antifreeze = 8f;        // °C a body packed full of molecules can go below the band
 
@@ -196,6 +219,11 @@ public static class P
     // Energy
     public static float EnergyK = 1.0f;         // bond energy unit -> agent energy
     public static float HeatShare = 0.3f;       // of released energy that warms the body
+    // A reaction that needs energy de < 0, unaided by a protein, goes with the Boltzmann chance
+    // e^(de·UphillK) — UphillKT 0: at every temperature; 1: e^(de·UphillK·(273.15 + TempRef)/(273.15 + Tb)),
+    // the same at TempRef, likelier in a warm body, rarer in a cold one (k·T in the energy unit).
+    public static float UphillK = 0.5f;
+    public static int UphillKT = 0;
     // Where a body's energy is (World.Charge): MatterEnergy 0 — a number (Agent.Energy) fed by reactions in
     // the body, as before; 1 — in its matter: the excitation of the molecules it holds (its charge) pays
     // every cost by relaxing them, an exothermic reaction in the body excites its ground molecules
@@ -277,6 +305,10 @@ public static class P
     // the same ~18 °C at any scale.
     public static float TEquator = 29f, TPole = -16f, TDay = 12f, TLapse = 0.6f;
     public static float TRelax = 0.008f, TRelaxWater = 0.002f;   // per env step
+    // A cell's equilibrium temperature also rises VentWarm × vent heat and falls SnowCool × min(1, SnowCover × snow).
+    public static float VentWarm = 35f, SnowCool = 4f;
+    // Rain scavenges at most RainCapture of a column's air gas onto its top block per metamorphism step.
+    public static float RainCapture = 0.05f;
     // Caves and depth (World.Cave): rock above a body shelters it. With `roof` solid blocks over it in
     // its column, a body feels lerp(surface, Tcave, 1 − e^(−roof/CaveDepthK)), where Tcave is the
     // column's slow mean temperature (an EMA of Temp over TmeanTau ticks, about a year) plus GeoGrad

@@ -43,7 +43,7 @@ public sealed partial class World
     internal void Exec(Agent a, int cell)
     {
         // Chemistry — and thinking with it — slows down in a cold body.
-        float cold = Math.Clamp(0.6f + a.Tb / 50f, 0.4f, 1.2f);
+        float cold = Math.Clamp(P.VmTempBase + a.Tb / P.VmTempPer, P.VmTempMin, P.VmTempMax);
         int cycles = Math.Clamp((int)(P.BaseCycles * cold), 1, P.MaxCycles);
         a.LastCycles = cycles;
         for (int c = 0; c < cycles; c++)

@@ -276,7 +276,7 @@ public sealed partial class World
         if (Rng.NextDouble() >= 300.0 / Chem.MatCap[m]) return;
         DisplaceOccupants(best, Height[best]);
         int n = BlockCapacity(molecule, 35);   // fresh, poorly packed lava rock fills its voxel
-        Mat[w] = m; Units[w] = (ushort)n; Order[w] = 35;
+        Mat[w] = m; Units[w] = (ushort)n; Order[w] = (byte)P.OrderVent;
         for (int e = 0; e < Chemistry.ElementCount; e++) InteriorInput[e] += (double)n * Chem.Atoms[molecule, e];
         Flows[FVent] += (double)n * Chem.E[molecule];
         Height[best]++;

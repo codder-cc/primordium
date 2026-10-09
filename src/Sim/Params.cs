@@ -120,11 +120,22 @@ public static class ParamRegistry
         F("FaceBarrier", "Порода", "Barrier an exposed face gets for free (subtracted from the barrier)", "Барьер, который грань берёт даром (вычитается из барьера)", 0, 5, 0.1);
         F("FaceWork", "Порода", "Work per molecule taken from a face (the cost of gnawing rock)", "Работа на одну молекулу из грани (цена грызть породу)", 0.5, 100, 0.5);
         F("RockBarrier", "Порода", "How firmly rock holds its molecules", "Насколько крепко порода держит молекулы", 0, 20, 0.1);
+        I("OrderPile", "Порода", "Lattice order (0–255) of a block piled of one kind of molecule", "Порядок решётки (0–255) блока, сложенного из молекул одного вида", 0, 255, 1);
+        I("OrderGrow", "Порода", "Lattice order (0–255) of a skin of excreted molecules", "Порядок решётки (0–255) корки из выделенных молекул", 0, 255, 1);
+        I("OrderPour", "Порода", "Lattice order (0–255) of loose matter settled into a block or poured from the hand", "Порядок решётки (0–255) рыхлого, осевшего в блок или высыпанного рукой", 0, 255, 1);
+        I("OrderVent", "Порода", "Lattice order (0–255) of the lava and ash a vent throws", "Порядок решётки (0–255) лавы и пепла из жерла", 0, 255, 1);
+        F("MetamorphRate", "Порода", "Buried matter orders by MetamorphRate × (target − order) × temperature factor per step", "Захороненное упорядочивается на MetamorphRate × (цель − порядок) × температурный множитель за шаг", 0, 1, 0.005);
+        F("MetamorphBond", "Порода", "Buried molecules bind under a load above CompactionPressure × (MetamorphBond + the product's bond)", "Захороненные молекулы связываются под нагрузкой выше CompactionPressure × (MetamorphBond + связь продукта)", 0, 5, 0.05);
+        F("SoakBarrier", "Порода", "A body soaks up a block like loose remains only when its barrier is at most this", "Тело впитывает блок, как рыхлые останки, только если его барьер не больше этого", 0, 5, 0.05);
         F("CatalysisMax", "Порода", "Share of the barrier a protein removes per bond", "Доля барьера, которую снимает белок на связь", 0, 1, 0.01);
         // VM
         I("BaseCycles", "ВМ", "Genome cycles per tick (in a warm body)", "Тактов генома за тик (в тёплом теле)", 1, 64, 1);
         I("MaxCycles", "ВМ", "Cycle limit per tick", "Предел тактов за тик", 1, 256, 1);
         F("CostInstr", "ВМ", "Energy per instruction", "Энергия на одну команду", 0, 0.05, 0.0005);
+        F("VmTempBase", "ВМ", "Genome pace: cycles × clamp(VmTempBase + Tb/VmTempPer, min, max) — the pace at 0 °C", "Темп генома: такты × clamp(VmTempBase + Tb/VmTempPer, min, max) — темп при 0 °C", 0, 2, 0.01);
+        F("VmTempPer", "ВМ", "Genome pace: °C of body temperature per +1 of pace", "Темп генома: °C температуры тела на +1 темпа", 1, 500, 1);
+        F("VmTempMin", "ВМ", "Genome pace: the slowest (cold body)", "Темп генома: самый медленный (холодное тело)", 0, 2, 0.01);
+        F("VmTempMax", "ВМ", "Genome pace: the fastest (warm body)", "Темп генома: самый быстрый (тёплое тело)", 0, 4, 0.01);
         // Upkeep
         F("CostBase", "Содержание", "Cost of living per tick", "Плата за жизнь за тик", 0, 0.2, 0.001);
         F("CostMass", "Содержание", "Cost per unit of body mass per tick", "Плата за единицу массы тела за тик", 0, 0.01, 0.0001);
@@ -146,6 +157,12 @@ public static class ParamRegistry
         // Light
         F("PhotonK", "Свет", "Photons per cell per tick in full light", "Фотонов в клетку за тик при полном свете", 0, 1, 0.005);
         F("PhotonCap", "Свет", "A cell stores no more photons than this", "Больше фотонов клетка не копит", 0.1, 50, 0.1);
+        F("ShadowLight", "Свет", "Share of light left in a ridge's shadow", "Доля света в тени хребта", 0, 1, 0.01);
+        I("ShadowReach", "Свет", "How far towards the sun a ridge casts its shadow, cells", "Как далеко в сторону солнца ищется затеняющий хребет, клеток", 0, 64, 1);
+        F("CloudDim", "Свет", "Light a full cloud takes", "Сколько света забирает полная облачность", 0, 1, 0.01);
+        F("SnowDim", "Свет", "Light a full snow cover takes", "Сколько света забирает полный снежный покров", 0, 1, 0.01);
+        F("SnowCover", "Свет", "Snow cover per unit of snow depth (full cover at 1/SnowCover); also for the cold of snow", "Снежный покров на единицу толщины снега (полный при 1/SnowCover); и для холода снега", 0.1, 20, 0.1);
+        F("SightLight", "Свет", "Look sees nothing in a cell darker than this", "Взгляд ничего не видит в клетке темнее этого", 0, 1, 0.01);
         I("Insolation", "Свет", "Cosine-law insolation: power = sin of sun elevation, latitude climate from the daily sum (1 on, 0 the old curve, saturating already at ~17°)", "Инсоляция по закону косинуса: мощность = sin высоты солнца, климат широты — от суточной суммы (1 — вкл, 0 — прежняя кривая, насыщение уже при ~17°)", 0, 1, 1);
         F("InsolExp", "Свет", "Law exponent: power = sin(elevation)^k (1 is the cosine law)", "Показатель закона: мощность = sin(высоты)^k (1 — закон косинуса)", 0.25, 4, 0.05);
         F("TwilightLo", "Свет", "Twilight: sine of sun elevation where light begins", "Сумерки: синус высоты солнца, где свет начинается", -0.3, 0, 0.01);
@@ -164,6 +181,14 @@ public static class ParamRegistry
         // Temperature
         F("ComfortLo", "Температура", "Lower bound of comfortable temperature, °C", "Нижняя граница удобной температуры, °C", -40, 40, 0.5);
         F("ComfortHi", "Температура", "Upper bound of comfortable temperature, °C", "Верхняя граница удобной температуры, °C", -20, 80, 0.5);
+        F("TempRef", "Температура", "Reaction speed by temperature 2^((t − TempRef)/TempDoubling): the temperature of speed 1, °C", "Скорость реакций по температуре 2^((t − TempRef)/TempDoubling): температура скорости 1, °C", -40, 60, 0.5);
+        F("TempDoubling", "Температура", "Reaction speed by temperature: °C per doubling", "Скорость реакций по температуре: °C на удвоение", 1, 100, 0.5);
+        F("TempFactorMin", "Температура", "Reaction speed by temperature: the slowest (cold)", "Скорость реакций по температуре: самая медленная (холод)", 0, 1, 0.01);
+        F("TempFactorMax", "Температура", "Reaction speed by temperature: the fastest (heat)", "Скорость реакций по температуре: самая быстрая (жар)", 1, 20, 0.1);
+        F("HeatCapK", "Температура", "Body heat capacity: heat q warms a body by q·HeatCapK/(HeatCapMass + mass), °C", "Теплоёмкость тела: тепло q греет тело на q·HeatCapK/(HeatCapMass + масса), °C", 0, 50, 0.1);
+        F("HeatCapMass", "Температура", "Body heat capacity: the mass-like part of a body without molecules", "Теплоёмкость тела: доля, как масса, у тела без молекул", 0.1, 50, 0.1);
+        F("BodyRelax", "Температура", "A body follows the surroundings' temperature by 1/(BodyRelax + BodyRelaxMass·mass) per tick: the ticks of a light body", "Тело идёт к температуре среды на 1/(BodyRelax + BodyRelaxMass·масса) за тик: тики лёгкого тела", 1, 100, 0.5);
+        F("BodyRelaxMass", "Температура", "Body temperature relaxation: ticks added per unit of mass", "Релаксация температуры тела: тиков на единицу массы", 0, 5, 0.01);
         F("TempTau", "Температура", "Degrees outside the band per e-fold growth of harm", "Градусов вне полосы на e-кратный рост вреда", 0.5, 50, 0.5);
         F("FreezeK", "Температура", "Cold harm per tick", "Вред холода за тик", 0, 0.1, 0.0005);
         F("HarmExpMax", "Температура", "Cap on the harm exponent", "Предел показателя экспоненты вреда", 1, 80, 1);
@@ -222,6 +247,8 @@ public static class ParamRegistry
         // Energy
         F("EnergyK", "Энергия", "Bond energy → body energy", "Энергия связи → энергия тела", 0, 5, 0.05);
         F("HeatShare", "Энергия", "Share of reaction energy that goes to body heat", "Доля энергии реакции, уходящая в тепло тела", 0, 0.9, 0.01);
+        F("UphillK", "Энергия", "A reaction that needs energy de, without a protein, goes with chance e^(de·UphillK) (per energy unit)", "Реакция, которой нужна энергия de, без белка идёт с шансом e^(de·UphillK) (на единицу энергии)", 0, 10, 0.05);
+        I("UphillKT", "Энергия", "Uphill chance by temperature: 1 — e^(de·UphillK·(273.15 + TempRef)/(273.15 + Tb)), Boltzmann with the body's k·T (the same at TempRef); 0 — the same at every temperature, as before", "Шанс реакции в гору по температуре: 1 — e^(de·UphillK·(273,15 + TempRef)/(273,15 + Tb)), Больцман с k·T тела (тот же при TempRef); 0 — одинаковый при любой температуре, как раньше", 0, 1, 1);
         I("MatterEnergy", "Энергия", "Where a body's energy is: 1 — in its matter (the excitation of the molecules it holds pays every cost by relaxing them; reactions in the body excite its ground molecules; molecules carry it when eaten, shared or left in remains), 0 — a number in the body, as before",
           "Где энергия тела: 1 — в его веществе (возбуждение молекул тела оплачивает каждую трату их релаксацией; реакции в теле возбуждают его основные молекулы; молекулы уносят её, когда их съедают, отдают или оставляют в останках), 0 — число в теле, как раньше", 0, 1, 1);
         F("EnergyReserve", "Энергия", "Energy a body keeps in hand: an act that would leave it less is not done", "Энергия, которую тело держит про запас: действие, после которого останется меньше, не делается", 0, 20, 0.1);
@@ -274,6 +301,9 @@ public static class ParamRegistry
         F("ChemIonicK", "Геохимия", "Energy of a bond between unlike atoms below their like bonds, per (difference of affinities)²; an unreachable atom costs this × affinity × valence / 2", "Энергия связи разных атомов ниже их связей с подобными, на (разность сродств)²; атом, до которого не дотянулась ни одна связь, стоит столько × сродство × валентность / 2", 0.5, 30, 0.5, live: false);
         F("ChemExciteK", "Геохимия", "Excitation a photon brings to a molecule: this × √(mean affinity of its atoms)", "Возбуждение, которое фотон даёт молекуле: столько × √(среднее сродство её атомов)", 0.5, 30, 0.5, live: false);
         // Climate
+        F("VentWarm", "Климат", "Equilibrium temperature added per unit of vent heat, °C", "Прибавка равновесной температуры на единицу тепла жерла, °C", 0, 200, 1);
+        F("SnowCool", "Климат", "Equilibrium temperature taken by a full snow cover, °C", "Сколько равновесной температуры забирает полный снежный покров, °C", 0, 50, 0.5);
+        F("RainCapture", "Климат", "Rain scavenges at most this share of a column's air gas onto its top block per metamorphism step", "Дождь осаждает на верхний блок не больше этой доли газа воздуха столба за шаг метаморфизма", 0, 1, 0.005);
         F("TEquator", "Климат", "Equator temperature, °C", "Температура экватора, °C", -50, 80, 0.5);
         F("TPole", "Климат", "Pole temperature, °C", "Температура полюса, °C", -80, 50, 0.5);
         F("TDay", "Климат", "Daily range from light, °C", "Суточный размах от света, °C", 0, 50, 0.5);

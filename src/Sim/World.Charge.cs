@@ -338,7 +338,7 @@ public sealed partial class World
         if (q <= 0) return;
         double h0 = a.HeatHeld;
         a.HeatHeld += q;
-        a.Tb += (float)q * 6f / (5f + a.Mass);
+        a.Tb += (float)q * P.HeatCapK / (P.HeatCapMass + a.Mass);
         Flows[FRounding] += q - (a.HeatHeld - h0);   // doubles round too (see World.Energy)
     }
 

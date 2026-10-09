@@ -81,12 +81,12 @@ public sealed partial class World
 
     float TempEq(int i, int y)   // y: the cell's row
     {
-        float t = climRow[y] + P.TDay * (Light[i] - 0.25f) - Lapse * (Height[i] - LapseBase) + 35f * ventHeat[i] - 4f * Math.Min(1f, Snow[i] * 3);
+        float t = climRow[y] + P.TDay * (Light[i] - 0.25f) - Lapse * (Height[i] - LapseBase) + P.VentWarm * ventHeat[i] - P.SnowCool * Math.Min(1f, Snow[i] * P.SnowCover);
         return dryOn ? t + dryT[i] : t;   // a drought is warmer (World.ClimateCycles)
     }
 
-    // Reaction speed roughly doubles every 15 °C.
-    public static float TempFactor(float t) => Math.Clamp(MathF.Pow(2f, (t - 15f) / 15f), 0.25f, 3f);
+    // Reaction speed doubles every TempDoubling °C (15), 1 at TempRef.
+    public static float TempFactor(float t) => Math.Clamp(MathF.Pow(2f, (t - P.TempRef) / P.TempDoubling), P.TempFactorMin, P.TempFactorMax);
 
     void UpdateClimate()
     {

@@ -104,7 +104,7 @@ public sealed partial class World
         // Body temperature follows the surroundings, slower for big bodies (reactions warm it up).
         // The reaction heat it holds goes into its cells at the same pace: counted once, in Tb and then
         // in the cells, not in both at once.
-        float relax = 1f / (6f + 0.15f * a.Mass);
+        float relax = 1f / (P.BodyRelax + P.BodyRelaxMass * a.Mass);
         a.Tb += (FootTemp(a) - a.Tb) * relax;
         double held = a.HeatHeld;
         a.HeatHeld = held - held * relax;

@@ -301,7 +301,7 @@ public sealed partial class World
             int w = c * Z + Height[c];
             DisplaceOccupants(c, Height[c]);
             int n = BlockCapacity(molecule, 35);
-            Mat[w] = m; Units[w] = (ushort)n; Order[w] = 35;
+            Mat[w] = m; Units[w] = (ushort)n; Order[w] = (byte)P.OrderVent;
             for (int e = 0; e < Chemistry.ElementCount; e++) InteriorInput[e] += (double)n * Chem.Atoms[molecule, e];
             Flows[FVent] += (double)n * Chem.E[molecule];
             Height[c]++;

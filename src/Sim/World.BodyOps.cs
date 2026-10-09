@@ -148,8 +148,10 @@ public sealed partial class World
     int Turnovers(float drive) => drive >= 1 ? (int)drive : Rng.NextDouble() < drive ? 1 : 0;
 
     // A reaction that needs energy (de < 0) hardly goes by itself: only a protein can couple it to the
-    // body's energy; unaided it happens with the Boltzmann chance e^(de/2).
-    static float Uphill(float drive, int slot, float de) => de >= 0 || slot >= 0 ? drive : drive * MathF.Exp(de * 0.5f);
+    // body's energy; unaided it happens with the Boltzmann chance e^(de·UphillK) — with UphillKT 1 by the
+    // body's own temperature (k·T relative to TempRef).
+    static float Uphill(Agent a, float drive, int slot, float de) => de >= 0 || slot >= 0 ? drive
+        : drive * MathF.Exp(de * (P.UphillKT != 0 ? P.UphillK * (273.15f + P.TempRef) / (273.15f + a.Tb) : P.UphillK));
 
     // Something worked: the instruction and the gene of the protein that did it are marked (Agent.Prot).
     // With UsefulCredit 1 the mark protects them against copy errors (Genome.Mutate); with 0 it is only
@@ -185,7 +187,7 @@ public sealed partial class World
         double keep = de * (1.0 - P.HeatShare);
         a.Energy += keep;
         // The heat share warms the body; it reaches the cells only as the body cools (LiveBody).
-        a.Tb += de * P.HeatShare * 6f / (5f + a.Mass);
+        a.Tb += de * P.HeatShare * P.HeatCapK / (P.HeatCapMass + a.Mass);
         a.HeatHeld += de - keep;
         Flows[FRounding] += de - (a.Energy - e0) - (a.HeatHeld - h0);   // doubles round too, ~1e-16 (see World.Energy)
         a.GainChem += de * (1 - P.HeatShare);
@@ -200,7 +202,7 @@ public sealed partial class World
         int bond = Chem.E[s1] + Chem.E[s2] - Chem.E[p];
         float de = bond * P.EnergyK;
         float drive = Chance(a, Enzyme.Bind, s1, s2, out int slot);
-        int times = Turnovers(Uphill(drive, slot, de)), done = 0;
+        int times = Turnovers(Uphill(a, drive, slot, de)), done = 0;
         for (; done < times; done++)
         {
             if (a.Inv[s1] == 0 || a.Inv[s2] == 0 || (s1 == s2 && a.Inv[s1] < 2)) break;
@@ -225,7 +227,7 @@ public sealed partial class World
         int bond = Chem.SplitEnergy(s);
         float de = bond * P.EnergyK;
         float drive = Chance(a, Enzyme.Split, s, 0, out int slot);
-        int times = Turnovers(Uphill(drive, slot, de)), done = 0;
+        int times = Turnovers(Uphill(a, drive, slot, de)), done = 0;
         for (; done < times; done++)
         {
             if (a.Inv[s] == 0) break;
@@ -385,7 +387,7 @@ public sealed partial class World
             y += DY[d];
             if (y < 0 || y >= H) return new LookResult(0, k, 2);
             int c = y * W + x;
-            if (Light[c] < 0.12f) continue;
+            if (Light[c] < P.SightLight) continue;
             int level = WalkLevel(c, h0);
             int dh = level < 0 ? 2 : level - h0;
             if (dh >= 2) { Note(EvKind.Look); return new LookResult(dh, k, 2); }
@@ -535,7 +537,7 @@ public sealed partial class World
         int h = a.Z, v = cell * Z + h - 1;
         if (h <= 2 || Units[v] == 0) return;
         float barrier = VoxelBarrier(v);
-        if (barrier > 0.5f || !TakeBite(v, barrier, P.CostIntake)) return;   // a gentle soak: little work into the face
+        if (barrier > P.SoakBarrier || !TakeBite(v, barrier, P.CostIntake)) return;   // a gentle soak: little work into the face
         int s = TakeVoxelMolecule(v);
         AddMol(a, s);
         EpMol(EnergyEconomyProbe.SoakMol, s);
@@ -958,7 +960,7 @@ public sealed partial class World
         int n = Math.Min(a.Inv[best], ushort.MaxValue);
         add[best] = (ushort)n;
         for (int k = 0; k < n; k++) RemoveMol(a, best);
-        Deposit(c, level, add, 80, a);
+        Deposit(c, level, add, (byte)P.OrderPile, a);
         a.NPiles++;
         Note(EvKind.Pile);
         Act(a, ActDig, d);
@@ -977,7 +979,7 @@ public sealed partial class World
         var add = new ushort[Chemistry.S];
         for (int k = 0; k < 4; k++) { int s = RandomMol(a); add[s]++; RemoveMol(a, s); }
         Dissipate(a, P.CostGrow);
-        Deposit(c, level, add, 25, a);
+        Deposit(c, level, add, (byte)P.OrderGrow, a);
         a.NGrows++; Note(EvKind.Grow);
         Act(a, ActDig, d); AddFlash(c % W, c / W, FlashGrow);
     }

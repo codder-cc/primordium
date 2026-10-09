@@ -526,6 +526,7 @@ public sealed partial class World
         int top = 0;   // nothing stands higher than the highest column: shadow rays stop there
         for (int i = 0; i < N; i++) if (Height[i] > top) top = Height[i];
         bool insol = InsolLaw, sky = TranspLaw;
+        int rayLen = Math.Min(P.ShadowReach, W - 1);   // how far a shadow ray looks towards the sun
         if (insol) EnsureInsolNorms(climOn ? MathF.Round(tilt / 0.002f) * 0.002f : P.Tilt);
         StepEclipse();
         bool ecl = EclipseNow;
@@ -562,13 +563,13 @@ public sealed partial class World
                         float e = MathF.Max(se, 0.02f);
                         float tanE = e / MathF.Sqrt(MathF.Max(1e-4f, 1 - e * e));
                         float h0 = Height[i] * P.BlockH, maxRise = top * P.BlockH - h0;
-                        for (int k = 1; k <= 24 && maxRise >= k * tanE; k++)
+                        for (int k = 1; k <= rayLen && maxRise >= k * tanE; k++)
                         {
                             int py = (int)MathF.Round(y - dn * k);
                             if (py < 0 || py >= H) break;
-                            int px = (int)MathF.Round(x + de * k);   // k ≤ 24 < W: one wrap at most
+                            int px = (int)MathF.Round(x + de * k);   // k ≤ rayLen < W: one wrap at most
                             if (px < 0) px += W; else if (px >= W) px -= W;
-                            if (Height[py * W + px] * P.BlockH - h0 > k * tanE) { l *= 0.15f; break; }
+                            if (Height[py * W + px] * P.BlockH - h0 > k * tanE) { l *= P.ShadowLight; break; }
                         }
                     }
                     if (sky) l *= Transp[i];
@@ -578,7 +579,7 @@ public sealed partial class World
                 }
                 // Photons are counted where they reach the water's surface (a body catches them only as deep as
                 // they get, see Photo); Light is what is left of it at the floor.
-                float lit = l * (1 - Ash[i]) * (1 - 0.3f * Cloud[i]) * MathF.Exp(-P.WaterDim * Ice[i]) * (1 - 0.7f * Math.Min(1f, Snow[i] * 3));
+                float lit = l * (1 - Ash[i]) * (1 - P.CloudDim * Cloud[i]) * MathF.Exp(-P.WaterDim * Ice[i]) * (1 - P.SnowDim * Math.Min(1f, Snow[i] * P.SnowCover));
                 Sun[i] = lit;
                 Light[i] = lit * MathF.Exp(-P.WaterDim * Water[i]);
                 Photon[i] = Math.Min(P.PhotonCap, Photon[i] + lit * P.PhotonK * P.LightEvery);
@@ -646,7 +647,7 @@ public sealed partial class World
             // Precipitation adsorbs existing atmospheric molecules onto the exposed aggregate.
             if (Tick % P.MetamorphEvery == 0 && Rain[i] > 0 && Height[i] > 2 && RainSum > 0)
             {
-                Qty captured = C[Chem.Gas][i] * Math.Min(0.05f, Rain[i] * Moisture * P.RainShare / RainSum * (P.MetamorphEvery / P.EnvEvery));
+                Qty captured = C[Chem.Gas][i] * Math.Min(P.RainCapture, Rain[i] * Moisture * P.RainShare / RainSum * (P.MetamorphEvery / P.EnvEvery));
                 if (captured > Qty.Of(0.00001))
                 {
                     int v = i * Z + Height[i] - 1;

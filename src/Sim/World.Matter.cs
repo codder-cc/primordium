@@ -526,7 +526,7 @@ public sealed partial class World
         }
         if (moved == 0) return;
         LooseVolume[c] = Math.Max(0, LooseVolume[c] - (volume - limit));
-        Deposit(c, Height[c], add, 12);
+        Deposit(c, Height[c], add, (byte)P.OrderPour);
         Sediments++; Note(EvKind.Sediment);
     }
 
@@ -593,7 +593,7 @@ public sealed partial class World
             float load = Pressure[v];
             b.Pressure = load;
             float target = load / (load + P.CompactionPressure);
-            float delta = Math.Max(0, target - b.Order) * 0.04f * TempFactor(Temp[v / Z]);
+            float delta = Math.Max(0, target - b.Order) * P.MetamorphRate * TempFactor(Temp[v / Z]);
             b.Order += delta;
             if (delta > 0) compressionCache[v] = 0;   // more order, more cohesion: stronger, never weaker
             for (int a = 0; a < Chemistry.S; a++)
@@ -604,7 +604,7 @@ public sealed partial class World
                     int product = Chem.Combine[a, s];
                     if (product < 0 || b.Matter[s] < (a == s ? 2 : 1)) continue;
                     int de = Chem.E[a] + Chem.E[s] - Chem.E[product];
-                    if (de < 0 || load < P.CompactionPressure * (0.2f + Chem.Bond[product])) continue;
+                    if (de < 0 || load < P.CompactionPressure * (P.MetamorphBond + Chem.Bond[product])) continue;
                     b.Matter[a]--; b.Matter[s]--; b.Matter[product]++;
                     heatIn[v / Z] += de;
                     pressureHeat += de;
