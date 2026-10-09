@@ -209,9 +209,12 @@ public static class Seeds
         var mot = new GeneSpec("Mot", 48);
         mot.Needs.Add(new Need { Kind = Need.Kinds.Membrane });
         mot.Needs.Add(new Need { Kind = Need.Kinds.Motor, Species = set.Food });
-        mot.Needs.Add(Need.Pocket(ProteinType.Out, set.Food, prefer: 1));
+        // the receptor: what lies outside is dilute (Life2Dilute), so it must hold strongly, and better in R (food ahead: run)
+        var receptor = Need.Pocket(ProteinType.Out, set.Food, prefer: 1, strength: -1.8);
+        receptor.Margin = 2; receptor.Weight = 3;
+        mot.Needs.Add(receptor);
         mot.Needs.Add(Need.Pocket(ProteinType.In, set.Food, prefer: 2));
-        Gene("Mot", mot, 13);
+        Gene("Mot", mot, 13, null, 3);
         // The knockout: the same motor without its outer pocket (recompiled from it with that need reversed).
         var ko = new GeneSpec("MotΔ", 48);
         ko.Needs.Add(new Need { Kind = Need.Kinds.Membrane, Weight = 3 });

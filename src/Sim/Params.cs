@@ -215,6 +215,8 @@ public static class ParamRegistry
         F("CostCutByte", "Действия", "Gene excision: per byte", "Вырезание генов: за байт", 0, 1, 0.005);
         F("CostGrow", "Действия", "Secreting an aggregate (grow)", "Выделить агрегат (grow)", 0, 5, 0.01);
         F("CostPush", "Действия", "Motor push per unit of mass", "Толчок мотора за единицу массы", 0, 0.5, 0.001);
+        I("MotorDrag", "Действия", "What resists a motor: 0 — the body's inertia (1 + mass); 1 — viscous drag at low Reynolds number (1 + DragK·∛volume: by size, not mass), a push then moves the body at √(work/drag) without coasting", "Что сопротивляется мотору: 0 — инерция тела (1 + масса); 1 — вязкое сопротивление при малом числе Рейнольдса (1 + DragK·∛объём: по размеру, не массе), толчок тогда двигает тело со скоростью √(работа/сопротивление) без наката", 0, 1, 1);
+        F("DragK", "Действия", "Viscous drag (MotorDrag 1) per cube root of a body's volume", "Вязкое сопротивление (MotorDrag 1) на кубический корень объёма тела", 0, 100, 0.1);
         F("CostFall", "Действия", "Fall per block beyond the first", "Падение на блок сверх первого", 0, 5, 0.01);
         F("CostLook", "Действия", "Vision per cell of range", "Зрение за клетку дальности", 0, 0.05, 0.0005);
         I("PileUnits", "Действия", "How many identical solid molecules pile needs", "Сколько одинаковых твёрдых молекул нужно для pile", 1, 64, 1);

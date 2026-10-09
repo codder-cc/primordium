@@ -271,7 +271,7 @@ public sealed class ChemModel : ILifeModel
             }
         }
         if (pigment > 0) Light(w, a, cell, st, Round(w, pigment), pigment);
-        if (thrust > 0) { w.Thrust(a, cosH[st.Heading], sinH[st.Heading], thrust); st.Thrusts++; st.Ledger[Cell.LMotor] += thrust; }
+        if (thrust > 0) { w.Thrust(a, cosH[st.Heading], sinH[st.Heading], thrust, ref st.DriftX, ref st.DriftY); st.Thrusts++; st.Ledger[Cell.LMotor] += thrust; }
         if (torque > 0)
         {
             w.Spend(a, torque);   // turning the body in the medium: work that ends as heat
@@ -798,6 +798,7 @@ public sealed class ChemModel : ILifeModel
         s.A<double>(st.Acc);
         s.V(ref st.Thrusts); s.V(ref st.Tumbles); s.V(ref st.Synth); s.V(ref st.Decayed); s.V(ref st.Photons); s.V(ref st.Reactions); s.V(ref st.Divisions);
         s.V(ref st.Uptake);
+        if (version >= 2) { s.V(ref st.DriftX); s.V(ref st.DriftY); }
         World.SyncPolymers(s, a);
     }
 

@@ -341,11 +341,11 @@ public sealed partial class World
         float share = 1;
         if (OrganLaw)
         {
-            share = Math.Min(1f, OrganStrength(a, Enzyme.Motor) / (P.MotorLoad * (1 + a.Mass) + 1e-6f));
+            share = Math.Min(1f, OrganStrength(a, Enzyme.Motor) / (P.MotorLoad * DragOf(a) + 1e-6f));
             if (share <= 0) return;
             power = 1;
         }
-        float cost = P.CostPush * (1 + a.Mass) * (wet ? 1 + P.DepthK * Below(a, cell) : 1) * share;
+        float cost = P.CostPush * DragOf(a) * (wet ? 1 + P.DepthK * Below(a, cell) : 1) * share;
         if (Avail(a) < cost + P.EnergyReserve) return;
         Dissipate(a, cost);
         if (OrganLaw) { OrganNote(OsReads, 1); OrganNote(OsHits, 1); OrganNote(OsUse, cost); }

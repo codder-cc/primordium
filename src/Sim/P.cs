@@ -177,6 +177,10 @@ public static class P
     public static float CostInjectBase = 0.05f, CostInjectByte = 0.02f;
     public static float CostCutBase = 0.1f, CostCutByte = 0.08f;
     public static float CostGrow = 0.2f, CostPush = 0.015f, CostFall = 0.3f, CostLook = 0.0015f;
+    // What resists every motor (World.DragOf): 0 — the body's inertia, 1 + mass (as before); 1 — viscous drag at low
+    // Reynolds number, 1 + DragK·∛volume (Stokes: ∝ size, not mass), and Thrust moves a body at √(work/γ) without coasting.
+    public static int MotorDrag = 0;
+    public static float DragK = 7.4f;
     public static int PileUnits = 4;            // solid molecules per built block
     // Hardness of a body's matter against a block. ContinuousHardness 0 (as before): molecules of bond ≥
     // SolidBond are "solid" — only a body holding one digs, only they are piled, each takes TeethK of the

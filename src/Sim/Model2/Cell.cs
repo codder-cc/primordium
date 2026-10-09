@@ -10,7 +10,7 @@ namespace Primordium.Model2;
 // its bond energy is their bonds plus the excited residues.
 public sealed class Cell
 {
-    public const int Version = 1;
+    public const int Version = 2;   // 2: the sub-cell way it has swum (DriftX/Y)
     public bool Assembled;          // made (a planted body assembles itself on its first tick)
     public int Genomes;             // duplexes held: 0 (a cell without a genome lives on what it inherited), 1, 2
     public readonly int[] GenomeLetters = new int[Chem2.L];   // the letters of the one duplex at Agent.G (as booked)
@@ -18,6 +18,7 @@ public sealed class Cell
     public readonly int[] ReplicaLetters = new int[Chem2.L];
     public int Fork;                // residues of the replica made so far
     public int Heading;             // 0–255: 1/256 of a turn
+    public float DriftX, DriftY;    // the way it has gone short of a whole cell (viscous motion, MotorDrag 1)
     public readonly List<Slot> Slots = new();
     public double[] Acc = Array.Empty<double>();               // synthesis owed by unit of the gene table
     public long Thrusts, Tumbles, Synth, Decayed, Photons, Reactions, Divisions;   // what it did (inspection, tests; saved)

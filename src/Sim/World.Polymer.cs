@@ -368,6 +368,31 @@ public sealed partial class World
     // A push along (dx, dy) (a unit vector, any heading) for `work` of the body's energy (owed and settled
     // like every cost, ending as heat): the same momentum per work as a model-1 motor push (P.CostPush per
     // unit of mass, more in deep water), into Vx/Vy for the shared movement (Move).
+    // What a body's motion is resisted by, for every motor (model 1's `push` and Thrust): law MotorDrag 0 — its
+    // inertia, 1 + mass (as before); 1 — the medium's viscous drag at low Reynolds number, which grows with the
+    // body's size, not its mass (Stokes: ∝ radius), 1 + DragK·∛volume (DragK sets a body of mass ~20 near its old value).
+    public static float DragOf(Agent a) => P.MotorDrag == 0 ? 1 + a.Mass : 1 + P.DragK * MathF.Cbrt(Math.Max(0, a.Volume));
+
+    // A push along (dx, dy) for `work` of the body's energy, with the sub-cell way the body has gone so far kept by the
+    // caller (driftX/Y, in cells). Law MotorDrag 1 — viscous motion: no coasting; at the speed where the medium takes
+    // the work as fast as it is done (power = γ·v²), v = √(work/γ) cells this tick, γ = CostPush·drag/1.05² (so the
+    // work of one model-1 push moves a body a cell, as that push does), more in deep water; the way adds up and the
+    // body steps a cell whenever it reaches one (Vx/Vy set to exactly that step for the shared Move). Law 0 — the
+    // momentum of Thrust below (a slow push then decays by friction before it ever moves the body).
+    public void Thrust(Agent a, double dx, double dy, double work, ref float driftX, ref float driftY)
+    {
+        if (!(work > 0)) return;
+        if (P.MotorDrag == 0) { Thrust(a, dx, dy, work); return; }
+        int cell = a.Y * W + a.X;
+        float depth = InWater(cell, a.Z) ? 1 + P.DepthK * Below(a, cell) : 1;
+        Dissipate(a, work);
+        double gamma = P.CostPush * DragOf(a) * depth / (1.05 * 1.05);
+        double v = Math.Sqrt(work / Math.Max(1e-9, gamma));
+        driftX = Math.Clamp(driftX + (float)(dx * v), -2, 2); driftY = Math.Clamp(driftY + (float)(dy * v), -2, 2);   // at most a cell a tick is walked
+        if (MathF.Abs(driftX) >= 1 && MathF.Abs(driftX) >= MathF.Abs(driftY)) { float s = MathF.Sign(driftX); a.Vx = s; driftX -= s; }
+        else if (MathF.Abs(driftY) >= 1) { float s = MathF.Sign(driftY); a.Vy = s; driftY -= s; }
+    }
+
     public void Thrust(Agent a, double dx, double dy, double work)
     {
         if (!(work > 0)) return;
