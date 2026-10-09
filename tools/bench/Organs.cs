@@ -12,12 +12,13 @@ namespace Primordium;
 //     `spots` places × `count` bodies brought from outside (on land; the swimmer in a lake), followed —
 //     its living descendants, their charge (MatterEnergy 1) or energy, and their organ proteins.
 //
-//   --cave-probe [--seeds 1-3] [--ticks 20000] [--every 2000] [--count 12]   (laws as usual)
+//   --cave-probe [--seeds 1-3] [--ticks 20000] [--every 2000] [--count 12] [--food 0.02] [--food-open 0.002]   (laws as usual)
 //     The blind cavefish test on a built world (Scenario.cs): a lit floor and, under the same floor, a
-//     roofed cave, joined by an open shaft; one founding design (CaveSeeker, below) — a body that eats
-//     what lies around, reads the light now and then and makes photoreceptors — planted half in the light,
-//     half in the dark. Mutation does the rest: the share of bodies with photoreceptors and their amount,
-//     under the roof and in the open, over time.
+//     roofed cave (bodies do not cross, unless the roof falls in); one founding design (CaveSeeker, below)
+//     — a body that reads the light and catches photons only if it sees light, and otherwise drinks — planted
+//     half in the light, half in the dark. Under the roof there is energetic food and no light; in the open
+//     only matter, so energy there comes from light — through the eye. Mutation does the rest: the share
+//     of bodies with photoreceptors and their amount, under the roof and in the open, over time.
 public sealed partial class World
 {
     static string ArgOf(string[] args, string name, string def)
@@ -80,8 +81,8 @@ public sealed partial class World
 
     // A body that drinks what lies around and relaxes its excited atoms, and in the light also catches photons —
     // but only when its photoreceptor tells it there is light (without the eye `light` reads 0 and it never
-    // tries). In the open the eye pays; under a roof light is always 0 and the eye is only a cost (making it,
-    // its upkeep, every reading). Nothing tells the body where it lives; mutation and selection do the rest.
+    // tries). In the open the eye pays while it gates the photons (a mutant that tries them blindly does without it); under a roof light is always 0 and the eye is only a cost (making it,
+    // its upkeep, every reading). Nothing tells the body where it lives; mutation and selection do the rest. Written for MatterEnergy 0 (under 1 it does not live).
     public static CreatureDesign CaveSeeker(int pigment) => new()
     {
         Name = "пещерник",
@@ -124,8 +125,9 @@ jmp 0
     {
         var seeds = Batch.ParseSeeds(ArgOf(args, "--seeds", "1-3"));
         int ticks = int.Parse(ArgOf(args, "--ticks", "20000")), every = int.Parse(ArgOf(args, "--every", "2000")), count = int.Parse(ArgOf(args, "--count", "12"));
-        float food = float.Parse(ArgOf(args, "--food", "0.04"), System.Globalization.CultureInfo.InvariantCulture);
-        Console.WriteLine($"cave probe: Organs {P.Organs}, MatterEnergy {P.MatterEnergy}, chemistry model {P.ChemEnergyModel}; {ticks} ticks, food {food} per cell and tick");
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        float food = float.Parse(ArgOf(args, "--food", "0.02"), inv), foodOpen = float.Parse(ArgOf(args, "--food-open", "0.01"), inv);
+        Console.WriteLine($"cave probe: Organs {P.Organs}, MatterEnergy {P.MatterEnergy}, chemistry model {P.ChemEnergyModel}; {ticks} ticks, food {food} excited atoms per cell and tick under the roof, {foodOpen} ground atoms (matter, no energy) in the open");
         Console.WriteLine("seed   tick  pop_open pop_cave  photoR_open photoR_cave  has_open has_cave  gen_open gen_cave  roofed_cells");
         foreach (int seed in seeds)
         {
@@ -150,7 +152,7 @@ jmp 0
                 }
             for (int t = 1; t <= ticks; t++)
             {
-                if (t % 10 == 1) w.FeedCave(food * 10, floor, caveFloor);
+                if (t % 10 == 1) w.FeedCave(foodOpen * 10, food * 10, caveFloor);
                 w.Step();
                 if (t % every != 0 && t != ticks) continue;
                 var live = w.Agents.Where(a => !a.Dead).ToList();
@@ -189,18 +191,21 @@ jmp 0
         return w;
     }
 
-    // Food for the probe: loose excited atoms (A*, species 1: in every chemistry) on every floor, open and
-    // roofed alike, brought from outside and booked like the pour brush.
-    void FeedCave(float perCell, int floor, int caveFloor)
+    // Food for the probe, brought from outside and booked like the pour brush: under the roof loose excited
+    // atoms (A*, species 1 in every chemistry: energy), in the open their ground state (A, species 0: matter
+    // to grow and divide, and what light excites — energy there has to come from light).
+    void FeedCave(float perOpen, float perRoofed, int caveFloor)
     {
         for (int c = 0; c < N; c++)
         {
-            int n = (int)(perCell + mainRng.NextDouble());
+            bool roofed = Height[c] > caveFloor + 1 && Mat[c * Z + caveFloor] == Chemistry.Air;
+            int n = (int)((roofed ? perRoofed : perOpen) + mainRng.NextDouble());
             if (n <= 0) continue;
-            int level = Height[c] > caveFloor + 1 && Mat[c * Z + caveFloor] == Chemistry.Air ? caveFloor : Height[c];
-            ChangeLooseAt(c, level, 1, n);
-            for (int e = 0; e < Chemistry.ElementCount; e++) HandInput[e] += (double)n * Chem.Atoms[1, e];
-            Flows[FHand] += (double)n * Chem.E[1];
+            int level = roofed ? caveFloor : Height[c];
+            int s = roofed ? 1 : 0;
+            ChangeLooseAt(c, level, s, n);
+            for (int e = 0; e < Chemistry.ElementCount; e++) HandInput[e] += (double)n * Chem.Atoms[s, e];
+            Flows[FHand] += (double)n * Chem.E[s];
         }
     }
 }
