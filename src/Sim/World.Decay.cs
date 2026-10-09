@@ -36,8 +36,8 @@ namespace Primordium;
 // on top if it was the top block); the energy released is heat in the cell, booked as `loose decay`
 // (ground pools) or `body decay` (bodies). Atoms: the same Qty leaves a kind and enters its products;
 // blocks and bodies lose whole molecules.
-// Rates: loose matter every environment step (World.CellChem, share 1 − e^(−k·EnvEvery)); burials and
-// blocks every MetamorphEvery ticks (DeepDecay, main thread, voxel order; blocks lose whole molecules,
+// Rates: loose matter every environment step (World.CellChem, share 1 − e^(−k·EnvEvery)); burials every
+// MetamorphEvery ticks, blocks every 8 × MetamorphEvery by rows in turn (DeepDecay, main thread, voxel order; blocks lose whole molecules,
 // drawn from Hash32 of the tick and voxel: no random stream); bodies on their own tick (a Poisson count
 // of whole molecules from the body's stream).
 public sealed partial class World
@@ -81,11 +81,36 @@ public sealed partial class World
     public readonly DecayPaths Decay;
     double decayA = 1, decayLogA = 0;
 
-    // A = 10^DecayLogA, refreshed at the start of a tick (main thread) when the law changed: the parallel
-    // phases read decayA.
+    // The law's dry rate without a lattice, tabulated per species over temperature (TabStep °C from TabLo,
+    // linear between points: relative error ~10⁻⁵, far below anything the batches resolve) — the hot paths
+    // (every loose pool every environment step, every body every tick) read it instead of an exponential.
+    // Rebuilt at the start of a tick (main thread) when a law of it changed; the parallel phases only read it.
+    const float TabLo = -150f, TabStep = 0.125f;
+    const int TabN = 3201;   // −150 … +250 °C
+    double[][] decayTab;
+    float tabLogA = float.NaN, tabEa = float.NaN, tabBondEa = float.NaN;
+
     void RefreshDecayA()
     {
         if (decayLogA != P.DecayLogA) { decayA = Math.Pow(10, P.DecayLogA); decayLogA = P.DecayLogA; }
+        if (decayTab != null && tabLogA == P.DecayLogA && tabEa == P.DecayEa && tabBondEa == P.DecayBondEa) return;
+        decayTab ??= new double[Chemistry.S][];
+        foreach (int s in Decay.List)
+        {
+            var t = decayTab[s] ??= new double[TabN];
+            for (int j = 0; j < TabN; j++) t[j] = DecayRateWith(decayA, s, TabLo + j * TabStep, 0, 0);
+        }
+        tabLogA = P.DecayLogA; tabEa = P.DecayEa; tabBondEa = P.DecayBondEa;
+    }
+
+    // The tabulated rate (dry, no lattice) at tC; outside the table, the law itself.
+    double DryRate(int s, float tC)
+    {
+        float x = (tC - TabLo) * (1f / TabStep);
+        if (!(x >= 0) || x >= TabN - 1) return DecayRateWith(decayA, s, tC, 0, 0);
+        int j = (int)x;
+        var t = decayTab[s];
+        return t[j] + (t[j + 1] - t[j]) * (x - j);
     }
 
     // The law's rate per tick for species s at tC °C, wetness wet, with `lattice` added to its barrier
@@ -96,37 +121,57 @@ public sealed partial class World
     {
         double ea = (P.DecayEa + P.DecayBondEa * Decay.Barrier[s]) * (1 + lattice / Decay.MeanBond);
         double kelvin = Math.Max(1.0, tC + 273.15);
-        return a * Math.Exp(-ea / kelvin) * (1 + P.DecayWetK * Math.Clamp(wet, 0f, 1f));
+        return a * Math.Exp(-ea / kelvin) * WetFactor(wet);
     }
 
-    // The share of a pool that decays in dt ticks at rate k (never more than all of it).
-    static double DecayShare(double k, double dt) => k * dt < 1e-6 ? k * dt : 1 - Math.Exp(-k * dt);
+    static double WetFactor(float wet) => 1 + P.DecayWetK * Math.Clamp(wet, 0f, 1f);
+
+    // The share of a pool that decays in dt ticks at rate k (never more than all of it): 1 − e^(−k·dt), by its
+    // series while k·dt is small (relative error < 10⁻¹¹).
+    static double DecayShare(double k, double dt)
+    {
+        double x = k * dt;
+        return x < 1e-3 ? x * (1 - x * (0.5 - x / 6)) : 1 - Math.Exp(-x);
+    }
 
     float CellWet(int c) => Math.Min(1f, Water[c] + Rain[c]);
 
     // ---- loose matter (World.CellChem, by rows in parallel: the row's own cells and accumulator) ----
 
-    void LooseDecayArrhenius(int i, int row)
+    // One pass over the cell's loose pools (World.CellChem with the law on): each species with a path decays by
+    // the share 1 − e^(−k·EnvEvery) of what lies there (products may decay further in the same pass, as with
+    // the old law), and the room it all takes is summed as it goes; weathering as with the law off.
+    void CellChemArrhenius(int i, int row, int tick = 0, bool weather = true)
     {
         var d = Decay;
-        double a = decayA;
-        float t = Temp[i], wet = CellWet(i);
-        double dt = P.EnvEvery, heat = 0;
-        foreach (int s in d.List)
+        var decays = d.Decays;
+        var vol = Chem.Volume;
+        int gas = Chem.Gas;
+        float t = Temp[i], total = 0;
+        double dt = P.EnvEvery * WetFactor(CellWet(i)), heat = 0;
+        for (int s = 0; s < Chemistry.S; s++)
         {
             var pool = C[s][i];
             if (pool.Raw <= 0) continue;
-            double share = DecayShare(DecayRateWith(a, s, t, wet, 0), dt);
+            if (s != gas) total += pool.F * vol[s];
+            if (!decays[s]) continue;
+            double share = DecayShare(DryRate(s, t), dt);
             Qty m = Qty.FromRaw(Math.Min(pool.Raw, (long)(pool.Raw * share)));   // truncated: never more than lies there
             if (m.Raw <= 0) continue;
             C[s][i] = pool - m; C[d.To1[s]][i] += m;
             if (d.To2[s] >= 0) C[d.To2[s]][i] += m;
             heat += m * d.Heat[s];
         }
-        if (heat == 0) return;
-        heatIn[i] += (float)heat;
-        rowLooseDecay[row] += heat;   // rows are owned by one worker
+        if (heat != 0)
+        {
+            heatIn[i] += (float)heat;
+            rowLooseDecay[row] += heat;   // rows are owned by one worker
+        }
+        if (weather) CellVolumeAndWeather(i, tick, total, TempFactor(t));
     }
+
+    // The decay alone (tests: no weathering draw, the cell's room untouched).
+    void LooseDecayArrhenius(int i, int row) => CellChemArrhenius(i, row, 0, false);
 
     // ---- bodies (their own tick, World.LiveBody) ----
 
@@ -135,13 +180,13 @@ public sealed partial class World
     void BodyDecayArrhenius(Agent a, int cell)
     {
         var d = Decay;
-        double A = decayA, total = 0;
-        float tb = a.Tb, wet = CellWet(cell);
+        double total = 0, wf = WetFactor(CellWet(cell));
+        float tb = a.Tb;
         Span<double> rate = stackalloc double[Chemistry.S];
         foreach (int s in d.List)
         {
             if (a.Inv[s] <= 0) continue;
-            rate[s] = a.Inv[s] * DecayRateWith(A, s, tb, wet, 0);
+            rate[s] = a.Inv[s] * DryRate(s, tb) * wf;
             total += rate[s];
         }
         if (total <= 0) return;
@@ -178,7 +223,8 @@ public sealed partial class World
     // Temperature and wetness at level z of column c (a burial's or a block's).
     float DepthWet(int c, int z) => z >= Height[c] - 2 ? CellWet(c) : 0f;
 
-    readonly List<int>[] decayRows;   // per row: block voxels with something that decays (filled in parallel)
+    readonly List<int>[] decayRows;
+    const int BlockStride = 8;   // per row: block voxels with something that decays (filled in parallel)
 
     void DeepDecay()
     {
@@ -213,12 +259,16 @@ public sealed partial class World
             }
             if (changed) { b.Dirty = true; MassChanged(v); }
         }
-        // Blocks: find candidates by rows in parallel (read only), then take whole molecules in voxel order.
-        int tick = (int)Tick;
+        // Blocks: find candidates by rows in parallel (read only), then take whole molecules in voxel order. Rock
+        // decays ~10⁷ times slower than litter: each pass looks at every BlockStride-th row (in turn, by the pass
+        // number) with BlockStride times the step — the same expectation for a scan of the crust 8 times cheaper.
+        int tick = (int)Tick, pass = (int)(Tick / Math.Max(1, P.MetamorphEvery));
+        double blockDt = dt * BlockStride;
         Parallel.For(0, H, y =>
         {
             var list = decayRows[y] ??= new List<int>();
             list.Clear();
+            if ((y + pass) % BlockStride != 0) return;
             for (int c = y * W, end = c + W; c < end; c++)
                 for (int z = 2, h = Height[c]; z < h; z++)
                 {
@@ -248,7 +298,7 @@ public sealed partial class World
                     take[s] = 0;
                     int n = mixed ? counts[s] : s == Mat[v] - 2 ? Units[v] : 0;
                     if (n <= 0) continue;
-                    double x = n * DecayShare(DecayRateWith(A, s, t, wet, lattice), dt);
+                    double x = n * DecayShare(DecayRateWith(A, s, t, wet, lattice), blockDt);
                     int k = (int)x;
                     if (Hash32.F(tick, v, 7919 + salt++) < x - k) k++;
                     take[s] = Math.Min(n, k);

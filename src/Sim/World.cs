@@ -669,14 +669,13 @@ public sealed partial class World
     {
         float f = TempFactor(Temp[i]), total = 0;
         int gas = Chem.Gas;
-        bool arrhenius = ArrheniusLaw;   // World.Decay: one law for every pool instead of LooseDecayK
-        if (arrhenius) LooseDecayArrhenius(i, row);
+        if (ArrheniusLaw) { CellChemArrhenius(i, row, tick); return; }   // World.Decay: one law for every pool instead of LooseDecayK
         for (int s = 0; s < Chemistry.S; s++)
         {
             float amount = C[s][i].F;
             if (amount <= 0) continue;
             if (s != gas) total += amount * Chem.Volume[s];
-            if (!arrhenius && Chem.SplitExo[s])
+            if (Chem.SplitExo[s])
             {
                 Qty m = amount * P.LooseDecayK * f;   // one molecule s → A + B, exactly the same amount each
                 C[s][i] -= m; C[Chem.SplitA[s]][i] += m;
@@ -687,6 +686,11 @@ public sealed partial class World
         }
         // Atmospheric material remains in the budget even over water. Rain deposits existing
         // molecules; it is not a source of elements. Loose deposits compact their actual inventory.
+        CellVolumeAndWeather(i, tick, total, f);
+    }
+
+    void CellVolumeAndWeather(int i, int tick, float total, float f)
+    {
         LooseVolume[i] = total * P.LooseBulk; weathering[i] = false;
         int h = Height[i];
         if (h <= 2) return;

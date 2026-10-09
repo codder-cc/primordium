@@ -145,8 +145,27 @@ public sealed class RemainsLife
 {
     public const int Every = 25, Horizon = 3000, Max = 4000;
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
-    readonly List<(int cell, long t0, float temp, float wet, double x0)> live = new();
-    readonly List<(float temp, float wet, double k)> rates = new();
+    readonly List<(int cell, long t0, float temp, float wet, double x0, double kLaw)> live = new();
+    readonly List<(float temp, float wet, double k, double kLaw)> rates = new();
+
+    // The decay law's own rate of the excitation lying in the cell (per tick, weighted by each species'
+    // excitation there), at the death's temperature and wetness: ArrheniusDecay 1 — World.DecayRate of every
+    // excited species with a path; 0 — LooseDecayK·TempFactor per environment step for those whose split is
+    // exothermic (an excited compound whose split is not lies for ever under that law).
+    static double LawRate(World w, int cell, float temp, float wet)
+    {
+        var ch = w.Chem;
+        double x = 0, kx = 0;
+        foreach (int s in ch.Excited)
+        {
+            double n = w.C[s][cell].D * ch.Gap[s];
+            if (n <= 0) continue;
+            x += n;
+            if (World.ArrheniusLaw) { if (w.Decay.Decays[s]) kx += n * w.DecayRate(s, temp, wet); }
+            else if (ch.SplitExo[s]) kx += n * P.LooseDecayK * World.TempFactor(temp) / P.EnvEvery;
+        }
+        return x > 0 ? kx / x : 0;
+    }
 
     public void Update(World w)
     {
@@ -155,7 +174,7 @@ public sealed class RemainsLife
         while (p.Deceased.TryDequeue(out var d))
         {
             double x0 = w.LooseExcitation(d.cell);
-            if (live.Count < Max && x0 > 0) live.Add((d.cell, d.tick, d.temp, d.wet, x0));
+            if (live.Count < Max && x0 > 0) live.Add((d.cell, d.tick, d.temp, d.wet, x0, LawRate(w, d.cell, d.temp, d.wet)));
         }
         for (int i = live.Count - 1; i >= 0; i--)
         {
@@ -163,11 +182,11 @@ public sealed class RemainsLife
             long age = w.Tick - r.t0;
             if (age <= 0) continue;
             double x = w.LooseExcitation(r.cell), k = x <= 0 ? 10.0 / age : Math.Max(0, -Math.Log(x / r.x0) / age);
-            if (age >= Horizon) { rates.Add((r.temp, r.wet, k)); live.RemoveAt(i); }
-            else current[(r.cell, r.t0)] = (r.temp, r.wet, k);
+            if (age >= Horizon) { rates.Add((r.temp, r.wet, k, r.kLaw)); live.RemoveAt(i); }
+            else current[(r.cell, r.t0)] = (r.temp, r.wet, k, r.kLaw);
         }
     }
-    readonly Dictionary<(int, long), (float temp, float wet, double k)> current = new();
+    readonly Dictionary<(int, long), (float temp, float wet, double k, double kLaw)> current = new();
 
     // ArrheniusDecay 1: the law's lifetime at tC for the excited species of median barrier, dry / fully wet.
     static string ArrheniusExpect(World w, float tC)
@@ -199,7 +218,7 @@ public sealed class RemainsLife
             if (bin.Count == 0) continue;
             float mid = Math.Clamp((lo + hi) / 2, -5, 30);
             string expect = World.ArrheniusLaw ? ArrheniusExpect(w, mid) : (P.EnvEvery / (P.LooseDecayK * World.TempFactor(mid))).ToString("F0", Inv);
-            parts.Add(string.Create(Inv, $"{name}: τ {Tau(bin.Select(r => r.k))} (n {bin.Count}; dry {Tau(bin.Where(r => r.wet <= 0).Select(r => r.k))}, wet {Tau(bin.Where(r => r.wet > 0).Select(r => r.k))}; wet ≥ 0.5 {Tau(bin.Where(r => r.wet >= 0.5f).Select(r => r.k))}; decay law alone {expect})"));
+            parts.Add(string.Create(Inv, $"{name}: τ {Tau(bin.Select(r => r.k))} (n {bin.Count}; dry {Tau(bin.Where(r => r.wet <= 0).Select(r => r.k))}, wet {Tau(bin.Where(r => r.wet > 0).Select(r => r.k))}; wet ≥ 0.5 {Tau(bin.Where(r => r.wet >= 0.5f).Select(r => r.k))}; the law on what lies there: {Tau(bin.Select(r => r.kLaw))}, dry {Tau(bin.Where(r => r.wet <= 0).Select(r => r.kLaw))}, wet ≥ 0.5 {Tau(bin.Where(r => r.wet >= 0.5f).Select(r => r.kLaw))}; median species {expect})"));
         }
         yield return Loc.T("remains' excitation on open ground, lifetime in ticks by temperature: ", "возбуждение останков на открытой земле, время жизни в тиках по температуре: ") + string.Join("; ", parts);
     }
