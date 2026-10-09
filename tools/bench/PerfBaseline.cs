@@ -11,9 +11,11 @@ namespace Primordium;
 // Speed regressions on one fixed workload (ROADMAP 10.7).
 //
 //   --perf-baseline [--fixture path.sav] [--ticks 2000] [--warmup 200] [--repeat 1] [--csv perf.csv] [--label text] [--set Name=value ...]
-//   --perf-baseline --make [--fixture path.sav] [--seed 2] [--target 15000] [--max-ticks 30000] [--step 1000]
+//   --perf-baseline --make [--fixture path.sav] [--seed 3] [--target 12000] [--max-ticks 30000] [--step 1000]
 // The reference "boom" save is made, not stored: --make runs the default world of `seed` until it holds
-// `target` bodies (checked every `step` ticks; or until max-ticks) and saves it. The save keeps the whole
+// `target` bodies (checked every `step` ticks; or until max-ticks) and saves it (under the defaults of
+// 2026-10-09 (11) seed 2 no longer booms — ~100 bodies — while seed 3 reaches 12 430 at tick 16 000,
+// hash 80ef821c8277b012: the default since 2026-10-09 (13)). The save keeps the whole
 // state, so every build continues the same world from it (as long as it reads the save format). Without
 // --make the fixture is loaded `repeat` times; each time `warmup` ticks run unmeasured (JIT, tiered PGO),
 // then `ticks` ticks are measured. Printed in a fixed format (one key per line, invariant numbers; the
@@ -136,7 +138,7 @@ public static class PerfBaseline
 
     static void Make(string[] args, string fixture)
     {
-        int seed = int.Parse(Arg(args, "--seed", "2")), target = int.Parse(Arg(args, "--target", "15000"));
+        int seed = int.Parse(Arg(args, "--seed", "3")), target = int.Parse(Arg(args, "--target", "12000"));
         int maxTicks = int.Parse(Arg(args, "--max-ticks", "30000")), step = int.Parse(Arg(args, "--step", "1000"));
         var w = new World(seed, P.InitialPop, true);
         var sw = Stopwatch.StartNew();
