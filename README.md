@@ -113,6 +113,7 @@ dotnet run -c Release --project tools/bench -- --tournament --seed 2 --ticks 800
 dotnet run -c Release --project tools/bench -- --food-chain --seeds 1-2              # who eats whom: trophic levels, chain length
 dotnet run -c Release --project tools/bench -- --perf-baseline --make                # once: make the reference boom save
 dotnet run -c Release --project tools/bench -- --perf-baseline --ticks 2000 --repeat 3   # ms/tick by stage, median of 3, end hash
+dotnet run -c Release --project tools/bench -- --load tools/bench/fixtures/boom.sav --ticks 400 --every 200 --ops --tile-grid   # time per VM command, each tile's work as a map
 dotnet run -c Release --project tools/bench -- --seed 4 --audit --paste-region valley.region --at 100,40 --rotate 1   # paste a region file (made by the game or --copy-region x,y,w,h file)
 ```
 
