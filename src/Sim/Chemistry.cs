@@ -124,7 +124,7 @@ public sealed class Chemistry
                 Looseness[t] = 1.15f - Packing[t];
                 Volume[t] = mass / (0.5f + Packing[t]);
                 Diff[t] = 0.13f / MathF.Sqrt(mass);
-                Solid[t] = Bond[t] >= 0.85f;
+                Solid[t] = Bond[t] >= P.SolidBond;
                 AffinityPerAtom[t] = affinity / count;
                 Col[t] = new Rgb(cr / count, cg / count, cb / count).Mul(t == s ? 0.8f : 1f);
                 SplitA[t] = a; SplitB[t] = b;

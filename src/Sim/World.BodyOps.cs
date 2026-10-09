@@ -863,10 +863,20 @@ public sealed partial class World
             return;
         }
         float cat = Catalysis(a, m, out int slot);
-        // The effort of a try grows with how hard and high-grade the rock is; solid molecules in the
-        // body (teeth, a shell) do part of it, so the same effort costs the body less energy.
-        float effort = P.CostMine * (1 + Chem.MatHard[m]) * (1 + 0.5f * tier);
-        float work = P.CostMine * (1 + Chem.MatHard[m] / (1 + 0.25f * a.Solids)) * (1 + 0.5f * tier);
+        // The effort of a try grows with how hard the rock is (and, ContinuousHardness 0, its grade); hard
+        // molecules in the body (teeth, a shell) do part of it, so the same effort costs the body less energy.
+        float effort, work;
+        if (P.ContinuousHardness != 0)
+        {
+            float coh = VoxelCohesion(v), hard = BlockHardness(coh), teeth = Teeth(a, coh, out _);
+            effort = P.CostMine * (1 + hard);
+            work = P.CostMine * (1 + hard / (1 + P.TeethK * teeth));
+        }
+        else
+        {
+            effort = P.CostMine * (1 + Chem.MatHard[m]) * (1 + 0.5f * tier);
+            work = P.CostMine * (1 + Chem.MatHard[m] / (1 + P.TeethK * a.Solids)) * (1 + 0.5f * tier);
+        }
         if (Avail(a) < work + P.EnergyReserve) return;
         Dissipate(a, work);
         a.LifeMineCost += work;
@@ -899,6 +909,28 @@ public sealed partial class World
         Act(a, ActEat, d);
     }
 
+    // ContinuousHardness 1: how hard a block of cohesion c is to work (Chemistry.MatHard's law, on the
+    // block's own cohesion — mixture, burial and order — instead of its dominant kind).
+    static float BlockHardness(float coh) => 0.2f + 1.5f * coh;
+
+    // ContinuousHardness 1: the body's teeth against a block of cohesion c — Σ held molecules × the share
+    // b^n/(b^n + c^n) of the prying each does (n = HardSharp); best: that share of its hardest molecule.
+    float Teeth(Agent a, float coh, out float best)
+    {
+        float teeth = 0, n = P.HardSharp;
+        best = 0;
+        for (int s = 0; s < Chemistry.S; s++)
+        {
+            int k = a.Inv[s];
+            float b = Chem.Bond[s];
+            if (k == 0 || b <= 0) continue;
+            float share = coh <= 0 ? 1f : 1f / (1f + MathF.Pow(coh / b, n));
+            teeth += k * share;
+            if (share > best) best = share;
+        }
+        return teeth;
+    }
+
     // Earthmoving: lift the top block of a column (d = 4: the one underfoot) and drop it on the lowest
     // column next to it. Needs something solid in the body to dig with; nothing is eaten.
     public void Dig(Agent a, int cell, int d)
@@ -911,7 +943,8 @@ public sealed partial class World
         if (z < 2 || z < at - 2 || (!OnFloor(a) && z < at - 1)) return;   // a floor beyond one step down is out of reach
         int v = c * Z + z;
         byte m = Mat[v];
-        if (m < 2 || Chem.MatTier[m] > 4 || a.Solids == 0) return;
+        bool continuous = P.ContinuousHardness != 0;
+        if (m < 2 || Chem.MatTier[m] > 4 || (!continuous && a.Solids == 0)) return;
         // Like an ant: the block is carried to a neighbouring floor — level with it or one below if
         // there is one (never hurled further down), otherwise up onto the lowest rim, a spoil heap
         // around the hole. Working it loose costs by hardness; carrying it costs its weight for every
@@ -927,7 +960,17 @@ public sealed partial class World
             if (score < bestScore) { bestScore = score; to = j; lift = Math.Max(0, up); }
         }
         if (to < 0) return;
-        float cost = P.CostDig * Chem.MatHard[m] / (1 + 0.25f * a.Solids) + VoxelMass(v) * P.Gravity * (1 + lift);
+        float pry;
+        if (continuous)
+        {
+            // Prying needs something at least nearly as hard as the block: the work × 1/(the share of the
+            // hardest held molecule), shared by all of them as teeth.
+            float coh = VoxelCohesion(v), teeth = Teeth(a, coh, out float best);
+            if (best <= 0) return;
+            pry = P.CostDig * BlockHardness(coh) / (best * (1 + P.TeethK * teeth));
+        }
+        else pry = P.CostDig * Chem.MatHard[m] / (1 + P.TeethK * a.Solids);
+        float cost = pry + VoxelMass(v) * P.Gravity * (1 + lift);
         if (Avail(a) < cost + P.EnergyReserve) return;
         Dissipate(a, cost);
         if (EnergyProbe != null) { EpAdd(EnergyEconomyProbe.DigCalls, 1); EpAdd(EnergyEconomyProbe.DigCost, cost); }
@@ -951,8 +994,16 @@ public sealed partial class World
         int level = c == cell ? a.Z : WalkLevel(c, a.Z);
         if (level < 3 || level >= Z - 1) return;
         int best = -1;
-        foreach (int s in Chem.Solids)
-            if (a.Inv[s] >= P.PileUnits && (best < 0 || a.Inv[s] > a.Inv[best])) best = s;
+        if (P.ContinuousHardness != 0)
+        {
+            // Any kind it holds enough of: the one that brings the most bonds (count × bond); the block's
+            // cohesion follows from that bond.
+            for (int s = 0; s < Chemistry.S; s++)
+                if (a.Inv[s] >= P.PileUnits && (best < 0 || a.Inv[s] * Chem.Bond[s] > a.Inv[best] * Chem.Bond[best])) best = s;
+        }
+        else
+            foreach (int s in Chem.Solids)
+                if (a.Inv[s] >= P.PileUnits && (best < 0 || a.Inv[s] > a.Inv[best])) best = s;
         if (best < 0 || Avail(a) < P.CostPile + P.EnergyReserve) return;
         Dissipate(a, P.CostPile);
         Settle(a);

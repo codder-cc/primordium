@@ -178,6 +178,16 @@ public static class P
     public static float CostCutBase = 0.1f, CostCutByte = 0.08f;
     public static float CostGrow = 0.2f, CostPush = 0.015f, CostFall = 0.3f, CostLook = 0.0015f;
     public static int PileUnits = 4;            // solid molecules per built block
+    // Hardness of a body's matter against a block. ContinuousHardness 0 (as before): molecules of bond ≥
+    // SolidBond are "solid" — only a body holding one digs, only they are piled, each takes TeethK of the
+    // work of mining and digging (÷ (1 + TeethK·solids)), and mining's effort steps with the grade of the
+    // rock (× (1 + 0.5·tier)). 1: no class. A held molecule of bond b does b^n/(b^n + c^n) of the prying of
+    // a block of cohesion c (n = HardSharp: as hard as the block, half; much harder, all; softer, little);
+    // teeth = Σ held × that share divides the work as before; digging also needs the hardest of them —
+    // the work × 1/its share; mining's effort follows the block's own cohesion (its barrier, VoxelBarrier,
+    // is not counted twice by a grade); any held kind can be piled (the most bonds: count × bond).
+    public static int ContinuousHardness = 0;
+    public static float SolidBond = 0.85f, TeethK = 0.25f, HardSharp = 4f;
 
     // Body
     // No hard limits on what a body holds — holding costs. A body has room for about InvPerCell

@@ -218,6 +218,11 @@ public static class ParamRegistry
         F("CostFall", "Действия", "Fall per block beyond the first", "Падение на блок сверх первого", 0, 5, 0.01);
         F("CostLook", "Действия", "Vision per cell of range", "Зрение за клетку дальности", 0, 0.05, 0.0005);
         I("PileUnits", "Действия", "How many identical solid molecules pile needs", "Сколько одинаковых твёрдых молекул нужно для pile", 1, 64, 1);
+        I("ContinuousHardness", "Действия", "Hardness of a body's matter: 1 — no class of solid molecules: each held molecule does b^n/(b^n + c^n) of the prying of a block of cohesion c (bond b), digging needs the hardest of them and costs more the softer it is, mining's effort follows the block's own cohesion without a grade step, any kind can be piled; 0 — molecules of bond ≥ SolidBond are solid: only they dig and are piled, as before",
+          "Твёрдость вещества тела: 1 — без класса твёрдых молекул: каждая молекула тела делает b^n/(b^n + c^n) работы против блока связности c (связь b), рытью нужна самая твёрдая из них, и оно тем дороже, чем она мягче, усилие добычи — по связности самого блока, без ступени сорта, складывать можно любой вид; 0 — молекулы со связью ≥ SolidBond твёрдые: только они роют и складываются, как раньше", 0, 1, 1);
+        F("SolidBond", "Действия", "ContinuousHardness 0: bond at which a molecule counts as solid (for a new chemistry)", "ContinuousHardness 0: связь, с которой молекула считается твёрдой (для новой химии)", 0, 3, 0.01, live: false);
+        F("TeethK", "Действия", "Share of the work of mining and digging one hard held molecule takes (work ÷ (1 + TeethK·teeth))", "Доля работы добычи и рытья, которую берёт одна твёрдая молекула тела (работа ÷ (1 + TeethK·зубы))", 0, 5, 0.01);
+        F("HardSharp", "Действия", "ContinuousHardness 1: how sharply a molecule harder than the block wins (the power n in b^n/(b^n + c^n))", "ContinuousHardness 1: насколько резко побеждает молекула твёрже блока (степень n в b^n/(b^n + c^n))", 0.5, 20, 0.5);
         // Body
         I("MinBody", "Тело", "Fewer molecules and the body falls apart", "Меньше молекул — тело распадается", 1, 32, 1);
         F("StoreBase", "Тело", "Comfortable energy store: base", "Удобный запас энергии: основа", 0, 500, 1);

@@ -597,6 +597,66 @@ public sealed partial class World
         Require(Math.Abs(e.C[s][h] - 5) < 1e-4f && Math.Abs(e.C[s][low] - 3) < 1e-4f, $"expelled matter not on the reachable floors: here {e.C[s][h]}, below {e.C[s][low]}");
         BudgetEqual(before, e.ElementBudget(), "expel", 0.01);
         Console.WriteLine("PASS reach: no gnawing or digging down a pit, expel lands on a reachable floor");
+        HardnessRegression();
+    }
+
+    // ContinuousHardness: with 0 only a body holding a "solid" molecule digs and only solid kinds are
+    // piled; with 1 any held matter pries by how hard it is against the block — a hard tool digs cheaply,
+    // a soft one dearly — mining's work falls with the teeth, and any kind can be piled.
+    static void HardnessRegression()
+    {
+        int old = P.ContinuousHardness;
+        try
+        {
+            var ch = Fixture().Chem;
+            var byBond = Enumerable.Range(0, Chemistry.S).Where(s => ch.Bond[s] > 0).OrderBy(s => ch.Bond[s]).ToArray();
+            int soft = byBond.First(s => !ch.Solid[s]), hard = byBond[^1], rock = byBond[byBond.Length / 2];
+            (int digs, double cost) DigWith(int law, int tool)
+            {
+                P.ContinuousHardness = law;
+                var w = Fixture();
+                int c = 60 * w.W + 60, side = c + 1;
+                for (int z = 2; z < 6; z++) w.TestBlock(c, z, rock, 0);
+                for (int z = 2; z < 5; z++) w.TestBlock(side, z, rock, 0);
+                var a = w.TestAgent(c, 6, tool, 12);
+                a.Energy = 1000;
+                w.Dig(a, c, 4);
+                return (a.NDigs, 1000 - a.Energy);
+            }
+            var (d0Soft, _) = DigWith(0, soft);
+            var (d0Hard, c0Hard) = DigWith(0, hard);
+            var (d1Soft, c1Soft) = DigWith(1, soft);
+            var (d1Hard, c1Hard) = DigWith(1, hard);
+            string got = $"bonds soft {ch.Bond[soft]:F2} rock {ch.Bond[rock]:F2} hard {ch.Bond[hard]:F2}; law 0 digs soft {d0Soft} hard {d0Hard} (cost {c0Hard:F2}); law 1 soft {d1Soft} (cost {c1Soft:F2}) hard {d1Hard} (cost {c1Hard:F2})";
+            Require(d0Soft == 0 && d0Hard == 1 && d1Hard == 1, "hardness: who digs: " + got);
+            Require(d1Soft == 0 || c1Soft > 2 * c1Hard, "hardness: a soft tool pries as cheaply as a hard one: " + got);
+            // Mining: the same face, the same tries; teeth make each try cheaper (law 1 by the share of each).
+            double MineCost(int tool, int count)
+            {
+                P.ContinuousHardness = 1;
+                var w = Fixture();
+                int c = 60 * w.W + 60;
+                for (int z = 2; z < 6; z++) w.TestBlock(c, z, rock, 0);
+                var a = w.TestAgent(c, 6, tool, count);
+                a.Energy = 1000;
+                for (int k = 0; k < 50; k++) w.Mine(a, c, -1, 4);
+                return 1000 - a.Energy;
+            }
+            double bare = MineCost(soft, 1), toothed = MineCost(hard, 40);
+            Require(toothed < bare, $"hardness: teeth do not lighten mining: one soft molecule {bare:F3}, forty hard {toothed:F3}");
+            // Piling: law 1 lays a kind law 0 would not.
+            P.ContinuousHardness = 1;
+            var p = Fixture();
+            int pc = 60 * p.W + 60;
+            for (int z = 2; z < 4; z++) p.TestBlock(pc, z, rock, 0);
+            var builder = p.TestAgent(pc, 4, soft, 12);
+            var before = p.ElementBudget();
+            p.Pile(builder, pc, 4);
+            Require(builder.NPiles == 1 && builder.Inv[soft] == 0, $"hardness: law 1 did not pile a soft kind (bond {ch.Bond[soft]:F2})");
+            BudgetEqual(before, p.ElementBudget(), "pile of a soft kind");
+            Console.WriteLine($"PASS hardness: {got}; mining 50 tries {bare:F3} bare vs {toothed:F3} with teeth; law 1 piles a soft kind");
+        }
+        finally { P.ContinuousHardness = old; }
     }
 
     // Deposits: a cave deposit leaves the column's top where it is; more than a block of matter makes
