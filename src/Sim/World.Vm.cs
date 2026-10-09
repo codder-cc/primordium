@@ -1,5 +1,6 @@
 using System;
 using System.Numerics;
+using System.Runtime.Intrinsics;
 
 namespace Primordium;
 
@@ -18,8 +19,24 @@ public sealed partial class World
 
     static void Push(Agent a, int v)
     {
-        if (a.Sp == P.StackSize) { Array.Copy(a.Stack, 1, a.Stack, 0, P.StackSize - 1); a.Sp--; }
+        if (a.Sp == P.StackSize) { DropBottom(a.Stack); a.Sp--; }
         a.Stack[a.Sp++] = Cl(v);
+    }
+
+    // A full stack loses its bottom entry: Stack[0..14] = Stack[1..15] (16 ints, four overlapping 4-int
+    // moves, all read before any is written) — what Array.Copy did, without the call.
+    static void DropBottom(int[] st)
+    {
+        if (st.Length != 16) { Array.Copy(st, 1, st, 0, st.Length - 1); return; }
+        ref int r = ref System.Runtime.InteropServices.MemoryMarshal.GetArrayDataReference(st);
+        var v0 = Vector128.LoadUnsafe(ref r, 1);
+        var v1 = Vector128.LoadUnsafe(ref r, 5);
+        var v2 = Vector128.LoadUnsafe(ref r, 9);
+        var v3 = Vector128.LoadUnsafe(ref r, 12);
+        v0.StoreUnsafe(ref r, 0);
+        v1.StoreUnsafe(ref r, 4);
+        v2.StoreUnsafe(ref r, 8);
+        v3.StoreUnsafe(ref r, 11);
     }
 
     static int Pop(Agent a) => a.Sp > 0 ? a.Stack[--a.Sp] : 0;
@@ -46,6 +63,11 @@ public sealed partial class World
         float cold = Math.Clamp(P.VmTempBase + a.Tb / P.VmTempPer, P.VmTempMin, P.VmTempMax);
         int cycles = Math.Clamp((int)(P.BaseCycles * cold), 1, P.MaxCycles);
         a.LastCycles = cycles;
+        // Each instruction costs CostInstr (Dissipate). Law 1 inside the body's own tick: only a debt, settled
+        // at the end of the tick — added here directly, the same sums in the same order.
+        var ctx = cur;
+        bool owe = MatterLaw && ctx != null && ctx.Body == a;
+        float costInstr = P.CostInstr;
         for (int c = 0; c < cycles; c++)
         {
             if (a.Dead) { a.LastCycles = c; return; }
@@ -55,7 +77,8 @@ public sealed partial class World
             if (a.Ip >= n || a.Ip < 0) a.Ip = 0;
             int ip = a.Ip, b = g[ip], op = b & 63, imm = b >> 6, x, y;
             a.Ip = ip + 1;
-            Dissipate(a, P.CostInstr);
+            if (!owe) Dissipate(a, costInstr);
+            else if (costInstr > 0) a.Due += costInstr;
             a.OpCount[Genome.Slot(b)]++;
             long opStart = ProfileOps ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
             switch (op)
