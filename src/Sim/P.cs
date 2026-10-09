@@ -211,6 +211,21 @@ public static class P
     public static float DivMinEnergy = 8f, DivCostBase = 2f, DivCostByte = 0.02f;
     public static int DivMinBody = 8;           // molecules a body needs before it can split
     public static float MateMinEnergy = 12f;
+    // Copy errors of a model-1 genome (Genome.Mutate): per byte a point change MutPoint; per copy an
+    // insertion MutInsert, a deletion MutDelete + min(MutDeleteMax, length/MutDeleteLen) (long genomes
+    // lose more), a duplication MutDup of MutDupMin…MutDupMax bytes. A random genome (abiogenesis, first
+    // bodies) is RandomGenomeMin…RandomGenomeMax bytes; crossing cuts both parents at the same relative
+    // place, CrossMin…CrossMin+CrossWidth.
+    public static float MutPoint = 0.008f, MutInsert = 0.3f, MutDelete = 0.3f, MutDeleteMax = 0.3f, MutDeleteLen = 400f, MutDup = 0.05f;
+    public static int MutDupMin = 2, MutDupMax = 12, RandomGenomeMin = 12, RandomGenomeMax = 40;
+    public static float CrossMin = 0.2f, CrossWidth = 0.6f;
+    // UsefulCredit 1 (as before): a byte whose act worked (World.BodyOps Worked: a bond made, a split, a
+    // photon caught, a push, a catalysed bite) gains protection Agent.Prot, and the copy keeps it:
+    // a point change is MutPoint·(1 − prot/ProtCopy), a deletion is resisted with chance prot/ProtDelete.
+    // 0: every byte is copied with the same errors, Prot is only an observation (what metrics call "used
+    // code"); useful code stays only by selection. Protection fades by ProtDecay per copy either way.
+    public static int UsefulCredit = 1;
+    public static float ProtCopy = 320f, ProtDelete = 300f, ProtDecay = 0.9f;
 
     // Links between agents
     public static float LinkFlow = 0.02f;       // energy equalisation across a link per tick
@@ -416,6 +431,10 @@ public static class P
     public static float ChronicleCaveDays = 1;  // days under a roof that make a body the first cave dweller
     public static int ProgressEvery = 200;      // ticks between samples of the course of evolution (World.Evolution)
     public static int ProgressWindow = 10000;   // ticks over which the summary hint compares the trends of the tracks
+
+    // A float law as the double its decimal text names (0.008f → 0.008, not 0.00800000038): laws that
+    // replaced a double literal keep the same arithmetic, hence the same trajectory, at their defaults.
+    public static double Dec(float v) => (double)(decimal)v;
 
     // The values the fields above start with (captured before anything can change them; declared
     // last, so every initializer above has run). ParamRegistry resets to these.

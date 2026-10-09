@@ -61,7 +61,7 @@ public static class Genome
 
     public static byte[] Random(SimRng r)
     {
-        var g = new byte[r.Next(12, 41)];
+        var g = new byte[r.Next(P.RandomGenomeMin, Math.Max(P.RandomGenomeMin, P.RandomGenomeMax) + 1)];
         r.NextBytes(g);
         return g;
     }
@@ -83,23 +83,45 @@ public static class Genome
         };
     }
 
-    // Copy errors: point changes, insertions, deletions (more often in long genomes), duplications. Bytes that have proven useful
-    // (high protection) are copied more faithfully and resist deletion; duplicated pieces keep half
-    // their protection — a working block can be copied and then tinkered with.
+    // Copy errors: point changes, insertions, deletions (more often in long genomes), duplications. With
+    // UsefulCredit 1 bytes that have proven useful (high protection) are copied more faithfully and resist
+    // deletion; with 0 every byte has the same errors and protection is only a record. Duplicated pieces
+    // keep half their protection — a working block can be copied and then tinkered with.
     // Works in two per-thread scratch buffers (the same random draws, in the same order, as the list
     // edits it replaced): only the child's two arrays are allocated.
     [ThreadStatic] static byte[] scratchG, scratchP;
+
+    // The copy-error rates (P, "Copy errors"), read once per copy. With UsefulCredit 0 protection
+    // changes nothing (copy and deletion as for an unprotected byte).
+    readonly struct Rates
+    {
+        public readonly double Point, Insert, Delete, DeleteMax, DeleteLen, Dup, Copy, Resist;
+        public readonly float Decay;
+        public readonly int DupMin, DupMax;
+        public readonly bool Credit;
+        public Rates(int _)
+        {
+            Point = P.Dec(P.MutPoint); Insert = P.Dec(P.MutInsert); Delete = P.Dec(P.MutDelete); DeleteMax = P.Dec(P.MutDeleteMax);
+            DeleteLen = P.Dec(P.MutDeleteLen); Dup = P.Dec(P.MutDup); Copy = P.Dec(P.ProtCopy); Resist = P.Dec(P.ProtDelete);
+            Decay = P.ProtDecay; DupMin = Math.Max(1, P.MutDupMin); DupMax = Math.Max(DupMin, P.MutDupMax);
+            Credit = P.UsefulCredit != 0;
+        }
+        public double PointAt(byte prot) => Credit ? Point * (1 - prot / Copy) : Point;
+        public bool Kept(byte prot, SimRng r) => Credit && r.NextDouble() < prot / Resist;
+    }
+
     public static (byte[] g, byte[] p) Mutate(byte[] src, byte[] prot, SimRng r)
     {
+        var k = new Rates(0);
         int n = src.Length;
         var g = scratchG ??= new byte[MaxLen + 32];
         var p = scratchP ??= new byte[MaxLen + 32];
-        if (n + 14 > g.Length) { g = scratchG = new byte[n + 32]; p = scratchP = new byte[n + 32]; }
+        if (n + k.DupMax + 2 > g.Length) { g = scratchG = new byte[n + k.DupMax + 32]; p = scratchP = new byte[n + k.DupMax + 32]; }
         Array.Copy(src, g, n);
-        for (int i = 0; i < n; i++) p[i] = (byte)(prot[i] * 0.9f);
+        for (int i = 0; i < n; i++) p[i] = (byte)(prot[i] * k.Decay);
         for (int i = 0; i < n; i++)
-            if (r.NextDouble() < 0.008 * (1 - p[i] / 320.0)) { g[i] = (byte)r.Next(256); p[i] = 0; }
-        if (r.NextDouble() < 0.3 && n < MaxLen)
+            if (r.NextDouble() < k.PointAt(p[i])) { g[i] = (byte)r.Next(256); p[i] = 0; }
+        if (r.NextDouble() < k.Insert && n < MaxLen)
         {
             int at = r.Next(n + 1);
             Array.Copy(g, at, g, at + 1, n - at); Array.Copy(p, at, p, at + 1, n - at);
@@ -107,20 +129,20 @@ public static class Genome
             p[at] = 0;
             n++;
         }
-        if (r.NextDouble() < 0.3 + Math.Min(0.3, n / 400.0) && n > MinLen)
+        if (r.NextDouble() < k.Delete + Math.Min(k.DeleteMax, n / k.DeleteLen) && n > MinLen)
         {
             int at = r.Next(n);
-            if (r.NextDouble() >= p[at] / 300.0)
+            if (!k.Kept(p[at], r))
             {
                 Array.Copy(g, at + 1, g, at, n - at - 1); Array.Copy(p, at + 1, p, at, n - at - 1);
                 n--;
             }
         }
-        if (r.NextDouble() < 0.05 && n < MaxLen - 12)
+        if (r.NextDouble() < k.Dup && n < MaxLen - k.DupMax)
         {
-            int len = Math.Min(r.Next(2, 13), n), from = r.Next(n - len + 1), to = r.Next(n + 1);
+            int len = Math.Min(r.Next(k.DupMin, k.DupMax + 1), n), from = r.Next(n - len + 1), to = r.Next(n + 1);
             Span<byte> seg = stackalloc byte[len], sp = stackalloc byte[len];
-            for (int k = 0; k < len; k++) { seg[k] = g[from + k]; sp[k] = (byte)(p[from + k] / 2); }
+            for (int q = 0; q < len; q++) { seg[q] = g[from + q]; sp[q] = (byte)(p[from + q] / 2); }
             Array.Copy(g, to, g, to + len, n - to); Array.Copy(p, to, p, to + len, n - to);
             seg.CopyTo(g.AsSpan(to)); sp.CopyTo(p.AsSpan(to));
             n += len;
@@ -131,26 +153,27 @@ public static class Genome
     // The list-based original, kept as the reference for the regression test.
     public static (byte[] g, byte[] p) MutateReference(byte[] src, byte[] prot, SimRng r)
     {
+        var k = new Rates(0);
         int n = src.Length;
         var g = new List<byte>(src);
         var p = new List<byte>(n);
-        for (int i = 0; i < n; i++) p.Add((byte)(prot[i] * 0.9f));
+        for (int i = 0; i < n; i++) p.Add((byte)(prot[i] * k.Decay));
         for (int i = 0; i < g.Count; i++)
-            if (r.NextDouble() < 0.008 * (1 - p[i] / 320.0)) { g[i] = (byte)r.Next(256); p[i] = 0; }
-        if (r.NextDouble() < 0.3 && g.Count < MaxLen)
+            if (r.NextDouble() < k.PointAt(p[i])) { g[i] = (byte)r.Next(256); p[i] = 0; }
+        if (r.NextDouble() < k.Insert && g.Count < MaxLen)
         {
             int at = r.Next(g.Count + 1);
             g.Insert(at, (byte)r.Next(256));
             p.Insert(at, 0);
         }
-        if (r.NextDouble() < 0.3 + Math.Min(0.3, g.Count / 400.0) && g.Count > MinLen)
+        if (r.NextDouble() < k.Delete + Math.Min(k.DeleteMax, g.Count / k.DeleteLen) && g.Count > MinLen)
         {
             int at = r.Next(g.Count);
-            if (r.NextDouble() >= p[at] / 300.0) { g.RemoveAt(at); p.RemoveAt(at); }
+            if (!k.Kept(p[at], r)) { g.RemoveAt(at); p.RemoveAt(at); }
         }
-        if (r.NextDouble() < 0.05 && g.Count < MaxLen - 12)
+        if (r.NextDouble() < k.Dup && g.Count < MaxLen - k.DupMax)
         {
-            int len = Math.Min(r.Next(2, 13), g.Count), from = r.Next(g.Count - len + 1), to = r.Next(g.Count + 1);
+            int len = Math.Min(r.Next(k.DupMin, k.DupMax + 1), g.Count), from = r.Next(g.Count - len + 1), to = r.Next(g.Count + 1);
             var seg = g.GetRange(from, len);
             var sp = p.GetRange(from, len).ConvertAll(v => (byte)(v / 2));
             g.InsertRange(to, seg);
@@ -163,7 +186,7 @@ public static class Genome
     // cut at the same relative position.
     public static (byte[] g, byte[] p) Cross(Agent a, Agent b, SimRng r)
     {
-        float f = 0.2f + 0.6f * (float)r.NextDouble();
+        float f = P.CrossMin + P.CrossWidth * (float)r.NextDouble();
         int ca = (int)(a.G.Length * f), cb = (int)(b.G.Length * f);
         int n = Math.Min(MaxLen, ca + b.G.Length - cb);
         var g = new byte[n];

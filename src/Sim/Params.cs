@@ -232,6 +232,23 @@ public static class ParamRegistry
         F("DivCostByte", "Размножение", "Division: per genome byte", "Деление: за байт генома", 0, 1, 0.005);
         I("DivMinBody", "Размножение", "Molecules in the body for division", "Молекул в теле для деления", 2, 256, 1);
         F("MateMinEnergy", "Размножение", "Energy needed for mating", "Энергия, нужная для спаривания", 0, 200, 0.5);
+        F("MutPoint", "Размножение", "Copy errors: chance per genome byte of a point change", "Ошибки копирования: шанс точечной замены на байт генома", 0, 0.1, 0.0005);
+        F("MutInsert", "Размножение", "Copy errors: chance per copy of one inserted random byte", "Ошибки копирования: шанс вставки одного случайного байта за копию", 0, 1, 0.01);
+        F("MutDelete", "Размножение", "Copy errors: chance per copy of losing one byte (plus the length term)", "Ошибки копирования: шанс потерять один байт за копию (плюс слагаемое длины)", 0, 1, 0.01);
+        F("MutDeleteMax", "Размножение", "Copy errors: the most a long genome adds to the deletion chance", "Ошибки копирования: наибольшая добавка длинного генома к шансу потери", 0, 1, 0.01);
+        F("MutDeleteLen", "Размножение", "Copy errors: genome bytes per +1 of deletion chance (long genomes lose more)", "Ошибки копирования: байтов генома на +1 к шансу потери (длинные теряют чаще)", 1, 10000, 10);
+        F("MutDup", "Размножение", "Copy errors: chance per copy of duplicating a piece", "Ошибки копирования: шанс удвоить участок за копию", 0, 1, 0.005);
+        I("MutDupMin", "Размножение", "Copy errors: shortest duplicated piece, bytes", "Ошибки копирования: самый короткий удвоенный участок, байтов", 1, 64, 1);
+        I("MutDupMax", "Размножение", "Copy errors: longest duplicated piece, bytes", "Ошибки копирования: самый длинный удвоенный участок, байтов", 1, 64, 1);
+        I("RandomGenomeMin", "Размножение", "Shortest random genome (first bodies, abiogenesis), bytes", "Самый короткий случайный геном (первые тела, самозарождение), байтов", 8, 512, 1);
+        I("RandomGenomeMax", "Размножение", "Longest random genome (first bodies, abiogenesis), bytes", "Самый длинный случайный геном (первые тела, самозарождение), байтов", 8, 512, 1);
+        F("CrossMin", "Размножение", "Crossing: earliest relative place of the cut in both parents", "Скрещивание: самое раннее относительное место разреза у обоих родителей", 0, 1, 0.01);
+        F("CrossWidth", "Размножение", "Crossing: width of the window of the cut (from CrossMin)", "Скрещивание: ширина окна разреза (от CrossMin)", 0, 1, 0.01);
+        I("UsefulCredit", "Размножение", "Credit for useful code: 1 — a byte whose act worked (a bond, split, photon, push, catalysed bite) gains protection and is copied more faithfully and resists deletion; 0 — every byte is copied with the same errors, protection is only an observation (selection alone keeps useful code)",
+          "Поощрение полезного кода: 1 — байт, чьё действие сработало (связь, распад, фотон, толчок, катализ при добыче), получает защиту и копируется точнее и реже теряется; 0 — все байты копируются с одинаковыми ошибками, защита — только наблюдение (полезный код держит один отбор)", 0, 1, 1);
+        F("ProtCopy", "Размножение", "UsefulCredit 1: protection at which a byte would never change (point rate × (1 − prot/ProtCopy))", "UsefulCredit 1: защита, при которой байт не менялся бы никогда (шанс замены × (1 − защита/ProtCopy))", 256, 10000, 1);
+        F("ProtDelete", "Размножение", "UsefulCredit 1: protection at which a byte never gets lost (resists with chance prot/ProtDelete)", "UsefulCredit 1: защита, при которой байт не теряется никогда (сопротивляется с шансом защита/ProtDelete)", 1, 10000, 1);
+        F("ProtDecay", "Размножение", "Protection a byte keeps per copy (the rest fades)", "Доля защиты байта, остающаяся при копировании (остальное выцветает)", 0, 1, 0.01);
         // Links, motion
         F("LinkFlow", "Связи", "Energy equalization over a link per tick", "Выравнивание энергии по связи за тик", 0, 0.5, 0.005);
         F("Recoil", "Движение", "Recoil from expelled mass", "Отдача от выброшенной массы", 0, 5, 0.05);

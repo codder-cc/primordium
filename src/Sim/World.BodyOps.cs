@@ -151,8 +151,9 @@ public sealed partial class World
     // body's energy; unaided it happens with the Boltzmann chance e^(de/2).
     static float Uphill(float drive, int slot, float de) => de >= 0 || slot >= 0 ? drive : drive * MathF.Exp(de * 0.5f);
 
-    // Something worked: the instruction and the gene of the protein that did it become a little more
-    // protected against copy errors.
+    // Something worked: the instruction and the gene of the protein that did it are marked (Agent.Prot).
+    // With UsefulCredit 1 the mark protects them against copy errors (Genome.Mutate); with 0 it is only
+    // a record of the code in use, for metrics and the chronicle.
     static void Worked(Agent a, int slot, int site)
     {
         var p = a.Prot;

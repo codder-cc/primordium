@@ -148,6 +148,32 @@ public sealed partial class World
             Require(g1.AsSpan().SequenceEqual(g2) && p1.AsSpan().SequenceEqual(p2), "mutation changed");
         }
         Console.WriteLine("PASS mutation: buffer version equals the list version on 20000 genomes");
+        {
+            // UsefulCredit: with 1 fully protected bytes change far less often than bare ones; with 0 the
+            // same (protection is only a record), and the two copies of a genome then differ only by chance.
+            var g = new byte[200];
+            rng.NextBytes(g);
+            byte[] bare = new byte[g.Length], full = new byte[g.Length];
+            Array.Fill(full, (byte)255);
+            int Changed(byte[] prot)
+            {
+                int changed = 0;
+                for (int s = 0; s < 3000; s++)
+                {
+                    var (c, _) = Genome.Mutate(g, prot, new SimRng(s));
+                    if (c.Length != g.Length || !c.AsSpan().SequenceEqual(g)) changed++;
+                }
+                return changed;
+            }
+            int old = P.UsefulCredit;
+            int bare1 = Changed(bare), full1 = Changed(full);
+            P.UsefulCredit = 0;
+            int bare0 = Changed(bare), full0 = Changed(full);
+            P.UsefulCredit = old;
+            string got = $"copies changed of 3000: credit 1 bare {bare1} protected {full1}; credit 0 bare {bare0} protected {full0}";
+            Require(full1 < bare1 * 0.8 && Math.Abs(bare0 - bare1) < 0.1 * bare1 && Math.Abs(full0 - bare0) < 0.1 * bare0, "useful credit: " + got);
+            Console.WriteLine("PASS useful credit: " + got);
+        }
         });
         Timed("MatterRegression", MatterRegression);
         Timed("StructureRegression", StructureRegression);
