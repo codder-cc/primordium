@@ -222,7 +222,7 @@ public sealed partial class World
         if ((TilesX > 1 && (PeriodX - 1) * (W / TilesX) < SafeGap) || (TilesY >= PeriodY && (PeriodY - 1) * (H / TilesY) < SafeGap))
             throw new InvalidOperationException($"tile layout {TilesX}×{TilesY} leaves same-colour tiles closer than {SafeGap} cells");
         Colours = PeriodX * PeriodY;
-        PhaseBusy = new double[Colours]; PhaseLongest = new double[Colours];
+        PhaseBusy = new double[Colours]; PhaseLongest = new double[Colours]; TileBusy = new double[Tiles];
         colour = new int[Colours][];
         for (int q = 0; q < Colours; q++)
             colour[q] = Enumerable.Range(0, Tiles).Where(t => (t % TilesX) % PeriodX == q % PeriodX && (t / TilesX) % PeriodY == q / PeriodX).ToArray();
@@ -305,6 +305,7 @@ public sealed partial class World
         DRelieve = 17, DAlarms = 18, DAbio = 19, DBurials = 20, DChronicle = 21, DEvolution = 22;
     // Per colour of the agent phase: summed tile work and the slowest tile, ms (AgentBusy/AgentLongest are their totals).
     public readonly double[] PhaseBusy, PhaseLongest;
+    public readonly double[] TileBusy;   // per tile: its work in the agent phase, ms (diagnostics, summed like PhaseBusy)
     public long AgentAllocated;   // bytes allocated during the agent phase (approximate: all threads)
     static readonly double MsPerStamp = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
     long lapAt;
@@ -402,7 +403,7 @@ public sealed partial class World
                 for (int k; (k = Interlocked.Increment(ref phaseNext) - 1) < n;) StepTile(phaseOrder[k]);
             });
             double longest = 0, busy = 0;
-            for (int k = 0; k < n; k++) { var c = ctxs[phaseOrder[k]]; busy += c.Busy; longest = Math.Max(longest, c.Busy); }
+            for (int k = 0; k < n; k++) { var c = ctxs[phaseOrder[k]]; busy += c.Busy; longest = Math.Max(longest, c.Busy); TileBusy[phaseOrder[k]] += c.Busy; }
             AgentBusy += busy; AgentLongest += longest;
             PhaseBusy[q] += busy; PhaseLongest[q] += longest;
         }

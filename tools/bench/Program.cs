@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.Linq;
 using Primordium;
 
-// dotnet run -c Release --project tools/bench -- --seed 1 --ticks 50000 --every 5000 [--size WxHxL] [--pop N] [--noabio] [--ops] [--audit]
+// dotnet run -c Release --project tools/bench -- --seed 1 --ticks 50000 --every 5000 [--size WxHxL] [--pop N] [--noabio] [--ops] [--tile-grid] [--audit]
 //   [--size WxHxL]: a world of that size (default 256x160x192; a small one for cheap screening, see Batch.cs).
 //   [--log path.csv]: one row per --every interval with population, births, deaths, every stage's ms/tick,
 //   allocation and GC counts, for looking at performance over time.
@@ -242,6 +242,10 @@ for (int t = 1; t <= ticks; t++)
     }
     Console.WriteLine($"   agent tiles: work {w.AgentBusy / every:F2} ms/tick, slowest tile per colour {w.AgentLongest / every:F2}, wall {w.Prof[1] / every:F2}; by colour busy/longest "
         + string.Join(" ", Enumerable.Range(0, w.Colours).Select(q => $"{w.PhaseBusy[q] / every:F2}/{w.PhaseLongest[q] / every:F2}")));
+    if (Array.IndexOf(args, "--tile-grid") >= 0)   // each tile's work in the agent phase, ms/tick, as the map lies
+        for (int ty = 0; ty < w.TilesY; ty++)
+            Console.WriteLine("   tiles " + string.Join(" ", Enumerable.Range(0, w.TilesX).Select(tx => $"{w.TileBusy[ty * w.TilesX + tx] / every,5:F2}")));
+    Array.Clear(w.TileBusy);
     if (log != null)
     {
         var inv = System.Globalization.CultureInfo.InvariantCulture;
