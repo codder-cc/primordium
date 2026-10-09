@@ -267,6 +267,9 @@ public sealed partial class World
         // The example designs were made for the legacy chemistry (ChemEnergyModel 0): in the chemistry
         // from bonds the rock holds no downhill energy and the miner example (Крот) starves within 600
         // ticks. The planting, ledger and save tests below do not depend on the energies.
+        // They check the energy as a number in the body (MatterEnergy 0) and free senses: the old default laws
+        // (the designs under the laws of today's default world: MatterEnergyRegression and --design-probe).
+        using var oldLaws = OldDefaults();
         int chemModel = P.ChemEnergyModel;
         P.ChemEnergyModel = 0;
         World w;
@@ -403,6 +406,8 @@ public sealed partial class World
     static void LawsEnergyRegression()
     {
         ParamRegistry.ResetDefaults();
+        // The switches below turn the laws on from their old defaults (0) and back: start from them.
+        using var oldLaws = OldDefaults();
         // On the first relief (the default; kept explicit): VoxelSpace ×1.5 leaves every block two-thirds full and
         // sets off a wave of crushing; under the ×4 relief it is ~4× the work (1 million crushes in 100 ticks) and
         // nothing more is tested by it.

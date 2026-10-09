@@ -11,6 +11,9 @@ public sealed partial class World
 {
     public static void PredationRegression()
     {
+        // The store as a number torn out with molecules (TornStore, MatterEnergy 0) under the old default laws;
+        // a strike carrying charge in the molecules: MatterEnergyRegression.
+        using var oldLaws = OldDefaults();
         var w = Fixture(); var ch = w.Chem;
         w.TrackHeat = true;
         int c = 60 * w.W + 60;

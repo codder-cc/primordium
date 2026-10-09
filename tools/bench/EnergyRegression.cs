@@ -49,6 +49,9 @@ public sealed partial class World
     // a body powered by binds and splits of loose matter only, energy booked.
     static void EnergyRegression()
     {
+        // The probes of the energy as a number in the body (MatterEnergy 0: unpaid, write-off, a founder's
+        // energy) under the old default laws; the same paths with the energy in the matter: MatterEnergyRegression.
+        using var oldLaws = OldDefaults();
         int model = P.ChemEnergyModel;
         P.ChemEnergyModel = 0;
         try { EnergyProbes(); } finally { P.ChemEnergyModel = model; }

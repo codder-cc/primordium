@@ -52,6 +52,28 @@ public sealed partial class World
         }
         return h;
     }
+    // The laws whose defaults changed on 2026-10-09 (11) (presets/legacy.json), at their old values: for the
+    // tests written for the old default world that test what they meant under it (switching a law from its
+    // old value, numbers of a law-0 mechanic). Reset by ParamRegistry.ResetDefaults like any law.
+    static readonly (string name, double old)[] OldDefaultLaws =
+    {
+        (nameof(P.MatterEnergy), 0), (nameof(P.ArrheniusDecay), 0), (nameof(P.Organs), 0), (nameof(P.UphillKT), 0), (nameof(P.Volatility), 0),
+    };
+    // Sets them; disposing puts back what was there before (the self-test resets the laws only once).
+    static IDisposable OldDefaults()
+    {
+        var before = OldDefaultLaws.Select(l => (l.name, ParamRegistry.Get(l.name))).ToArray();
+        foreach (var (name, old) in OldDefaultLaws) ParamRegistry.Set(name, old);
+        return new Restore(() => { foreach (var (name, v) in before) ParamRegistry.Set(name, v); });
+    }
+    // One law for a block of a test (disposing puts back its value before).
+    static IDisposable WithLaw(string name, double value)
+    {
+        double before = ParamRegistry.Get(name);
+        ParamRegistry.Set(name, value);
+        return new Restore(() => ParamRegistry.Set(name, before));
+    }
+    sealed class Restore(Action undo) : IDisposable { public void Dispose() => undo(); }
     static void BudgetEqual(double[] a, double[] b, string stage, double tolerance = 0.002)
     {
         for (int e = 0; e < a.Length; e++) Require(Math.Abs(a[e] - b[e]) <= tolerance, $"{stage}: element {e}: {a[e]:R} -> {b[e]:R} (delta {b[e] - a[e]:R})");
@@ -391,6 +413,8 @@ public sealed partial class World
     // molecule per step next to a pile of 10⁴–10⁵ (the long test's atom drift in boomed worlds).
     static void ExactPoolsRegression()
     {
+        // The old ground decay (LooseDecayK) moving exact amounts; the Arrhenius law's pools: DecayRegression.
+        using var decay = WithLaw(nameof(P.ArrheniusDecay), 0);
         var w = Fixture(); var ch = w.Chem;
         int c = 60 * w.W + 40;
         int s = Enumerable.Range(0, Chemistry.S).First(k => ch.SplitExo[k] && ch.SplitB[k] >= 0);
@@ -838,6 +862,9 @@ public sealed partial class World
     static void RubbleRegression()
     {
         // A small world (a pile and the rock under it; 70 columns around it are all the test looks at).
+        // Mechanics only: with ArrheniusDecay 1 (the default) blocks also decay into their voxels' burials
+        // (World.Decay, DecayRegression), which is chemistry, not crushing — the old decay law here.
+        using var decay = WithLaw(nameof(P.ArrheniusDecay), 0);
         var w = Tiny(1, 0, false, false, 96, 96, 128);
         int cx = w.W / 2, cy = w.H / 2, s = w.RandomPourable(), c0 = cy * w.W + cx, ground = w.Height[c0];
         double[] a0 = w.ElementBudget();
@@ -898,6 +925,9 @@ public sealed partial class World
     // swimming, height kept from cell to cell.
     static void WaterRegression()
     {
+        // Buoyancy with the one gas of the old law (Volatility 0): bodies of one species float or sink as
+        // whole bubbles; with every species partly in the air (the default) — VolatilityRegression.
+        using var gas = WithLaw(nameof(P.Volatility), 0);
         var w = Fixture();
         var ch = w.Chem;
         int light = -1, heavy = -1;

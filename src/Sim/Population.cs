@@ -121,8 +121,14 @@ public sealed class PopulationBody
             if (n < 0) return Loc.T($"{k}: negative count", $"{k}: отрицательное количество");
             total += n;
         }
+        long pendRaw = 0;
         foreach (var (k, n) in Pend ?? new())
+        {
             if (Species(k) < 0 || n < 0 || n >= 64L << Qty.Bits) return Loc.T($"bad partial matter '{k}'", $"неверное частичное вещество «{k}»");
+            pendRaw += n;
+        }
+        // As the world counts a body (World.BodyUnits): with MatterEnergy 1 the fractional parts are matter of it too.
+        if (World.MatterLaw) total += (int)(pendRaw >> Qty.Bits);
         foreach (var e in Proteins ?? new())
             if (e.Kind < 0 || e.Kind > 3 || e.A < 0 || e.A >= Chemistry.S || e.B < 0 || e.B >= Chemistry.S || e.Material < 0 || e.Material >= Chemistry.S || e.Matter < 0 || !(e.Amount >= 0))
                 return Loc.T("bad protein", "неверный белок");

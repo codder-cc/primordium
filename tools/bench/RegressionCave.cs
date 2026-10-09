@@ -69,9 +69,10 @@ public sealed partial class World
         float felt = w.LocalTemp(deep, 2);
         Require(MathF.Abs(felt - w.FootTemp(inDeep)) < 1e-6f, "FootTemp is not the felt temperature");
         string energy = EnergyWorldCheck(w, e0, "cave climate");
-        // The sensor reads the same.
+        // The sensor reads the same (the channel itself: a free reading, Organs 0; through a thermoreceptor
+        // in OrganRegression).
         var probe = new Agent(w.NewId(), 0, 0, new byte[] { Genome.Temp, Genome.Yield, 0, 0, 0, 0, 0, 0 }) { Energy = 10, Z = 2, Tb = 15, X = 40, Y = y };
-        w.Exec(probe, cell);
+        using (WithLaw(nameof(P.Organs), 0)) w.Exec(probe, cell);
         Require(probe.Stack[0] == (int)felt, $"the temp sensor reads {probe.Stack[0]}, felt {felt:F2}");
 
         // Off: the old expression, the surface temperature for every body.

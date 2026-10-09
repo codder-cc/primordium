@@ -150,11 +150,14 @@ public sealed partial class World
         float dose = g.Flare(open, out float harm);
         Require(dose == dOpen && open.Tb > tb && open.Energy < en && open.Enz[0].Amount < amount && open.HeatHeld > 0 && harm > 0, "a flare dose did nothing");
         g.EnergyBalanced(eb, "flare", FFlare, FDissipate);
+        // The uv channel itself: a free reading (Organs 0; through a photoreceptor in OrganRegression).
+        var organs = WithLaw(nameof(P.Organs), 0);
         var probe = new Agent(g.NewId(), 0, 0, GenomeAsm.Assemble("uv\nyield\nnop\nnop\nnop\nnop\nnop\nnop")) { Energy = 10, Z = 2, Tb = 15, X = sunny % g.W, Y = y0 };
         g.Exec(probe, sunny);
         int uv = probe.Stack[0];
         probe.Sp = 0; probe.Ip = 0; probe.X = cave % g.W; probe.Z = 2;
         g.Exec(probe, cave);
+        organs.Dispose();
         Require(uv > 100 && probe.Stack[0] < uv / 20, $"uv sensor: sunlit {uv}, under the roof {probe.Stack[0]}");
         string flare = $"flare doses: sunlit {dOpen:F2}, under 10 blocks {dCave / dOpen:P1}, lake bottom {dBottom / dOpen:P1}, shielded {dArm / dOpen:P0}; uv {uv}";
 

@@ -1,0 +1,12 @@
+{
+  "Version": 1,
+  "Name": "default",
+  "Description": "The default world since 2026-10-09 (11), written out: body energy in its matter, one Arrhenius law of decay, senses through organs, uphill chance by the body's k·T, volatility of every species. Every other law at its default.",
+  "Values": {
+    "MatterEnergy": 1,
+    "ArrheniusDecay": 1,
+    "Organs": 1,
+    "UphillKT": 1,
+    "Volatility": 1
+  }
+}

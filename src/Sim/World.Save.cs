@@ -262,6 +262,10 @@ public sealed partial class World
         (nameof(P.AbioModel), 0),
         (nameof(P.MatterEnergy), 0),
         (nameof(P.ArrheniusDecay), 0),
+        // Defaults changed 2026-10-09 (11): a file written before these laws existed ran without them.
+        (nameof(P.Organs), 0),
+        (nameof(P.UphillKT), 0),
+        (nameof(P.Volatility), 0),
     };
 
     static void WriteLaws(BinaryWriter w, Dictionary<string, double> laws)

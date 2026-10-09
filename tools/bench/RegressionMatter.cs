@@ -9,6 +9,10 @@ public sealed partial class World
 {
     public static void MatterEnergyRegression()
     {
+        // The probes switch MatterEnergy alone, from the old default world (the other laws whose defaults
+        // changed with it, 2026-10-09 (11), at their old values: a motor push without the organ law, decay by
+        // the old laws); the designs are then also planted in today's default world.
+        var oldLaws = OldDefaults();
         int law = P.MatterEnergy;
         int chem = P.ChemEnergyModel;
         try
@@ -25,7 +29,8 @@ public sealed partial class World
             P.ChemEnergyModel = chem;
             MatterDesignProbe();
         }
-        finally { P.MatterEnergy = law; P.ChemEnergyModel = chem; }
+        finally { P.MatterEnergy = law; P.ChemEnergyModel = chem; oldLaws.Dispose(); }
+        MatterDesignProbe();   // the default world (every changed law at its new value)
     }
 
     // Runs `act` as if inside the body's own tick (its costs are owed until settled, World.Charge).

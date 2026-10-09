@@ -109,6 +109,8 @@ public sealed partial class World
     // The tabulated rate (dry, no lattice) at tC; outside the table, the law itself.
     double DryRate(int s, float tC)
     {
+        // Before the first tick (a pool stepped directly, as tests do) there is no table yet: the law itself.
+        if (decayTab == null) return DecayRate(s, tC, 0);
         float x = (tC - TabLo) * (1f / TabStep);
         if (!(x >= 0) || x >= TabN - 1) return DecayRateWith(decayA, s, tC, 0, 0);
         int j = (int)x;

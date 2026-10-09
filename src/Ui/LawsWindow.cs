@@ -6,12 +6,24 @@ using Godot;
 
 namespace Primordium;
 
-// Law presets kept as JSON in user://presets.
+// Law presets as JSON: the built-in ones of the repository (res://presets: legacy — the default world
+// before 2026-10-09 (11), default — today's defaults written out) and the player's in user://presets.
 public static class Presets
 {
+    public const string BuiltInDir = "res://presets";
+
+    public static bool BuiltIn(string path) => path.StartsWith("res://", StringComparison.Ordinal);
+
     public static List<(string name, string path)> List()
     {
         var list = new List<(string, string)>();
+        foreach (var file in DirAccess.GetFilesAt(BuiltInDir).Where(f => f.EndsWith(".json", StringComparison.Ordinal)).OrderBy(f => f, StringComparer.Ordinal))
+        {
+            string path = BuiltInDir + "/" + file, name = Path.GetFileNameWithoutExtension(file);
+            try { var p = Load(path); if (!string.IsNullOrWhiteSpace(p.Name)) name = p.Name; }
+            catch { name += Loc.T(" (unreadable)", " (не читается)"); }
+            list.Add((name + Loc.T(" (built-in)", " (встроенный)"), path));
+        }
         if (!Directory.Exists(UiManager.PresetsDir)) return list;
         foreach (var path in Directory.GetFiles(UiManager.PresetsDir, "*.json").OrderBy(p => p, StringComparer.Ordinal))
         {
@@ -22,6 +34,11 @@ public static class Presets
         }
         return list;
     }
+
+    // A preset by its path: a built-in one through Godot's file access (it may be packed), a player's from disk.
+    public static ParamPreset Load(string path) => BuiltIn(path)
+        ? ParamRegistry.FromJson(Godot.FileAccess.GetFileAsString(path))
+        : ParamRegistry.LoadPreset(path);
 
     // The current laws of the running world (from the published values), only those that differ.
     public static ParamPreset FromValues(string name, double[] values) => new()
@@ -82,14 +99,14 @@ public partial class LawsWindow : UiWindow
         int k = presets.Selected;
         if (k <= 0) { Main.Sim.ResetParams(); return; }
         var (name, path) = presetList[k - 1];
-        try { Main.Sim.ApplyPreset(ParamRegistry.LoadPreset(path)); }
+        try { Main.Sim.ApplyPreset(Presets.Load(path)); }
         catch (Exception e) { Ui.Toast(Loc.T($"cannot read preset \"{name}\": {e.Message}", $"не прочитать набор «{name}»: {e.Message}"), true); }
     }
 
     void DeletePreset()
     {
         int k = presets.Selected;
-        if (k <= 0) { Ui.Toast(Loc.T("the built-in preset cannot be deleted", "встроенный набор не удаляется"), true); return; }
+        if (k <= 0 || Presets.BuiltIn(presetList[k - 1].path)) { Ui.Toast(Loc.T("a built-in preset cannot be deleted", "встроенный набор не удаляется"), true); return; }
         try { File.Delete(presetList[k - 1].path); Ui.Toast(Loc.T($"preset \"{presetList[k - 1].name}\" deleted", $"набор «{presetList[k - 1].name}» удалён")); }
         catch (Exception e) { Ui.Toast(Loc.T("cannot delete: ", "не удалить: ") + e.Message, true); }
         ListPresets();

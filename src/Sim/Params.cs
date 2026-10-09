@@ -208,7 +208,7 @@ public static class ParamRegistry
         F("MateShare", "Действия", "Share of each parent's energy and molecules that goes into a mated child", "Доля энергии и молекул каждого родителя, уходящая в ребёнка от спаривания", 0.05, 0.5, 0.01);
         I("AlarmTicks", "Действия", "How long an attack in a cell can be noticed (hurt), ticks", "Сколько тиков удар в клетке ещё заметен (hurt)", 1, 128, 1);
         I("HandshakeTicks", "Действия", "Window in which both sides must want to mate or link, ticks", "Окно, в котором обе стороны должны захотеть спаривания или связи, тиков", 1, 64, 1);
-        F("TornStore", "Действия", "Share of a body's stored energy that goes with molecules torn or pulled out of it (attack, take), in proportion to the molecules taken (0: the store stays behind)", "Доля запаса энергии тела, которая уходит с вырванными из него молекулами (attack, take), пропорционально числу молекул (0 — запас остаётся в теле)", 0, 1, 0.05);
+        F("TornStore", "Действия", "MatterEnergy 0 only: share of a body's stored energy that goes with molecules torn or pulled out of it (attack, take), in proportion to the molecules taken (0: the store stays behind); with law 1 the torn molecules carry their own charge", "Только MatterEnergy 0: доля запаса энергии тела, которая уходит с вырванными из него молекулами (attack, take), пропорционально числу молекул (0 — запас остаётся в теле); при законе 1 вырванные молекулы уносят свой заряд", 0, 1, 0.05);
         F("CostInjectBase", "Действия", "Gene injection: base", "Вставка генов: основа", 0, 2, 0.01);
         F("CostInjectByte", "Действия", "Gene injection: per byte", "Вставка генов: за байт", 0, 1, 0.005);
         F("CostCutBase", "Действия", "Gene excision: base", "Вырезание генов: основа", 0, 2, 0.01);
@@ -227,9 +227,9 @@ public static class ParamRegistry
         F("HardSharp", "Действия", "ContinuousHardness 1: how sharply a molecule harder than the block wins (the power n in b^n/(b^n + c^n))", "ContinuousHardness 1: насколько резко побеждает молекула твёрже блока (степень n в b^n/(b^n + c^n))", 0.5, 20, 0.5);
         // Body
         I("MinBody", "Тело", "Fewer molecules and the body falls apart", "Меньше молекул — тело распадается", 1, 32, 1);
-        F("StoreBase", "Тело", "Comfortable energy store: base", "Удобный запас энергии: основа", 0, 500, 1);
-        F("StorePerMass", "Тело", "Comfortable energy store: per unit of mass", "Удобный запас энергии: на единицу массы", 0, 20, 0.1);
-        F("HoldK", "Тело", "Leak of the energy store as heat", "Утечка запаса энергии теплом", 0, 0.05, 0.0001);
+        F("StoreBase", "Тело", "MatterEnergy 0 only: comfortable energy store, base (law 1: the capacity of the molecules held)", "Только MatterEnergy 0: удобный запас энергии, основа (закон 1: ёмкость удерживаемых молекул)", 0, 500, 1);
+        F("StorePerMass", "Тело", "MatterEnergy 0 only: comfortable energy store, per unit of mass", "Только MatterEnergy 0: удобный запас энергии, на единицу массы", 0, 20, 0.1);
+        F("HoldK", "Тело", "MatterEnergy 0 only: leak of the energy store as heat (law 1: charge is lost only with its molecules)", "Только MatterEnergy 0: утечка запаса энергии теплом (закон 1: заряд теряется только с молекулами)", 0, 0.05, 0.0001);
         F("CostLink", "Тело", "Link to a partner per tick", "Связь с партнёром за тик", 0, 0.1, 0.0005);
         F("DecayK", "Тело", "Chance an unstable molecule in a body decays per tick", "Шанс распада нестабильной молекулы в теле за тик", 0, 0.01, 0.00001);
         // Wear of body matter (World.Wear)

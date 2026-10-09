@@ -95,7 +95,7 @@ public static class P
     // Genome.Decode): what it reads, how well and how far follows from that protein's spec, its amount and
     // the molecules it is made of; every reading costs (SenseTry, more by the organ's strength: SenseDrive),
     // every unit of organ protein costs OrganUpkeep a tick, a motor's push grows with all its motor copies.
-    public static int Organs = 0;
+    public static int Organs = 1;   // default since 2026-10-09 (11); 0 in presets/legacy.json
     public static float SenseTry = 0.0005f;     // Organs 1: a sense instruction, with or without an organ
     public static float SenseDrive = 0.0005f;   // Organs 1: per unit of the organ's strength a reading drives
     public static float OrganUpkeep = 0.0005f;  // Organs 1: per unit of organ protein (motor and senses) per tick
@@ -237,12 +237,12 @@ public static class P
     // e^(de·UphillK) — UphillKT 0: at every temperature; 1: e^(de·UphillK·(273.15 + TempRef)/(273.15 + Tb)),
     // the same at TempRef, likelier in a warm body, rarer in a cold one (k·T in the energy unit).
     public static float UphillK = 0.5f;
-    public static int UphillKT = 0;
+    public static int UphillKT = 1;   // default since 2026-10-09 (11); 0 in presets/legacy.json
     // Where a body's energy is (World.Charge): MatterEnergy 0 — a number (Agent.Energy) fed by reactions in
     // the body, as before; 1 — in its matter: the excitation of the molecules it holds (its charge) pays
     // every cost by relaxing them, an exothermic reaction in the body excites its ground molecules
     // (CaptureHeat of it warms the body instead), and the molecules carry it wherever they go.
-    public static int MatterEnergy = 0;
+    public static int MatterEnergy = 1;   // default since 2026-10-09 (11); 0 in presets/legacy.json
     // Energy a body keeps in hand: an act that would leave it less than this is not done.
     public static float EnergyReserve = 1f;
     // MatterEnergy 1: of the energy an exothermic reaction in a body releases, the share that warms the
@@ -405,7 +405,7 @@ public static class P
     // share diffuses (Diff·v), bubbles (×(1 + (GasExpand − 1)·v)), dissolves from the surface, is
     // scavenged by rain; the rest settles, is poured and counts as litter. Below VolatilityMin a species
     // is taken as not volatile at all (a resolution: no diffusion pass for a share that small).
-    public static int Volatility = 0;
+    public static int Volatility = 1;   // default since 2026-10-09 (11); 0 in presets/legacy.json
     public static float VolatilityL = 0.2f, VolatilityMin = 0.02f;
     // LeachK (World.Leach): share per tick of the lightest loose molecule (any species, the air's gas too) on wet ground (standing water or
     // full rain) that percolating water carries below the top block, out of reach of bodies on the
@@ -420,7 +420,7 @@ public static class P
     // every pool (loose, burials, blocks, bodies), at k = 10^DecayLogA · exp(−Ea/(T + 273.15))
     // · (1 + DecayWetK·wet) per tick, Ea = (DecayEa + DecayBondEa·Bond/mean Bond) · (1 + order × lattice
     // bond / mean Bond); 0 — the old separate laws (LooseDecayK on the ground, DecayK in bodies; none below).
-    public static int ArrheniusDecay = 0;
+    public static int ArrheniusDecay = 1;   // default since 2026-10-09 (11); 0 in presets/legacy.json
     public static float DecayLogA = 2.4f, DecayEa = 4000f, DecayBondEa = 1000f, DecayWetK = 2f;
 
     // Space

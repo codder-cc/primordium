@@ -18,6 +18,10 @@ public sealed partial class World
     public static void WearRegression()
     {
         ParamRegistry.ResetDefaults();
+        // Wear and photodamage against bodies that otherwise keep their matter, energy a number that light fills:
+        // the old default laws (the Arrhenius law decays body molecules too: DecayRegression; MatterEnergy 1
+        // relaxes them into fractions). The living world below runs under the defaults.
+        var oldLaws = OldDefaults();
         var w = Fixture(); var ch = w.Chem;
         int c = 80 * w.W + 120;
         w.EnergyStart();
@@ -113,6 +117,7 @@ public sealed partial class World
         var wearOn = Sealed(0, 0.0005f);
         Require(wearOn.end < wearOn.start, $"sealed body with wear: {wearOn.start} → {wearOn.end} atoms");
 
+        oldLaws.Dispose();
         // A living world: both laws switched on mid-run.
         ParamRegistry.ResetDefaults();
         var v = new World(SmallSettings(2, 400, true)) { TrackHeat = true };

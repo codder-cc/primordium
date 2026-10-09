@@ -134,7 +134,7 @@ public partial class NewWorldWindow : UiWindow
         else if (k == 1) draft.Fill(null);
         else
         {
-            try { draft.Fill(ParamRegistry.LoadPreset(presetList[k - 2].path).Values); }
+            try { draft.Fill(Presets.Load(presetList[k - 2].path).Values); }
             catch (Exception e) { Ui.Toast(Loc.T("cannot read the preset: ", "не прочитать набор: ") + e.Message, true); draft.Fill(null); }
         }
         editor.Refresh(true);

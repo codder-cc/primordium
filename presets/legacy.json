@@ -1,0 +1,12 @@
+{
+  "Version": 1,
+  "Name": "legacy",
+  "Description": "The default world before 2026-10-09 (11): body energy as a number, the old decay laws, free senses, uphill chance without temperature, one gas. Every other law at its default.",
+  "Values": {
+    "MatterEnergy": 0,
+    "ArrheniusDecay": 0,
+    "Organs": 0,
+    "UphillKT": 0,
+    "Volatility": 0
+  }
+}
