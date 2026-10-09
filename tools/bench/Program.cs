@@ -46,6 +46,7 @@ if (Array.IndexOf(args, "--self-test-region") >= 0) { World.RegionRegression(); 
 if (Array.IndexOf(args, "--self-test-life") >= 0) { World.LifeModelRegression(); return; }   // just the life models test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-organs") >= 0) { World.RunOrganRegression(); return; }   // just the organs of sense test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-fidelity") >= 0) { World.RunFidelityRegression(); return; }   // just the paid copy fidelity test (also in --self-test)
+if (Array.IndexOf(args, "--self-test-bodypass") >= 0) { World.RunBodyPassRegression(); return; }   // just the body pass test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-model2") >= 0) { World.Model2Regression(); return; }   // just life model 2 (also in --self-test)
 if (Array.IndexOf(args, "--list-params") >= 0)
 {

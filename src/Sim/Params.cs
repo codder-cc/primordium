@@ -136,6 +136,8 @@ public static class ParamRegistry
         F("VmTempPer", "ВМ", "Genome pace: °C of body temperature per +1 of pace", "Темп генома: °C температуры тела на +1 темпа", 1, 500, 1);
         F("VmTempMin", "ВМ", "Genome pace: the slowest (cold body)", "Темп генома: самый медленный (холодное тело)", 0, 2, 0.01);
         F("VmTempMax", "ВМ", "Genome pace: the fastest (warm body)", "Темп генома: самый быстрый (тёплое тело)", 0, 4, 0.01);
+        I("BodyPass", "ВМ", "Body pass: 1 — what a body does to itself after acting (temperature, upkeep, protein wear, paying its costs, decay, UV, starving) runs for all bodies in parallel after the tile phase, from each body's own random stream; 0 — in the body's own turn (as before)",
+          "Проход тел: 1 — то, что тело делает само с собой после действий (температура, содержание, износ белков, оплата затрат, распад, УФ, голод), идёт для всех тел параллельно после фазы квадратов, из своего потока случайных чисел у каждого тела; 0 — в ход самого тела (как раньше)", 0, 1, 1);
         // Upkeep
         F("CostBase", "Содержание", "Cost of living per tick", "Плата за жизнь за тик", 0, 0.2, 0.001);
         F("CostMass", "Содержание", "Cost per unit of body mass per tick", "Плата за единицу массы тела за тик", 0, 0.01, 0.0001);

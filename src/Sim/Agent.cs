@@ -76,6 +76,11 @@ public sealed class Agent
     public sbyte ClimbDir = -1;
     public double Energy;                      // free energy: double, so the energy ledger closes (see World.Energy); with P.MatterEnergy 1 only a legacy remainder
     public double Due;                         // P.MatterEnergy 1: costs of this tick not yet settled from its charge (World.Charge); 0 between ticks unless it starves
+    // P.BodyPass 1 (World.BodyPass): from its turn to the body pass of the same tick (never across ticks: not saved).
+    internal long PassTick = -1;
+    internal double PassE0;
+    internal float PassKids0, PassSpent0;
+    internal int PassCell;
     public float Tb;                           // body temperature, °C
     public int Age;
     public bool Dead;

@@ -40,6 +40,26 @@ public sealed partial class World
     void ReactiveDamage(Agent a)
     {
         float tf = float.NaN;   // TempFactor(a.Tb), computed only where a chance needs it (it is a pure function)
+        ReactInside(a, ref tf);
+        ReactFloor(a, ref tf);
+    }
+
+    // What it holds (only the body and the heat; P.BodyPass 1: in the body pass).
+    void ReactInside(Agent a)
+    {
+        float tf = float.NaN;
+        ReactInside(a, ref tf);
+    }
+
+    // What lies where it stands (the floor; P.BodyPass 1: in its own turn).
+    void ReactFloor(Agent a)
+    {
+        float tf = float.NaN;
+        ReactFloor(a, ref tf);
+    }
+
+    void ReactInside(Agent a, ref float tf)
+    {
         int home = a.Y * W + a.X;
         if (a.InvTotal > 0)
         {
@@ -49,11 +69,15 @@ public sealed partial class World
             {
                 RemoveMol(a, s);
                 AddMol(a, Chemistry.Ground(s));
-                Spend(home, Chem.Excitation[s]);
+                ReactSpend(home, Chem.Excitation[s]);
                 WearProtein(a, Rng.Next(a.EnzN), 1 - P.ReactWear);
                 Interlocked.Increment(ref ReactHeld);
             }
         }
+    }
+
+    void ReactFloor(Agent a, ref float tf)
+    {
         if (P.ReactContact <= 0) return;
         var excited = Chem.Excited;
         int pc = FootCell(a, Rng.Next(a.Cells));
@@ -65,15 +89,15 @@ public sealed partial class World
         {
             ChangeLoose(a, pc, q, -1f);
             ChangeLoose(a, pc, Chemistry.Ground(q), 1f);
-            Spend(pc, Chem.Excitation[q]);
+            ReactSpend(pc, Chem.Excitation[q]);
             WearProtein(a, Rng.Next(a.EnzN), 1 - P.ReactWear);
             Interlocked.Increment(ref ReactLying);
         }
+    }
 
-        void Spend(int cell, float energy)
-        {
-            heatIn[cell] += energy;
-            Flows[FBodyDecay] += energy;
-        }
+    void ReactSpend(int cell, float energy)
+    {
+        AddHeat(cell, energy);
+        Flows[FBodyDecay] += energy;
     }
 }

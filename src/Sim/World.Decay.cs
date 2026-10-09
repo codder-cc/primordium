@@ -287,7 +287,7 @@ public sealed partial class World
             RemoveMol(a, s);
             AddOrSpill(a, d.To1[s], cell);
             if (d.To2[s] >= 0) AddOrSpill(a, d.To2[s], cell);
-            heatIn[cell] += d.Heat[s];
+            AddHeat(cell, d.Heat[s]);
             Flows[FBodyDecay] += d.Heat[s];
         }
     }

@@ -75,6 +75,13 @@ public sealed partial class World
         public double Busy;   // ms spent stepping this tile's agents (diagnostics)
         public Agent Body;    // the body whose tick this is (P.MatterEnergy 1: its costs are settled at the end, World.Charge)
         public readonly long[] OpTicks = new long[Genome.OpSlots + 2];   // with ProfileOps: time per instruction kind, + VM-less rest, + births
+        // P.BodyPass 1, a chunk of the body pass (World.BodyPass): its own energy flows (folded into the main
+        // slot after the pass) and what it does to the world, applied after the pass in chunk order.
+        public double[] Flow;
+        public bool Defer;
+        public readonly List<(int cell, float heat, bool cave)> Heat = new();
+        public readonly List<(int cell, int level, int s, Qty amount)> Loose = new();
+        public readonly List<(Agent a, int cause)> Deaths = new();
     }
     public static bool ProfileOps;   // tools/bench --ops: time every instruction kind (slows the run a little)
     public long[] OpTicks()
@@ -298,11 +305,11 @@ public sealed partial class World
     {
         "climate", "cellchem", "settle/weather", "body loads", "region", "solve", "failures", "settle agents",
         "sky", "diffusion", "erosion", "vents", "strikes", "metamorph", "tile sort", "agents", "merge", "relieve", "alarms", "abiogenesis", "burials",
-        "chronicle", "evolution",
+        "chronicle", "evolution", "body pass",
     };
     public const int DClimate = 0, DCellChem = 1, DSettle = 2, DBodyLoads = 3, DRegion = 4, DSolve = 5, DFailures = 6, DSettleAgents = 7,
         DSky = 8, DDiffusion = 9, DErosion = 10, DVents = 11, DStrikes = 12, DMetamorph = 13, DTileSort = 14, DAgents = 15, DMerge = 16,
-        DRelieve = 17, DAlarms = 18, DAbio = 19, DBurials = 20, DChronicle = 21, DEvolution = 22;
+        DRelieve = 17, DAlarms = 18, DAbio = 19, DBurials = 20, DChronicle = 21, DEvolution = 22, DBodyPass = 23;
     // Per colour of the agent phase: summed tile work and the slowest tile, ms (AgentBusy/AgentLongest are their totals).
     public readonly double[] PhaseBusy, PhaseLongest;
     public readonly double[] TileBusy;   // per tile: its work in the agent phase, ms (diagnostics, summed like PhaseBusy)
@@ -387,6 +394,7 @@ public sealed partial class World
         Lap(DTileSort);
         long allocated = GC.GetTotalAllocatedBytes(false);
         int workers = Environment.ProcessorCount;
+        bodyPassOn = P.BodyPass != 0;   // World.BodyPass: the rest of every body's tick after the tile phase
         for (int q = 0; q < Colours; q++)
         {
             // The most populous tiles first, handed out one at a time to whichever worker is free:
@@ -407,8 +415,9 @@ public sealed partial class World
             AgentBusy += busy; AgentLongest += longest;
             PhaseBusy[q] += busy; PhaseLongest[q] += longest;
         }
-        AgentAllocated += GC.GetTotalAllocatedBytes(false) - allocated;
         Lap(DAgents);
+        if (bodyPassOn) { BodyPass(); Lap(DBodyPass); }
+        AgentAllocated += GC.GetTotalAllocatedBytes(false) - allocated;
         Prof[1] += prof.Elapsed.TotalMilliseconds; prof.Restart();
         Lap(DMerge);
         // The chronicle's proposals, tile by tile in tile order (before the newborns are listed).

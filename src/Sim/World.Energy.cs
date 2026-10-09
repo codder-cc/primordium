@@ -71,7 +71,7 @@ public sealed partial class World
         {
             var f = tileFlow ?? System.Threading.LazyInitializer.EnsureInitialized(ref tileFlow, InitFlows);
             var c = cur;
-            return c != null ? f[c.Slot] : f[Tiles];
+            return c != null ? c.Flow ?? f[c.Slot] : f[Tiles];
         }
     }
 

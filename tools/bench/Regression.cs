@@ -117,6 +117,7 @@ public sealed partial class World
         Timed("LifeModelRegression", LifeModelRegression);
         Timed("OrganRegression", OrganRegression);
         Timed("FidelityRegression", FidelityRegression);
+        Timed("BodyPassRegression", BodyPassRegression);
         Timed("Model2Regression", Model2Regression);
         Timed("ChronicleRegression", ChronicleRegression);
         Timed("EvolutionRegression", EvolutionRegression);

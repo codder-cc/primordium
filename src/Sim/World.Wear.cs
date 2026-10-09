@@ -57,15 +57,15 @@ public sealed partial class World
         int x = Chem.SplitA[s], y = Chem.SplitB[s], de = Chem.SplitEnergy(s);
         if (x >= 0 && de >= 0)
         {
-            ChangeLoose(a, cell, x, 1);
-            if (y >= 0) ChangeLoose(a, cell, y, 1);
+            AddLoose(a, cell, x, 1);
+            if (y >= 0) AddLoose(a, cell, y, 1);
             if (de > 0)
             {
-                heatIn[cell] += de;
+                AddHeat(cell, de);
                 Flows[FBodyDecay] += de;
             }
         }
-        else ChangeLoose(a, cell, s, 1);
+        else AddLoose(a, cell, s, 1);
     }
 
     // How firmly the matrix of a body holds a molecule besides its own cohesion: the mean Bond of the

@@ -323,8 +323,8 @@ public sealed partial class World
     {
         if (heat <= 0) return;
         int cell = a.Y * W + a.X;
-        heatIn[cell] += (float)heat;
-        if (a.Z < Height[cell] && CaveLaw) caveHeatIn[cell] += (float)heat * Cover(cell, a.Z);
+        AddHeat(cell, (float)heat);
+        if (a.Z < Height[cell] && CaveLaw) AddCaveHeat(cell, (float)heat * Cover(cell, a.Z));
         Flows[FDissipate] += heat;
     }
 

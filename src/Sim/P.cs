@@ -77,6 +77,12 @@ public static class P
     public static float CostInstr = 0.001f;     // energy per executed instruction
     // The genome's pace by body temperature: cycles × clamp(VmTempBase + Tb/VmTempPer, VmTempMin, VmTempMax).
     public static float VmTempBase = 0.6f, VmTempPer = 50f, VmTempMin = 0.4f, VmTempMax = 1.2f;
+    // BodyPass (World.BodyPass): 1 — what a body does to itself after it has acted (body temperature, held
+    // reactive damage, upkeep and harm, protein wear, settling its costs, decay, UV, wear, starving) runs in a
+    // separate pass over all bodies in parallel after the tile phase, from each body's own random stream; its
+    // heat, the molecules it sheds and its death reach the world after the pass, in a fixed order. 0 — all of
+    // it in the body's own turn in its tile (as before).
+    public static int BodyPass = 0;
 
     // Upkeep
     public static float CostBase = 0.008f;      // per tick for being alive

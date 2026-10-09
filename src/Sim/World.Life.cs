@@ -100,7 +100,21 @@ public sealed partial class World
         Move(a, ref cell);
         TendLinks(a);
         SpreadBody(a, cell);
+        if (bodyPassOn && cur != null)
+        {
+            // P.BodyPass 1: the rest of its tick waits for the body pass (World.BodyPass); reactive damage from
+            // what lies on its floor touches the floor, so it is done now, in its turn.
+            if (ReactLaw && a.EnzN > 0) ReactFloor(a);
+            a.PassTick = Tick; a.PassE0 = e0; a.PassKids0 = kids0; a.PassSpent0 = spent0; a.PassCell = cell;
+            return;
+        }
+        LiveRest(a, cell, e0, kids0, spent0, false);
+    }
 
+    // What a body does to itself after it has acted (its own turn, or with P.BodyPass 1 the body pass; `split`:
+    // reactive damage from its floor was done in its turn). e0, kids0, spent0: the energy probe's start.
+    void LiveRest(Agent a, int cell, double e0, float kids0, float spent0, bool split)
+    {
         // Body temperature follows the surroundings, slower for big bodies (reactions warm it up).
         // The reaction heat it holds goes into its cells at the same pace: counted once, in Tb and then
         // in the cells, not in both at once.
@@ -118,7 +132,11 @@ public sealed partial class World
 
         // Reactive damage (World.React): what it holds and what lies where it stands reacts with its
         // proteins by one law for every species.
-        if (ReactLaw && a.EnzN > 0) ReactiveDamage(a);
+        if (ReactLaw && a.EnzN > 0)
+        {
+            if (split) ReactInside(a);
+            else ReactiveDamage(a);
+        }
 
         // Outside the comfortable band harm grows exponentially: frost tears molecules out of the
         // body (one packed with molecules freezes later), heat unfolds proteins (except those whose
@@ -137,7 +155,7 @@ public sealed partial class World
             {
                 int s = RandomMol(a);
                 RemoveMol(a, s);
-                ChangeLoose(a, cell, s, 1f);
+                AddLoose(a, cell, s, 1f);
             }
         }
         else if (a.Tb > P.ComfortHi)
@@ -155,8 +173,8 @@ public sealed partial class World
         for (int k = 0; k < a.Cells; k++)
         {
             int fc = FootCell(a, k);
-            heatIn[fc] += share;
-            if (caveLaw && a.Z < Height[fc]) caveHeatIn[fc] += share * Cover(fc, a.Z);   // under a roof: into the cave air
+            AddHeat(fc, share);
+            if (caveLaw && a.Z < Height[fc]) AddCaveHeat(fc, share * Cover(fc, a.Z));   // under a roof: into the cave air
         }
 
         // Proteins wear out and have to be made again.
@@ -209,7 +227,7 @@ public sealed partial class World
             RemoveMol(a, s);
             AddOrSpill(a, Chem.SplitA[s], cell);
             if (Chem.SplitB[s] >= 0) AddOrSpill(a, Chem.SplitB[s], cell);
-            heatIn[cell] += Chem.SplitEnergy(s);
+            AddHeat(cell, Chem.SplitEnergy(s));
             Flows[FBodyDecay] += Chem.SplitEnergy(s);
         }
         else if (u < pDecay + pUv)
@@ -228,10 +246,10 @@ public sealed partial class World
 
         if (Starved(a))
         {
-            if (flareHarm > upkeep && flareHarm >= harm) { FlareKilled(); Die(a, cell, CauseFlare); }
-            else Die(a, cell, harm > upkeep ? CauseClimate : CauseStarve);
+            if (flareHarm > upkeep && flareHarm >= harm) { FlareKilled(); DieAfter(a, cell, CauseFlare); }
+            else DieAfter(a, cell, harm > upkeep ? CauseClimate : CauseStarve);
         }
-        else if (BodyUnits(a) < P.MinBody) Die(a, cell, CauseBroken);
+        else if (BodyUnits(a) < P.MinBody) DieAfter(a, cell, CauseBroken);
     }
 
     // Recoil from expelled mass or pushes of a motor protein accumulate into motion. On land one block
