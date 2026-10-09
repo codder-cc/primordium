@@ -32,13 +32,12 @@ public sealed partial class World
     // Its charge in 2⁻³² units, exactly.
     long ChargeRaw(Agent a)
     {
+        // Without a branch: a kind it does not hold adds 0 (the integer sum is the same in any case).
         long q = 0;
         var gap = Chem.Gap;
-        foreach (int s in Chem.Excited)
-        {
-            long n = ((long)a.Inv[s] << Qty.Bits) + a.Pend[s].Raw;
-            if (n != 0) q += n * gap[s];
-        }
+        var inv = a.Inv;
+        var pend = a.Pend;
+        foreach (int s in Chem.Excited) q += (((long)inv[s] << Qty.Bits) + pend[s].Raw) * gap[s];
         return q;
     }
 
@@ -238,11 +237,24 @@ public sealed partial class World
     int PayOrder(Agent a, Span<int> order)
     {
         Span<float> key = stackalloc float[Chemistry.S / 2];
+        // ProteinDrive(a, Split, s) of every carrier it holds, in one pass over its proteins (the same products
+        // compared in the same order for each species as ProteinDrive would).
+        Span<float> drives = stackalloc float[Chemistry.S];
+        drives.Clear();
+        var exc = Chem.Excitation;
+        for (int k = 0; k < a.EnzN; k++)
+        {
+            ref var e = ref a.Enz[k];
+            if (e.Kind != Enzyme.Split || e.A >= Chemistry.S || !(exc[e.A] > 0) || Have(a, e.A) <= 0) continue;
+            float d = (a.Tb - e.Topt) / P.EnzWidth;
+            float v = e.Amount * e.Eff * MathF.Exp(-d * d);
+            if (v > drives[e.A]) drives[e.A] = v;
+        }
         int n = 0;
         foreach (int s in Chem.Excited)
         {
             if (Have(a, s) <= 0) continue;
-            float drive = ProteinDrive(a, Enzyme.Split, s);
+            float drive = drives[s];
             int k = n++;
             while (k > 0 && Before(drive, s, key[k - 1], order[k - 1])) { order[k] = order[k - 1]; key[k] = key[k - 1]; k--; }
             order[k] = s; key[k] = drive;
