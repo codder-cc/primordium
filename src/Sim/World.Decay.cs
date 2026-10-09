@@ -180,21 +180,30 @@ public sealed partial class World
     // contiguous run of memory) instead of cell by cell: every cell sees the same operations in the same
     // order (species 0…S−1, a product decaying further when its species comes later), so the result is
     // bit for bit that of the cell-by-cell pass.
-    [ThreadStatic] static float[] chemTotal;
+    [ThreadStatic] static float[] chemTotal, chemFx;
     [ThreadStatic] static double[] chemHeat, chemDt;
+    [ThreadStatic] static int[] chemJ;
 
     void CellChemArrheniusRows(int y0, int rows, int tick)
     {
         int W = this.W, i0 = y0 * W, n = rows * W;
-        if (chemTotal == null || chemTotal.Length < n) { chemTotal = new float[n]; chemHeat = new double[n]; chemDt = new double[n]; }
+        if (chemTotal == null || chemTotal.Length < n) { chemTotal = new float[n]; chemHeat = new double[n]; chemDt = new double[n]; chemFx = new float[n]; chemJ = new int[n]; }
         var total = chemTotal;
         var heatAt = chemHeat;
         var dtAt = chemDt;
+        var fxAt = chemFx;
+        var jAt = chemJ;
         var temp = Temp;
+        bool table = decayTab != null;
         for (int k = 0; k < n; k++)
         {
             total[k] = 0; heatAt[k] = 0;
             dtAt[k] = P.EnvEvery * WetFactor(CellWet(i0 + k));
+            // Where the cell's temperature falls in the rate table (DryRate's own steps, once for every species).
+            float x = (temp[i0 + k] - TabLo) * (1f / TabStep);
+            if (!table || !(x >= 0) || x >= TabN - 1) { jAt[k] = -1; continue; }
+            int j = (int)x;
+            jAt[k] = j; fxAt[k] = x - j;
         }
         var d = Decay;
         var decays = d.Decays;
@@ -208,6 +217,7 @@ public sealed partial class World
             float volS = vol[s], lyingS = Chem.Lying(s);
             Qty[] to1 = decaysS ? C[d.To1[s]] : null, to2 = decaysS && d.To2[s] >= 0 ? C[d.To2[s]] : null;
             int heatS = d.Heat[s];
+            var tab = decaysS && table ? decayTab[s] : null;
             for (int k = 0; k < n; k++)
             {
                 int i = i0 + k;
@@ -215,7 +225,9 @@ public sealed partial class World
                 if (pool.Raw <= 0) continue;
                 if (counted) total[k] += vol0 ? pool.F * volS : pool.F * volS * lyingS;
                 if (!decaysS) continue;
-                double share = DecayShare(DryRate(s, temp[i]), dtAt[k]);
+                int j = jAt[k];
+                double rate = j >= 0 ? tab[j] + (tab[j + 1] - tab[j]) * fxAt[k] : DryRate(s, temp[i]);   // = DryRate(s, temp[i])
+                double share = DecayShare(rate, dtAt[k]);
                 Qty m = Qty.FromRaw(Math.Min(pool.Raw, (long)(pool.Raw * share)));   // truncated: never more than lies there
                 if (m.Raw <= 0) continue;
                 c[i] = pool - m; to1[i] += m;
