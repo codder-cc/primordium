@@ -15,7 +15,7 @@ public partial class ChronicleWindow : UiWindow
     {
         new(0.3f, 1f, 0.55f), new(0.45f, 0.85f, 1f), new(1f, 0.82f, 0.4f), new(0.75f, 0.9f, 0.4f), new(0.85f, 0.6f, 0.35f), new(0.7f, 0.55f, 0.4f),
         new(0.35f, 0.62f, 1f), new(0.3f, 0.45f, 0.8f), new(1f, 0.3f, 0.25f), new(0.85f, 0.3f, 1f), new(1f, 0.55f, 1f), new(0.65f, 0.65f, 0.7f),
-        new(1f, 0.95f, 0.5f), new(0.9f, 0.9f, 0.95f), new(0.6f, 0.85f, 0.95f), new(1f, 0.65f, 0.25f),
+        new(1f, 0.95f, 0.5f), new(0.9f, 0.9f, 0.95f), new(0.6f, 0.85f, 0.95f), new(1f, 0.65f, 0.25f), new(0.8f, 0.45f, 0.6f),   // … ParasiteSpread
     };
 
     TabContainer tabs;
