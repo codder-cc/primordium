@@ -175,6 +175,7 @@ public sealed partial class World
         Timed("ReachRegression", ReachRegression);
         Timed("DepositRegression", DepositRegression);
         Timed("EnergyRegression", EnergyRegression);
+        Timed("MatterEnergyRegression", MatterEnergyRegression);
         Timed("PredationRegression", PredationRegression);
         Timed("1200 ticks seeds 1, 7", () =>
         {

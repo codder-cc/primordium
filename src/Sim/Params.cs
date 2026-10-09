@@ -213,6 +213,10 @@ public static class ParamRegistry
         // Energy
         F("EnergyK", "Энергия", "Bond energy → body energy", "Энергия связи → энергия тела", 0, 5, 0.05);
         F("HeatShare", "Энергия", "Share of reaction energy that goes to body heat", "Доля энергии реакции, уходящая в тепло тела", 0, 0.9, 0.01);
+        I("MatterEnergy", "Энергия", "Where a body's energy is: 1 — in its matter (the excitation of the molecules it holds pays every cost by relaxing them; reactions in the body excite its ground molecules; molecules carry it when eaten, shared or left in remains), 0 — a number in the body, as before",
+          "Где энергия тела: 1 — в его веществе (возбуждение молекул тела оплачивает каждую трату их релаксацией; реакции в теле возбуждают его основные молекулы; молекулы уносят её, когда их съедают, отдают или оставляют в останках), 0 — число в теле, как раньше", 0, 1, 1);
+        F("EnergyReserve", "Энергия", "Energy a body keeps in hand: an act that would leave it less is not done", "Энергия, которую тело держит про запас: действие, после которого останется меньше, не делается", 0, 20, 0.1);
+        F("CaptureHeat", "Энергия", "MatterEnergy 1: share of the energy of an exothermic reaction in a body that warms it instead of exciting its molecules", "MatterEnergy 1: доля энергии экзотермической реакции в теле, которая греет его, а не возбуждает его молекулы", 0, 1, 0.01);
         // Reproduction
         F("DivMinEnergy", "Размножение", "Energy needed for division", "Энергия, нужная для деления", 0, 200, 0.5);
         F("DivCostBase", "Размножение", "Division: base", "Деление: основа", 0, 50, 0.1);

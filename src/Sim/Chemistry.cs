@@ -28,12 +28,17 @@ public sealed class Chemistry
     // carries (E above its own ground state; 0 for a ground state). Computed for every species alike:
     // there is no poison class, a "poison" is whatever this law makes harmful.
     public readonly float[] AffinityPerAtom = new float[S], Excitation = new float[S], Reactivity = new float[S];
+    // The same excitation as a whole number (energies are whole): what one molecule of s carries above its
+    // ground state, the quantum of a body's charge (P.MatterEnergy 1, World.Charge).
+    public readonly int[] Gap = new int[S];
     public readonly Rgb[] Col = new Rgb[S];
     // Molecule names in both languages (built from the same syllable draws, so the language never
     // touches the random stream); Name gives the current language's.
     public readonly string[] NameEn = new string[S], NameRu = new string[S];
     public string[] Name => Loc.En ? NameEn : NameRu;
     public readonly int[] Low, Unstable, Solids, VentHigh, VentMid, Excited;
+    // Ground states whose split releases energy: what a body can burn as stored fuel (World.Charge).
+    public readonly int[] Fuel;
     public readonly int Richest, Gas;
     public readonly int MostReactive;   // the species with the highest Reactivity (ties: the lower index)
     public readonly int MatCount = S + 2;
@@ -146,7 +151,7 @@ public sealed class Chemistry
         {
             SplitExo[s] = SplitA[s] >= 0 && SplitEnergy(s) > 0;
             if (E[s] > E[Richest]) Richest = s;
-            Excitation[s] = E[s] - E[Ground(s)];
+            Excitation[s] = Gap[s] = E[s] - E[Ground(s)];
             Reactivity[s] = AffinityPerAtom[s] * Excitation[s];
             if (Reactivity[s] > Reactivity[MostReactive]) MostReactive = s;
         }
@@ -162,6 +167,7 @@ public sealed class Chemistry
         Low = Model == 0 ? Where(s => E[s] <= 5 && Excitation[s] == 0)
                          : Where(s => Excitation[s] == 0 && !SplitExo[s] && E[s] <= EnergyZero * AtomCount(s));
         Unstable = Where(s => SplitExo[s]); Solids = Where(s => Solid[s]); Excited = Where(s => Excitation[s] > 0);
+        Fuel = Where(s => SplitExo[s] && Gap[s] == 0);
         // The most volatile species has an atmospheric reservoir. It is never destroyed by water.
         Gas = Enumerable.Range(0, S).OrderBy(s => Mass[s] * (0.1f + Bond[s])).First();
         // The vents' energetic ejecta: the highest E (model 1: the most energy above the elements they are

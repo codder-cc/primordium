@@ -66,7 +66,7 @@ public sealed partial class World
     // ---- proteins and reactions ----
 
     // Whether the body can afford to fold a protein now (MakeProtein does nothing otherwise).
-    public bool CanMakeProtein(Agent a) => !(a.Energy < P.CostExpress + 1 || a.InvTotal <= P.MinBody);
+    public bool CanMakeProtein(Agent a) => !(Avail(a) < P.CostExpress + P.EnergyReserve || a.InvTotal <= P.MinBody);
 
     // Make one unit of the protein `spec` (Kind, A, B, Topt, Eff; how a model gets it from its genome is
     // its own business — model 1 decodes three genome bytes, Genome.Decode). Costs energy and one
@@ -183,7 +183,7 @@ public sealed partial class World
         for (; done < times; done++)
         {
             if (a.Inv[s1] == 0 || a.Inv[s2] == 0 || (s1 == s2 && a.Inv[s1] < 2)) break;
-            if (de < 0 && a.Energy + de < 1f) break;
+            if (de < 0 && Avail(a) + de < P.EnergyReserve) break;
             RemoveMol(a, s1); RemoveMol(a, s2); AddMol(a, p);
             Release(a, de);
         }
@@ -208,7 +208,7 @@ public sealed partial class World
         for (; done < times; done++)
         {
             if (a.Inv[s] == 0) break;
-            if (de < 0 && a.Energy + de < 1f) break;
+            if (de < 0 && Avail(a) + de < P.EnergyReserve) break;
             RemoveMol(a, s); AddMol(a, x); if (y >= 0) AddMol(a, y);
             Release(a, de);
         }
@@ -313,7 +313,7 @@ public sealed partial class World
         bool wet = InWater(cell, a.Z);
         if (d >= 4 && !wet) return;   // nothing to push off against
         float cost = P.CostPush * (1 + a.Mass) * (wet ? 1 + P.DepthK * Below(a, cell) : 1);
-        if (a.Energy < cost + 1) return;
+        if (Avail(a) < cost + P.EnergyReserve) return;
         Dissipate(a, cost);
         float push = 1.05f * Math.Min(1f, power);
         if (d < 4) { a.Vx += DX[d] * push; a.Vy += DY[d] * push; }
@@ -515,7 +515,7 @@ public sealed partial class World
     // A body that falls apart dies.
     public void Attack(Agent a, int cell, int p)
     {
-        float power = (float)Math.Min(Math.Max(0, p) * P.StrikeUnit, Math.Max(0, a.Energy - 1));   // as hard as it can afford
+        float power = (float)Math.Min(Math.Max(0, p) * P.StrikeUnit, Math.Max(0, Avail(a) - P.EnergyReserve));   // as hard as it can afford
         if (power <= 0) return;
         var t = Partner(a, cell);
         Dissipate(a, P.CostSocial);
@@ -580,7 +580,7 @@ public sealed partial class World
         var t = Partner(a, cell);
         if (t == null || t.Inv[s] == 0) return;
         float work = TearWork(BodyBarrier(a, t, out _)) * P.BodyHold;
-        if (a.Energy < work + 1) return;   // it cannot pull that hard
+        if (Avail(a) < work + P.EnergyReserve) return;   // it cannot pull that hard
         Dissipate(a, work);
         if (EnergyProbe != null) { EpAdd(EnergyEconomyProbe.TakeCalls, 1); EpAdd(EnergyEconomyProbe.TakeCost, P.CostSocial + work); }
         var pred = PredProbe;   // observation only
@@ -617,7 +617,7 @@ public sealed partial class World
     {
         Dissipate(a, P.CostSocial);
         var t = Partner(a, cell);
-        float e = (float)Math.Min(Math.Clamp(amount, 0, 255) * P.ShareUnit, a.Energy - 1);
+        float e = (float)Math.Min(Math.Clamp(amount, 0, 255) * P.ShareUnit, Avail(a) - P.EnergyReserve);
         if (t == null || e <= 0) return;
         a.Energy -= e;
         t.Energy += e;
@@ -760,7 +760,7 @@ public sealed partial class World
         // body (teeth, a shell) do part of it, so the same effort costs the body less energy.
         float effort = P.CostMine * (1 + Chem.MatHard[m]) * (1 + 0.5f * tier);
         float work = P.CostMine * (1 + Chem.MatHard[m] / (1 + 0.25f * a.Solids)) * (1 + 0.5f * tier);
-        if (a.Energy < work + 1) return;
+        if (Avail(a) < work + P.EnergyReserve) return;
         Dissipate(a, work);
         a.LifeMineCost += work;
         if (EnergyProbe != null) { EpAdd(EnergyEconomyProbe.MineTries, 1); EpAdd(EnergyEconomyProbe.MineCost, work); }
@@ -821,7 +821,7 @@ public sealed partial class World
         }
         if (to < 0) return;
         float cost = P.CostDig * Chem.MatHard[m] / (1 + 0.25f * a.Solids) + VoxelMass(v) * P.Gravity * (1 + lift);
-        if (a.Energy < cost + 1) return;
+        if (Avail(a) < cost + P.EnergyReserve) return;
         Dissipate(a, cost);
         if (EnergyProbe != null) { EpAdd(EnergyEconomyProbe.DigCalls, 1); EpAdd(EnergyEconomyProbe.DigCost, cost); }
         int w = to * Z + Height[to];
@@ -846,7 +846,7 @@ public sealed partial class World
         int best = -1;
         foreach (int s in Chem.Solids)
             if (a.Inv[s] >= P.PileUnits && (best < 0 || a.Inv[s] > a.Inv[best])) best = s;
-        if (best < 0 || a.Energy < P.CostPile + 1) return;
+        if (best < 0 || Avail(a) < P.CostPile + P.EnergyReserve) return;
         Dissipate(a, P.CostPile);
         var add = new ushort[Chemistry.S];
         int n = Math.Min(a.Inv[best], ushort.MaxValue);
@@ -866,7 +866,7 @@ public sealed partial class World
         if (c == cell && d != 4) return;
         int level = c == cell ? a.Z : WalkLevel(c, a.Z);
         if (level < 3 || level >= Z - 1) return;
-        if (a.InvTotal < 4 + P.MinBody || a.Energy < P.CostGrow + 1) return;
+        if (a.InvTotal < 4 + P.MinBody || Avail(a) < P.CostGrow + P.EnergyReserve) return;
         var add = new ushort[Chemistry.S];
         for (int k = 0; k < 4; k++) { int s = RandomMol(a); add[s]++; RemoveMol(a, s); }
         Dissipate(a, P.CostGrow);

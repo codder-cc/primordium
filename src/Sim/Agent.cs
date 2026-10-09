@@ -42,7 +42,8 @@ public sealed class Agent
     // direction it presses (−1 none).
     public float Climb;
     public sbyte ClimbDir = -1;
-    public double Energy;                      // free energy: double, so the energy ledger closes (see World.Energy)
+    public double Energy;                      // free energy: double, so the energy ledger closes (see World.Energy); with P.MatterEnergy 1 only a legacy remainder
+    public double Due;                         // P.MatterEnergy 1: costs of this tick not yet settled from its charge (World.Charge); 0 between ticks unless it starves
     public float Tb;                           // body temperature, °C
     public int Age;
     public bool Dead;

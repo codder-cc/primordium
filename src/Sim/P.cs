@@ -183,6 +183,16 @@ public static class P
     // Energy
     public static float EnergyK = 1.0f;         // bond energy unit -> agent energy
     public static float HeatShare = 0.3f;       // of released energy that warms the body
+    // Where a body's energy is (World.Charge): MatterEnergy 0 — a number (Agent.Energy) fed by reactions in
+    // the body, as before; 1 — in its matter: the excitation of the molecules it holds (its charge) pays
+    // every cost by relaxing them, an exothermic reaction in the body excites its ground molecules
+    // (CaptureHeat of it warms the body instead), and the molecules carry it wherever they go.
+    public static int MatterEnergy = 0;
+    // Energy a body keeps in hand: an act that would leave it less than this is not done.
+    public static float EnergyReserve = 1f;
+    // MatterEnergy 1: of the energy an exothermic reaction in a body releases, the share that warms the
+    // body instead of exciting its molecules (MatterEnergy 0: HeatShare).
+    public static float CaptureHeat = 0.3f;
 
     // Reproduction
     public static float DivMinEnergy = 8f, DivCostBase = 2f, DivCostByte = 0.02f;

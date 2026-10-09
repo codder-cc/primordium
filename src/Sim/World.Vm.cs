@@ -95,7 +95,7 @@ public sealed partial class World
                 case Genome.Yield: c = cycles; break;
                 case Genome.Load: Push(a, a.Mem[Mod(Pop(a), P.MemSize)]); break;
                 case Genome.Store: x = Pop(a); y = Pop(a); a.Mem[Mod(x, P.MemSize)] = y; break;
-                case Genome.Energy: Push(a, (int)a.Energy); break;
+                case Genome.Energy: Push(a, (int)Avail(a)); break;
                 case Genome.Age: Push(a, a.Age >> 6); break;
                 case Genome.Have: Push(a, a.Inv[Chemistry.Spec(Pop(a))]); break;
                 case Genome.EnzymeOp: Express(a, ip, g, n); a.Ip = ip + 4; break;
@@ -113,7 +113,7 @@ public sealed partial class World
                     break;
                 case Genome.Feel:
                     if (imm >= 2) { Push(a, Alarm(a, cell)); break; }   // imm 2–3: was anybody here attacked?
-                    { var o = Partner(a, cell); Push(a, o == null ? -1 : (int)o.Energy); }
+                    { var o = Partner(a, cell); Push(a, o == null ? -1 : (int)Avail(o)); }
                     break;
                 case Genome.Kin: { var o = Partner(a, cell); Push(a, o == null ? -1 : Kinship(a, o)); break; }
                 case Genome.NGene: { x = Pop(a); var o = Partner(a, cell); Push(a, o == null ? -1 : o.G[Mod(x, o.G.Length)]); break; }

@@ -256,7 +256,7 @@ public sealed partial class World
                 if (wet || toWet) cost += Stroke(a, wet ? Below(a, cell) : Math.Max(0, WaterOver(to, targetZ) - lift));
                 if (ok && cost > 0)
                 {
-                    if (a.Energy > cost + 1) Dissipate(a, cost); else ok = false;
+                    if (Avail(a) > cost + P.EnergyReserve) Dissipate(a, cost); else ok = false;
                 }
                 if (ok && dh < -1 && !toWet) Dissipate(a, P.CostFall * (-dh - 1) * (1 + a.Mass * P.Gravity));
             }
@@ -439,7 +439,7 @@ public sealed partial class World
     {
         float cost = P.DivCostBase + P.DivCostByte * a.G.Length;
         Interlocked.Increment(ref DivFail[0]);
-        if (a.Energy < P.DivMinEnergy + cost) { Interlocked.Increment(ref DivFail[1]); return; }
+        if (Avail(a) < P.DivMinEnergy + cost) { Interlocked.Increment(ref DivFail[1]); return; }
         if (a.InvTotal < P.DivMinBody) { Interlocked.Increment(ref DivFail[2]); return; }
         float frac = f <= 0 ? 0.5f : Math.Clamp(f, 16, 240) / 256f;
         int to = Nursery(a, cell, d, a.Volume * frac);
@@ -495,7 +495,7 @@ public sealed partial class World
         Dissipate(a, P.CostSocial);
         a.MateTick = Tick;
         var t = Partner(a, cell);
-        if (t == null || t.Model != a.Model || Tick - t.MateTick > P.HandshakeTicks || t.Energy < P.MateMinEnergy || a.Energy < P.MateMinEnergy) return;
+        if (t == null || t.Model != a.Model || Tick - t.MateTick > P.HandshakeTicks || Avail(t) < P.MateMinEnergy || Avail(a) < P.MateMinEnergy) return;
         if (!Fits(cell, a.Z, (a.Volume + t.Volume) * P.MateShare) || a.InvTotal < 2 * P.MinBody || t.InvTotal < 2 * P.MinBody) return;
         var life = LifeModels.Get(a.Model);
         var (g0, p0) = life.Cross(a, t, Rng);
