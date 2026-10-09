@@ -11,7 +11,7 @@ namespace Primordium;
 
 // Many runs instead of one: a change of a constant is judged against how much worlds vary anyway.
 //
-//   --batch --seeds 1-16 --reps 3 --ticks 6000 --every 1000 [--pop N] [--noabio] [--tile N] [--audit]
+//   --batch --seeds 1-16 --reps 3 --ticks 6000 --every 1000 [--size WxHxL] [--pop N] [--noabio] [--tile N] [--audit]
 //           [--jobs J] [--out dir] [--extinct N] [--boom N] [--server-gc [--gc-heaps H]]
 //           [--resume] [--shard K/N] [--machine name] [--threads T]
 //           [--preset path.json] [--set Name=value ...] [--param-at TICK:Name=value ...]   (laws: ParamHook)
@@ -31,6 +31,9 @@ namespace Primordium;
 // trajectory is the same with any number of threads. A finished run leaves runs/sS_rR.done holding the batch's signature (every flag
 // that changes a trajectory); --resume skips the runs whose .done matches and runs the rest (after a
 // crash or Ctrl-C: the queue is just "runs without .done"); without --resume every run is made again.
+// --size WxHxL makes every world of that size (default 256x160x192; WorldSettings limits): a small world
+// is a cheap screen — the first bodies, volcanoes and strikes come in proportion to its area (World.PerArea),
+// so its numbers per cell are comparable, its totals are not; see README, "Two-stage batches".
 // --shard K/N keeps the K-th of every N runs (1-based), to split one batch over N machines. Every row
 // carries the machine (--machine, default the host name) and the code version (git commit, "-dirty"
 // with uncommitted changes, "unknown" outside a repository).
@@ -90,12 +93,29 @@ public static class Batch
             + " | ms births/deaths, compact, measure, tree, bodies, pairs: " + string.Join(" ", w.EvoMs.Select(x => x.ToString("F1", Inv)));
     }
 
+    // The settings of a bench world: as World(seed, pop, abio, life) makes them (strikes on unless solar flares
+    // replace them), of the size given by --size WxHxL (the default size without it). Exits on a bad size.
+    public static WorldSettings Settings(string[] args, int seed, int pop, bool abio, int life)
+    {
+        var s = new WorldSettings { Seed = seed, InitialPop = pop, Abiogenesis = abio, Strikes = !World.FlareLaw, LifeSeed = life };
+        string size = Arg(args, "--size", null);
+        if (size == null) return s;
+        if (!WorldSettings.TryParseSize(size, out int w, out int h, out int l))
+        {
+            Console.Error.WriteLine(Loc.T($"--size {size}: expected WxHxL, e.g. 64x64x96", $"--size {size}: нужно ШxВxУ, например 64x64x96"));
+            Environment.Exit(2);
+        }
+        s.Width = w; s.Height = h; s.Levels = l;
+        if (s.SizeProblem() is string problem) { Console.Error.WriteLine("--size: " + problem); Environment.Exit(2); }
+        return s;
+    }
+
     // One run: a world, checkpoints written as rows of the runs CSV.
     public static void RunOne(string[] args, ParamHook.Laws laws)
     {
         int seed = int.Parse(Arg(args, "--seed", "1")), rep = int.Parse(Arg(args, "--rep", "0"));
         int ticks = int.Parse(Arg(args, "--ticks", "6000")), every = int.Parse(Arg(args, "--every", "1000"));
-        int pop = int.Parse(Arg(args, "--pop", P.InitialPop.ToString()));
+        int pop = int.Parse(Arg(args, "--pop", "-1"));   // < 0: P.InitialPop, by area (World.PerArea)
         bool abio = Array.IndexOf(args, "--noabio") < 0, audit = Array.IndexOf(args, "--audit") >= 0;
         string csv = Arg(args, "--csv", $"run_s{seed}_r{rep}.csv");
         string paramText = laws.Describe();   // already applied (Program)
@@ -103,7 +123,7 @@ public static class Batch
         if (tile != null) World.TileSize = int.Parse(tile);
         string machine = Clean(Arg(args, "--machine", MachineId())), version = Clean(Arg(args, "--code-version", null) ?? CodeVersion());
 
-        var w = new World(seed, pop, abio, rep);
+        var w = new World(Settings(args, seed, pop, abio, rep));
         w.TrackHeat = audit;
         var e0 = audit ? w.AuditEnergy() : null;
         var atoms0 = audit ? w.ElementBudget() : null;
@@ -264,6 +284,8 @@ public static class Batch
         if (popArg != null) pass.AddRange(new[] { "--pop", popArg });
         string tileArg = Arg(args, "--tile", null);
         if (tileArg != null) pass.AddRange(new[] { "--tile", tileArg });
+        string sizeArg = Arg(args, "--size", null);
+        if (sizeArg != null) { Settings(args, 1, -1, true, 0); pass.AddRange(new[] { "--size", sizeArg }); }   // (checked here, before any run)
         if (Array.IndexOf(args, "--noabio") >= 0) pass.Add("--noabio");
         if (Array.IndexOf(args, "--audit") >= 0) pass.Add("--audit");
         pass.AddRange(laws.Forward);

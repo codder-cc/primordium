@@ -115,7 +115,7 @@ public sealed partial class World
 
         // A living world: both laws switched on mid-run.
         ParamRegistry.ResetDefaults();
-        var v = new World(2, 800, true) { TrackHeat = true };
+        var v = new World(SmallSettings(2, 400, true)) { TrackHeat = true };
         var vAtoms = v.ElementBudget(); var vE = v.AuditEnergy();
         string note = "";
         for (int t = 1; t <= 900; t++)

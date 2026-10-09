@@ -62,10 +62,10 @@ public sealed partial class World
         Require(w.BurialOf(d * w.Z + 4, out var cf) && Math.Abs(cf.Matter[food].D - 4) < 1e-6, "the litter did not drip onto the cavity's floor");
 
         // A living world: the law mid-run keeps atoms and energy; off it changes nothing.
-        var w1 = new World(2, 800, true); var w2 = new World(2, 800, true);
+        var w1 = new World(SmallSettings(2, 400, true)); var w2 = new World(SmallSettings(2, 400, true));
         for (int t = 0; t < 200; t++) { w1.Step(); w2.Step(); }
         Require(w1.StateHash() == w2.StateHash(), "two identical worlds diverged");
-        var w3 = new World(2, 800, true) { TrackHeat = true };
+        var w3 = new World(SmallSettings(2, 400, true)) { TrackHeat = true };
         var atoms0 = w3.ElementBudget(); var e0 = w3.AuditEnergy();
         string note = "";
         double litter0 = 0;
@@ -73,7 +73,7 @@ public sealed partial class World
         {
             if (t == 100)
             {
-                for (int s = 0; s < Chemistry.S; s++) for (int i = 0; i < w.N; i++) litter0 += w3.C[s][i];
+                for (int s = 0; s < Chemistry.S; s++) for (int i = 0; i < w3.N; i++) litter0 += w3.C[s][i];
                 Require(w3.SetParam("LeachK", 0.001), "law LeachK");
             }
             w3.Step();
@@ -87,7 +87,7 @@ public sealed partial class World
             note = EnergyWorldCheck(w3, e0, $"leaching, tick {t}");
         }
         double litter = 0;
-        for (int s = 0; s < Chemistry.S; s++) for (int i = 0; i < w.N; i++) litter += w3.C[s][i];
+        for (int s = 0; s < Chemistry.S; s++) for (int i = 0; i < w3.N; i++) litter += w3.C[s][i];
         Require(w3.Leached > 0 && litter < litter0, $"leaching 0.001 for 800 ticks: litter {litter0:F0} -> {litter:F0}, leached {w3.Leached:F0}");
         ParamRegistry.ResetDefaults();
         Console.WriteLine($"PASS leach: wet ground: half the lightest litter under the top block exactly, the heaviest less by mobility, dry ground keeps it, out of reach until the block goes; drips into a cavity; living world LeachK 0.001 for 800 ticks: litter {litter0:F0} -> {litter:F0} (leached {w3.Leached:F0}), atoms exact, {note}");

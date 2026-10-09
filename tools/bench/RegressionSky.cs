@@ -39,7 +39,7 @@ public sealed partial class World
         Require(MathF.Abs(Insol(1) - 1) < 1e-6f && MathF.Abs(Insol(0.5f) - 0.5f) < 1e-6f && Insol(-0.05f) == 0 && Insol(0.02f) > 0, "the cosine law and its twilight");
 
         // Annual photon supply: the sun's curve over a year at every row, × the mean transparency × PhotonK.
-        var w = new World(1, 0, false) { AutoStrikes = false };
+        var w = new World(StripSettings(1, 0, false)) { AutoStrikes = false };
         double Supply(bool law)
         {
             P.Insolation = law ? 1 : 0;
@@ -59,7 +59,7 @@ public sealed partial class World
         // Shading.
         var f = Fixture(); var ch = f.Chem;
         int ground = Enumerable.Range(0, Chemistry.S).First(s => ch.PhotoUp[s] >= 0);
-        int c = 70 * w.W + 100;
+        int c = 70 * f.W + 100;
         var big = f.TestAgent(c, 2, ground, 200);
         var small = f.TestAgent(c, 2, ground, 10);
         foreach (var a in new[] { big, small }) { a.Enz[0] = new Enzyme { Kind = Enzyme.Photo, A = (byte)ground, Amount = 3, Eff = 1, Topt = 15 }; a.EnzN = 1; }
@@ -87,7 +87,7 @@ public sealed partial class World
         Require(Math.Abs(gotBig - offBig) < 0.1 * offBig, $"the big body on top: {gotBig} photons with shading, {offBig} without");
         ParamRegistry.ResetDefaults();
         // A swimmer near the surface shades one on the bottom of the same column.
-        int lake = 70 * w.W + 140;
+        int lake = 70 * f.W + 140;
         f.Water[lake] = 4;
         var top = f.TestAgent(lake, 2, ground, 10); var bottom = f.TestAgent(lake, 2, ground, 10);
         top.Lift = 3.5f;
@@ -96,7 +96,7 @@ public sealed partial class World
         string canopy = CanopyRegression();
 
         // Eclipses: predicted, deterministic, seen in the light, chronicled.
-        var e1 = new World(1, 0, false) { AutoStrikes = false }; var e2 = new World(1, 0, false) { AutoStrikes = false };
+        var e1 = new World(StripSettings(1, 0, false)) { AutoStrikes = false }; var e2 = new World(StripSettings(1, 0, false)) { AutoStrikes = false };
         long next = e1.NextEclipse(0, 400);
         Require(next > 0 && next == e2.NextEclipse(0, 400), $"eclipse not predicted alike: {next}");
         long t1 = next + 200 - (next + 200) % P.LightEvery;   // a little into it
@@ -121,9 +121,9 @@ public sealed partial class World
         // Flares on bodies: noon over x = 128.
         var g = Fixture();
         g.Tick = P.DayLen / 2 / P.LightEvery * P.LightEvery - 1;   // the next step is a light update at about noon over x = W/2
-        int y0 = 80, sunny = y0 * w.W + (int)(w.W * ((g.Tick + 1) % P.DayLen) / (float)P.DayLen);
+        int y0 = 80, sunny = y0 * g.W + (int)(g.W * ((g.Tick + 1) % P.DayLen) / (float)P.DayLen);
         int cave = sunny + 6, deep = sunny + 12, shielded = sunny - 6;
-        for (int z = 3; z < 13; z++) { g.Mat[cave * w.Z + z] = Chemistry.Bedrock; g.Order[cave * w.Z + z] = 255; }
+        for (int z = 3; z < 13; z++) { g.Mat[cave * g.Z + z] = Chemistry.Bedrock; g.Order[cave * g.Z + z] = 255; }
         g.Height[cave] = 13; g.TerrainChanged(cave); g.StepStructure();
         P.Flares = 0;   // nothing else happens to them while the light is set up
         g.Step();
@@ -150,10 +150,10 @@ public sealed partial class World
         float dose = g.Flare(open, out float harm);
         Require(dose == dOpen && open.Tb > tb && open.Energy < en && open.Enz[0].Amount < amount && open.HeatHeld > 0 && harm > 0, "a flare dose did nothing");
         g.EnergyBalanced(eb, "flare", FFlare, FDissipate);
-        var probe = new Agent(g.NewId(), 0, 0, GenomeAsm.Assemble("uv\nyield\nnop\nnop\nnop\nnop\nnop\nnop")) { Energy = 10, Z = 2, Tb = 15, X = sunny % w.W, Y = y0 };
+        var probe = new Agent(g.NewId(), 0, 0, GenomeAsm.Assemble("uv\nyield\nnop\nnop\nnop\nnop\nnop\nnop")) { Energy = 10, Z = 2, Tb = 15, X = sunny % g.W, Y = y0 };
         g.Exec(probe, sunny);
         int uv = probe.Stack[0];
-        probe.Sp = 0; probe.Ip = 0; probe.X = cave % w.W; probe.Z = 2;
+        probe.Sp = 0; probe.Ip = 0; probe.X = cave % g.W; probe.Z = 2;
         g.Exec(probe, cave);
         Require(uv > 100 && probe.Stack[0] < uv / 20, $"uv sensor: sunlit {uv}, under the roof {probe.Stack[0]}");
         string flare = $"flare doses: sunlit {dOpen:F2}, under 10 blocks {dCave / dOpen:P1}, lake bottom {dBottom / dOpen:P1}, shielded {dArm / dOpen:P0}; uv {uv}";
@@ -163,7 +163,7 @@ public sealed partial class World
         World r = null;
         for (int seed = 2; r == null; seed++)   // a seed whose sun is active in the first 1500 ticks
         {
-            var cand = new World(seed, 800, false) { TrackHeat = true };
+            var cand = new World(StripSettings(seed, 200, false)) { TrackHeat = true };
             int on = 0;
             for (long t = 1; t <= 1500; t += 10) if (cand.FlareAt(t) > 0) on++;
             if (on >= 10 || seed > 30) r = cand;
@@ -272,7 +272,7 @@ public sealed partial class World
 
         // A canopy world: atoms and energy close; saved and loaded with its stores, it goes on the same way.
         P.Canopy = 1;
-        var wld = new World(3, 800, false) { AutoStrikes = false, TrackHeat = true };
+        var wld = new World(StripSettings(3, 200, false)) { AutoStrikes = false, TrackHeat = true };
         var atoms = wld.ElementBudget(); var e0 = wld.AuditEnergy();
         for (int t = 0; t < 600; t++) wld.Step();
         int stored = wld.Agents.Count(a => a.LightQuota > 0);

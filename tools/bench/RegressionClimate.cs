@@ -23,7 +23,7 @@ public sealed partial class World
         ParamRegistry.ResetDefaults();
 
         // The orbit: neutral at the origin, then moving.
-        var o = new World(1, 0, false) { AutoStrikes = false };
+        var o = new World(StripSettings(1, 0, false)) { AutoStrikes = false };
         Require(o.TiltAt(0) == P.Tilt && o.EccAt(0) == 0 && o.SunDrift(0) == 1 && Math.Abs(o.SummerInsol(1, 0) - 1) < 1e-4, "the cycles are not neutral at their origin");
         P.TiltPeriod = 30; P.EccPeriod = 60; P.PrecPeriod = 20;
         long quarter = 30 * P.DayLen / 4;
@@ -43,7 +43,7 @@ public sealed partial class World
 
         // The law off: nothing runs.
         P.ClimateCycles = 0;
-        var off = new World(3, 300, true) { AutoStrikes = false };
+        var off = new World(StripSettings(3, 75, true)) { AutoStrikes = false };
         for (int t = 0; t < 400; t++) off.Step();
         Require(!off.climOn && off.GlaciN == 0 && off.GlaciS == 0 && !off.veilOn && off.TiltAt(off.Tick) == P.Tilt && off.climT0 == 0, "the law off: something of the cycles ran");
         Require(off.MegaEruptionOfDay(3, out _) == false, "the law off still schedules eruptions");
@@ -51,7 +51,7 @@ public sealed partial class World
 
         // Determinism with fast cycles and frequent eruptions.
         P.TiltPeriod = 8; P.PrecPeriod = 5; P.EccPeriod = 10; P.MegaEruptionRate = 1; P.IceAgeTau = 0.3f;
-        var d1 = new World(2, 300, true); var d2 = new World(2, 300, true);
+        var d1 = new World(StripSettings(2, 75, true)); var d2 = new World(StripSettings(2, 75, true));
         for (int t = 0; t < 1800; t++) { d1.Step(); d2.Step(); }
         Require(d1.MegaEruptions >= 1 && d1.DeepHash() == d2.DeepHash() && d1.GlaciN == d2.GlaciN && d1.Veil.SequenceEqual(d2.Veil), $"two worlds of one seed differ ({d1.MegaEruptions} eruptions)");
         string determinism = $"1.5 days: {d1.MegaEruptions} eruptions, glaciation {d1.GlaciN:F2}/{d1.GlaciS:F2}, same world";
@@ -59,7 +59,7 @@ public sealed partial class World
 
         // Water through an ice age (no life: only the water cycle moves water).
         P.IceAgeTau = 0.3f; P.IceAgeDT = 14;
-        var iw = new World(4, 0, false) { AutoStrikes = false };
+        var iw = new World(StripSettings(4, 0, false)) { AutoStrikes = false };
         double w0 = iw.WaterTotal();
         var (liquid0, ice0, snow0, _) = iw.WaterParts();
         int sea0 = iw.SeaCells();
@@ -86,7 +86,7 @@ public sealed partial class World
         ParamRegistry.ResetDefaults();
 
         // A mega-eruption under the balances.
-        var m = new World(1, 400, true) { TrackHeat = true, AutoStrikes = false };
+        var m = new World(StripSettings(1, 100, true)) { TrackHeat = true, AutoStrikes = false };
         var atoms0 = m.ElementBudget(); var e0 = m.AuditEnergy();
         for (int t = 0; t < 300; t++) m.Step();
         double vent0 = m.EnergyFlows()[FVent];
@@ -109,7 +109,7 @@ public sealed partial class World
         ParamRegistry.ResetDefaults();
 
         // Catastrophes, saved while they run, loaded, and replayed from the law log.
-        var a = new World(3, 400, true) { TrackHeat = true, AutoStrikes = false };
+        var a = new World(StripSettings(3, 100, true)) { TrackHeat = true, AutoStrikes = false };
         var ea = a.AuditEnergy();
         var plan = new (long tick, Catastrophe c)[]
         {
@@ -148,7 +148,7 @@ public sealed partial class World
         string energyA = EnergyWorldCheck(a, ea, "catastrophes");
         // Replay: the seed plus the law log.
         ParamRegistry.ResetDefaults();
-        var r = new World(3, 400, true) { AutoStrikes = false };
+        var r = new World(StripSettings(3, 100, true)) { AutoStrikes = false };
         var log = a.ParamLog.ToList();
         while (r.Tick < a.Tick)
         {

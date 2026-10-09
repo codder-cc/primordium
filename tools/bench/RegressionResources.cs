@@ -20,7 +20,7 @@ public sealed partial class World
         double Spread(float k)
         {
             P.GasDiffK = k;
-            var w = Fixture(); int g = w.Chem.Gas;
+            var w = Blank(WorldSettings.DefaultWidth, WorldSettings.DefaultHeight, WorldSettings.MinLevels); int g = w.Chem.Gas;   // only the gas moves: few levels
             var rng = new SimRng(9);
             for (int i = 0; i < w.N; i++) w.Height[i] = 2 + (i / w.W < 20 ? rng.Next(3) : 0);
             w.RecomputeFlow();
@@ -40,7 +40,7 @@ public sealed partial class World
         Require(Math.Abs(s03 / s1 - 0.3) < 0.02, $"GasDiffK 0.3: spread {s03:F1} vs {s1:F1} cells² (want ×0.3)");
 
         // Gas under a roof.
-        var v = Fixture(); var ch = v.Chem; int gas = ch.Gas;
+        var v = Blank(); var ch = v.Chem; int gas = ch.Gas;
         int cave = 40 * v.W + 40;
         for (int z = 3; z < 6; z++) { v.Mat[cave * v.Z + z] = Chemistry.Bedrock; v.Order[cave * v.Z + z] = 255; }
         v.Height[cave] = 6; v.TerrainChanged(cave);
@@ -67,13 +67,15 @@ public sealed partial class World
         P.CaveGasK = 0;
 
         // The probe watches only; the laws switched on mid-run keep atoms and energy.
-        var w1 = new World(3, 600, true); var w2 = new World(3, 600, true);
+        // Small worlds with life (the probes and the laws are the same on any size).
+        WorldSettings Small(int seed, int pop) => TinySettings(seed, pop, true, !FlareLaw, 96, 96, 64);
+        var w1 = new World(Small(3, 300)); var w2 = new World(Small(3, 300));
         w2.ResProbe = new ResourceProbe(w2.Regions);
         for (int t = 0; t < 300; t++) { w1.Step(); w2.Step(); }
         Require(w1.StateHash() == w2.StateHash(), "the resource probe changed the world");
         Require(w2.ResProbe.Ticks == 300 && w2.ResProbe.SpeciesIntake.Sum() > 0, "the probe booked nothing");
         // The energy-economy probe and the audit's read-outs (World.EnergyProbe, --energy-audit) watch only too.
-        var w4 = new World(3, 600, true);
+        var w4 = new World(Small(3, 300));
         w4.EnergyProbe = new EnergyEconomyProbe(w4);
         var downhill = EnergyEconomyProbe.Downhill(w4.Chem);
         for (int t = 0; t < 300; t++)
@@ -84,7 +86,7 @@ public sealed partial class World
         Require(w1.StateHash() == w4.StateHash(), "the energy probe changed the world");
         var booked = w4.EnergyProbe.Sum();
         Require(booked[EnergyEconomyProbe.IntakeCalls] > 0 && booked[EnergyEconomyProbe.DietBase] + booked[EnergyEconomyProbe.DietBase + EnergyEconomyProbe.DietKeys] > 0, "the energy probe booked nothing");
-        var w3 = new World(2, 800, true) { TrackHeat = true };
+        var w3 = new World(Small(2, 400)) { TrackHeat = true };
         var atoms0 = w3.ElementBudget(); var e0 = w3.AuditEnergy();
         string note = "";
         for (int t = 1; t <= 900; t++)

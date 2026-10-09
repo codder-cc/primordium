@@ -406,7 +406,9 @@ public sealed partial class World
         // sets off a wave of crushing; under the ×4 relief it is ~4× the work (1 million crushes in 100 ticks) and
         // nothing more is tested by it.
         P.ReliefScale = 1;
-        var w = new World(2, 800, true) { TrackHeat = true };
+        // A small world: the laws' bookkeeping is the same on any size (on the planet: ~200 s, mostly the
+        // crushing VoxelSpace sets off everywhere).
+        var w = new World(TinySettings(2, 320, true, !FlareLaw)) { TrackHeat = true };   // (800 on the planet; here 4× its share of the area)
         var atoms0 = w.ElementBudget();
         var e0 = w.AuditEnergy();
         var plan = new (int tick, string name, double factor)[]

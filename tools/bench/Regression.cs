@@ -53,21 +53,11 @@ public sealed partial class World
     {
         for (int e = 0; e < a.Length; e++) Require(Math.Abs(a[e] - b[e]) <= tolerance, $"{stage}: element {e}: {a[e]:R} -> {b[e]:R} (delta {b[e] - a[e]:R})");
     }
+    // The full planet of seed 1 flattened to two levels of bedrock (World.Blank is the same at a small size).
     static World Fixture()
     {
-        var w = new World(1, 0, false) { AutoStrikes = false };
-        w.Vents.Clear();
-        Array.Clear(w.Mat); Array.Clear(w.Units); Array.Clear(w.Order);
-        foreach (var c in w.C) Array.Clear(c);
-        Array.Clear(w.Water); Array.Clear(w.Ice); Array.Clear(w.Snow);
-        Array.Clear(w.CurX); Array.Clear(w.CurY);   // still water (World.Waterways)
-        for (int c = 0; c < w.N; c++)
-        {
-            w.Height[c] = 2;
-            w.Mat[c * w.Z] = w.Mat[c * w.Z + 1] = Chemistry.Bedrock;
-            w.Order[c * w.Z] = w.Order[c * w.Z + 1] = 255;
-        }
-        w.StepStructure();
+        var w = new World(1, 0, false);
+        w.Flatten();
         return w;
     }
     Agent TestAgent(int c, int level, int s, int count)
@@ -93,6 +83,7 @@ public sealed partial class World
         Timed("LawsEnergyRegression", LawsEnergyRegression);
         Timed("SaveLoadRegression", SaveLoadRegression);
         Timed("SizeRegression", SizeRegression);
+        Timed("ScenarioRegression", ScenarioRegression);
         Timed("LifeSeedRegression", LifeSeedRegression);
         Timed("AsmRegression", AsmRegression);
         Timed("DesignRegression", DesignRegression);
@@ -233,6 +224,15 @@ public sealed partial class World
         Console.WriteLine($"self-test total {(System.Diagnostics.Stopwatch.GetTimestamp() - selfTestStart) / (double)System.Diagnostics.Stopwatch.Frequency:F1} s");
     }
 
+    // One part of --self-test by its method name (--self-test-one Name), with the laws at their defaults.
+    public static void RunOneRegression(string name)
+    {
+        var m = typeof(World).GetMethod(name, System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic, Type.EmptyTypes);
+        if (m == null) { Console.Error.WriteLine($"no test {name}"); Environment.Exit(2); }
+        ParamRegistry.ResetDefaults();
+        Timed(name, () => m.Invoke(null, null));
+    }
+
     // Runs one part of --self-test and prints how long it took (to find the slow ones).
     static void Timed(string name, Action test)
     {
@@ -364,7 +364,7 @@ public sealed partial class World
         // Loose decay of a small pile into two big ones of its products.
         w.C[s][c] = 50.37f; w.C[pa][c] += 60000.3f; w.C[pb][c] += 30000.7f;
         var before = w.ElementBudget();
-        for (int t = 0; t < 3000; t++) { w.Temp[c] = -20 + t % 60; w.CellChem(c, t); }
+        for (int t = 0; t < 3000; t++) { w.Temp[c] = -20 + t % 60; w.CellChem(c, t, c / w.W); }
         Require(w.C[s][c] < 20, "the loose pile did not decay");
         BudgetEqual(before, w.ElementBudget(), "loose decay beside big piles", 0);
         // Uptake of fractions from a big pile (and back out through worn proteins).
@@ -743,8 +743,9 @@ public sealed partial class World
     // pile sucked its whole column into the bottom.)
     static void RubbleRegression()
     {
-        var w = new World(new WorldSettings { Seed = 1, InitialPop = 0, Abiogenesis = false, Strikes = false });
-        int cx = 128, cy = 80, s = w.RandomPourable(), c0 = cy * w.W + cx, ground = w.Height[c0];
+        // A small world (a pile and the rock under it; 70 columns around it are all the test looks at).
+        var w = Tiny(1, 0, false, false, 96, 96, 128);
+        int cx = w.W / 2, cy = w.H / 2, s = w.RandomPourable(), c0 = cy * w.W + cx, ground = w.Height[c0];
         double[] a0 = w.ElementBudget();
         double Buried() { double t = 0; foreach (var kv in w.Buried) foreach (var q in kv.Value.Matter) t += q; return t; }
         long InBlocks() { long n = 0; for (int dy = -30; dy <= 30; dy++) for (int dx = -30; dx <= 30; dx++) { int c = (cy + dy) * w.W + cx + dx; for (int z = 2; z < w.Z; z++) if (w.Mat[c * w.Z + z] >= 2) n += w.Units[c * w.Z + z]; } return n; }

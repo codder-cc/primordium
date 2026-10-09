@@ -71,7 +71,7 @@ public sealed partial class World
 
     public static void RegionRegression()
     {
-        var w = new World(5, 0, false) { AutoStrikes = false };
+        var w = new World(TinySettings(5, 0, false, false, WorldSettings.DefaultWidth, WorldSettings.DefaultHeight, StripLevels));
         for (int t = 0; t < 30; t++) w.Step();
 
         // Bodies, a mixed heap, a burial and water in the region to copy.
@@ -159,11 +159,11 @@ public sealed partial class World
 
         // Paste back: a place overwritten by another region and then given its own region back is the
         // original world again, bit for bit, and goes on as the original would.
-        var v = new World(7, 0, false) { AutoStrikes = false };
+        var v = new World(TinySettings(7, 0, false, false, WorldSettings.DefaultWidth, WorldSettings.DefaultHeight, StripLevels));
         for (int t = 0; t < 20; t++) v.Step();
         int ax = 40, ay = 50;
-        var own = v.CopyRegion(ax, ay, 24, 20, 0, w.Z, false);
-        var other = v.CopyRegion(150, 90, 20, 24, 0, w.Z, false);
+        var own = v.CopyRegion(ax, ay, 24, 20, 0, v.Z, false);
+        var other = v.CopyRegion(150, 90, 20, 24, 0, v.Z, false);
         var twin = Twin(v);
         Require(v.RegionStateHash() == twin.RegionStateHash(), "twin");
         res = v.PasteRegion(other, ax, ay, new RegionPasteOptions { Rotation = 1, Bodies = false });
@@ -184,14 +184,14 @@ public sealed partial class World
         if (!goesOn)
         {
             int diffP = 0, diffV = 0, diffC = 0, firstP = -1;
-            for (int q = 0; q < w.N * w.Z; q++) { if (v.Pressure[q] != twin.Pressure[q]) { diffP++; if (firstP < 0) firstP = q; } if (v.Mat[q] != twin.Mat[q] || v.Units[q] != twin.Units[q] || v.Order[q] != twin.Order[q]) diffV++; }
-            for (int s = 0; s < Chemistry.S; s++) for (int q = 0; q < w.N; q++) if (v.C[s][q] != twin.C[s][q]) diffC++;
-            Console.WriteLine($"diverged at tick {v.Tick}: pressure {diffP} (first col {(firstP < 0 ? -1 : firstP / w.Z)} z {firstP % w.Z}), voxels {diffV}, loose {diffC}, state {v.StateHash() == twin.StateHash()}");
+            for (int q = 0; q < v.N * v.Z; q++) { if (v.Pressure[q] != twin.Pressure[q]) { diffP++; if (firstP < 0) firstP = q; } if (v.Mat[q] != twin.Mat[q] || v.Units[q] != twin.Units[q] || v.Order[q] != twin.Order[q]) diffV++; }
+            for (int s = 0; s < Chemistry.S; s++) for (int q = 0; q < v.N; q++) if (v.C[s][q] != twin.C[s][q]) diffC++;
+            Console.WriteLine($"diverged at tick {v.Tick}: pressure {diffP} (first col {(firstP < 0 ? -1 : firstP / v.Z)} z {firstP % v.Z}), voxels {diffV}, loose {diffC}, state {v.StateHash() == twin.StateHash()}");
         }
         Require(goesOn, "paste back: the restored world went another way than the original");
 
         // Another chemistry: mapped to this world's nearest kinds, booked in its atoms.
-        var u = new World(11, 0, false) { AutoStrikes = false };
+        var u = new World(TinySettings(11, 0, false, false, WorldSettings.DefaultWidth, WorldSettings.DefaultHeight, StripLevels));
         u.Step();
         before = RegionLedger.Of(u);
         res = u.PasteRegion(r, 70, 70, new RegionPasteOptions());
@@ -199,8 +199,8 @@ public sealed partial class World
         Require(res.Mapping.Map.All(t => t >= 0 && t < Chemistry.S) && res.Mapping.Lines.Count == Chemistry.S, "another chemistry: mapping");
         Balanced(u, before, "another chemistry");
         u.CheckCellLists();
-        for (int c = 0; c < w.N; c++)
-            for (int z = 0; z < u.Height[c]; z++) Require(u.Mat[c * w.Z + z] < Chemistry.S + 2, "another chemistry: a block of no kind");
+        for (int c = 0; c < u.N; c++)
+            for (int z = 0; z < u.Height[c]; z++) Require(u.Mat[c * u.Z + z] < Chemistry.S + 2, "another chemistry: a block of no kind");
         before = RegionLedger.Of(u);
         for (int t = 0; t < 60; t++) u.Step();
         Require(Math.Abs(EnergyAudit.Drift(before.Energy, u.AuditEnergy())) < EnergyAudit.Tolerance(before.Energy, u.AuditEnergy()), "another chemistry: the ledger drifts after the paste");

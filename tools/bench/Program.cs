@@ -3,7 +3,8 @@ using System.Diagnostics;
 using System.Linq;
 using Primordium;
 
-// dotnet run -c Release --project tools/bench -- --seed 1 --ticks 50000 --every 5000 [--pop N] [--noabio] [--ops] [--audit]
+// dotnet run -c Release --project tools/bench -- --seed 1 --ticks 50000 --every 5000 [--size WxHxL] [--pop N] [--noabio] [--ops] [--audit]
+//   [--size WxHxL]: a world of that size (default 256x160x192; a small one for cheap screening, see Batch.cs).
 //   [--log path.csv]: one row per --every interval with population, births, deaths, every stage's ms/tick,
 //   allocation and GC counts, for looking at performance over time.
 //   [--life N]: perturb only life (first bodies and agents' random streams) of the seed's world.
@@ -23,10 +24,12 @@ using Primordium;
     if (li >= 0 && li + 1 < args.Length) Loc.Set(args[li + 1]);
 }
 if (Array.IndexOf(args, "--self-test") >= 0) { World.RunRegression(); return; }
+if (Array.IndexOf(args, "--self-test-one") is int oi and >= 0 && oi + 1 < args.Length) { World.RunOneRegression(args[oi + 1]); return; }   // one part of --self-test by name (e.g. RubbleRegression), timed
 if (Array.IndexOf(args, "--self-test-mechanics") >= 0) { World.MechanicsRegression(); return; }   // structure, confinement, climbing, settling, relief, impacts (also in --self-test)
 if (Array.IndexOf(args, "--relief-report") >= 0) { World.ReliefReport(args); return; }   // relief ×1 against the current ReliefScale (×4 if it is 1): steps, water, light
 if (Array.IndexOf(args, "--self-test-infra") >= 0) { World.RunInfraRegression(); return; }
 if (Array.IndexOf(args, "--self-test-size") >= 0) { World.RunSizeRegression(); return; }   // just the world size test (also in --self-test)
+if (Array.IndexOf(args, "--self-test-scenario") >= 0) { World.RunScenarioRegression(); return; }   // just the small test worlds (also in --self-test)
 if (Array.IndexOf(args, "--self-test-sun") >= 0) { World.SkyRegression(); return; }   // just the sky test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-cave") >= 0) { World.CaveClimateRegression(); return; }   // just the cave climate test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-evolution") >= 0) { World.RunEvolutionRegression(); return; }
@@ -93,7 +96,7 @@ if (Array.IndexOf(args, "--climate") >= 0) { World.ClimateReport(args); return; 
 if (Array.IndexOf(args, "--bites") >= 0) { foreach (int s in new[] { 1, 2, 3, 5, 7 }) World.BiteReport(s); return; }
 if (Array.IndexOf(args, "--strength") >= 0) { foreach (int s in new[] { 1, 2, 3, 7 }) { Console.WriteLine($"seed {s}"); World.StrengthReport(s); } return; }
 
-int seed = 1, ticks = 20000, every = 1000, pop = P.InitialPop, life = 0;
+int seed = 1, ticks = 20000, every = 1000, pop = -1, life = 0;   // pop < 0: P.InitialPop, by area
 string logPath = null;
 bool abio = Array.IndexOf(args, "--noabio") < 0;
 for (int i = 0; i < args.Length - 1; i++)
@@ -130,7 +133,7 @@ if (loadPath != null)
     foreach (var path in laws.Presets) w.ApplyParams(ParamRegistry.LoadPreset(path).Values);
     foreach (var (name, value) in laws.Set) w.SetParam(name, value);
 }
-else w = new World(seed, pop, abio, life);
+else w = new World(Batch.Settings(args, seed, pop, abio, life));
 bool audit = Array.IndexOf(args, "--audit") >= 0;
 var originalAtoms = audit ? w.ElementBudget() : null;
 w.TrackHeat = audit;

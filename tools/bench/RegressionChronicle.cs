@@ -23,8 +23,8 @@ public sealed partial class World
     static void ChronicleRegression()
     {
         // 1. Watching changes nothing: every body tracked (biographies, fossils, ancestry for all) — same world.
-        var plain = new World(3, 600, true);
-        var watched = new World(3, 600, true);
+        var plain = new World(SmallSettings(3, 300, true));
+        var watched = new World(SmallSettings(3, 300, true));
         foreach (var a in watched.Agents) watched.Track(a, Chronicle.WhyPlayer);
         for (int t = 1; t <= 1500; t++)
         {
@@ -37,7 +37,7 @@ public sealed partial class World
         Require(bios > 0, "no biography was written");
 
         // 2. The same seed writes the same chronicle (tiles run on whatever threads), and "firsts" come once.
-        var again = new World(3, 600, true);
+        var again = new World(SmallSettings(3, 300, true));
         for (int t = 0; t < 1500; t++) again.Step();
         Require(ChronicleText(again) == ChronicleText(plain), "the chronicle differs between two runs of one seed");
         var all = plain.Chronicle.All();
@@ -53,7 +53,7 @@ public sealed partial class World
         // Proposed twice (as two tiles would in one tick, or one body tick after tick): one event. A body of
         // a lineage not yet established proposes nothing.
         {
-            var d = new World(3, 200, false);
+            var d = new World(SmallSettings(3, 100, false));
             var a = d.Agents.First(x => !x.Dead);
             var e = new Enzyme { Kind = Enzyme.Split, A = 5, Eff = 0.5f };
             long before = d.Chronicle.NextSeq;
