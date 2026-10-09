@@ -37,7 +37,7 @@ namespace Primordium;
 // (ground pools) or `body decay` (bodies). Atoms: the same Qty leaves a kind and enters its products;
 // blocks and bodies lose whole molecules.
 // Rates: loose matter every environment step (World.CellChem, share 1 − e^(−k·EnvEvery)); burials every
-// MetamorphEvery ticks, blocks every 8 × MetamorphEvery by rows in turn (DeepDecay, main thread, voxel order; blocks lose whole molecules,
+// 4 × MetamorphEvery ticks in turn, blocks every 8 × MetamorphEvery by rows in turn (DeepDecay, main thread, voxel order; blocks lose whole molecules,
 // drawn from Hash32 of the tick and voxel: no random stream); bodies on their own tick (a Poisson count
 // of whole molecules from the body's stream).
 public sealed partial class World
@@ -54,6 +54,7 @@ public sealed partial class World
         public readonly bool[] DecaysMat = new bool[Chemistry.S + 2];   // by block material (Mat), pristine blocks
         public readonly int[] List;
         public readonly float MeanBond;
+        public readonly int Weakest;   // the species of the lowest barrier: the fastest anywhere
 
         public DecayPaths(Chemistry ch)
         {
@@ -75,6 +76,8 @@ public sealed partial class World
                 list.Add(s);
             }
             List = list.ToArray();
+            Weakest = -1;
+            foreach (int s in List) if (Weakest < 0 || Barrier[s] < Barrier[Weakest]) Weakest = s;
         }
     }
 
@@ -224,30 +227,39 @@ public sealed partial class World
     float DepthWet(int c, int z) => z >= Height[c] - 2 ? CellWet(c) : 0f;
 
     readonly List<int>[] decayRows;
-    const int BlockStride = 8;   // per row: block voxels with something that decays (filled in parallel)
+    const int BlockStride = 8, BurialStride = 4;   // per row: block voxels with something that decays (filled in parallel)
 
     void DeepDecay()
     {
         double A = decayA;
         var d = Decay;
         double dt = P.MetamorphEvery, heatBurial = 0;
-        // Burials, in voxel order (Metamorphose sorted them this pass; recount here: it may not have run).
+        int pass = (int)(Tick / Math.Max(1, P.MetamorphEvery));
+        // Burials, in voxel order (Metamorphose sorted them this pass; recount here: it may not have run). Each pass
+        // takes every BurialStride-th of them in turn with BurialStride times the step (the same expectation).
         burialOrder.Clear();
         foreach (var entry in Buried) burialOrder.Add(entry.Key);
         burialOrder.Sort();
-        foreach (int v in burialOrder)
+        double burialDt = dt * BurialStride;
+        int weakest = d.List.Length == 0 ? -1 : d.Weakest;
+        for (int k = 0; k < burialOrder.Count; k++)
         {
+            if ((k + pass) % BurialStride != 0) continue;
+            int v = burialOrder[k];
             var b = Buried[v];
             int c = v / Z, z = v % Z;
             UpdateBurialStats(b);
             float lattice = b.Units > 0 ? b.Order * b.Bonds / b.Units : 0;
             float t = LocalTempDeep(c, z), wet = DepthWet(c, z);
+            // The fastest species here bounds every other's share: pools it could not move a 2⁻³² unit of are skipped.
+            double most = weakest < 0 ? 0 : DecayShare(DecayRateWith(A, weakest, t, wet, lattice), burialDt);
+            if (most * long.MaxValue < 1) continue;
             bool changed = false;
             foreach (int s in d.List)
             {
                 var pool = b.Matter[s];
-                if (pool.Raw <= 0) continue;
-                double share = DecayShare(DecayRateWith(A, s, t, wet, lattice), dt);
+                if (pool.Raw <= 0 || pool.Raw * most < 1) continue;
+                double share = DecayShare(DecayRateWith(A, s, t, wet, lattice), burialDt);
                 Qty m = Qty.FromRaw(Math.Min(pool.Raw, (long)(pool.Raw * share)));
                 if (m.Raw <= 0) continue;
                 b.Matter[s] = pool - m; b.Matter[d.To1[s]] += m;
@@ -262,7 +274,7 @@ public sealed partial class World
         // Blocks: find candidates by rows in parallel (read only), then take whole molecules in voxel order. Rock
         // decays ~10⁷ times slower than litter: each pass looks at every BlockStride-th row (in turn, by the pass
         // number) with BlockStride times the step — the same expectation for a scan of the crust 8 times cheaper.
-        int tick = (int)Tick, pass = (int)(Tick / Math.Max(1, P.MetamorphEvery));
+        int tick = (int)Tick;
         double blockDt = dt * BlockStride;
         Parallel.For(0, H, y =>
         {

@@ -87,6 +87,7 @@ public sealed partial class World
             for (int k = 0; k < 1000 / P.MetamorphEvery; k++)
             {
                 foreach (int c in cols) { w.Buried[c * w.Z + 6].Order = 0; w.Temp[c] = 15; }
+                w.Tick += P.MetamorphEvery;   // passes take burials and rows in turn
                 w.DeepDecay();
                 for (int q = 0; q < P.MetamorphEvery / P.EnvEvery; q++) { w.Temp[surface] = 15; w.Water[surface] = 1; w.LooseDecayArrhenius(surface, surface / w.W); }
             }
