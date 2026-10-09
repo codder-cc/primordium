@@ -679,7 +679,8 @@ public sealed partial class World
         UpdateClimate();
         Lap(0);
         // Each worker owns distinct cells; structural mutations are committed after the barrier.
-        Parallel.For(0, H / 8, chunk =>
+        if (ArrheniusLaw) Parallel.For(0, H / 8, chunk => CellChemArrheniusRows(chunk * 8, 8, (int)Tick));   // World.Decay: species by species
+        else Parallel.For(0, H / 8, chunk =>
         {
             int W = this.W, tick = (int)Tick;
             for (int y = chunk * 8; y < chunk * 8 + 8; y++)
@@ -713,10 +714,10 @@ public sealed partial class World
 
     void CellChem(int i, int tick, int row)
     {
+        if (ArrheniusLaw) { CellChemArrhenius(i, row, tick); return; }   // World.Decay: one law for every pool instead of LooseDecayK
         float f = TempFactor(Temp[i]), total = 0;
         int gas = Chem.Gas;
         bool vol0 = P.Volatility == 0;
-        if (ArrheniusLaw) { CellChemArrhenius(i, row, tick); return; }   // World.Decay: one law for every pool instead of LooseDecayK
         for (int s = 0; s < Chemistry.S; s++)
         {
             float amount = C[s][i].F;
@@ -741,6 +742,20 @@ public sealed partial class World
         LooseVolume[i] = total * P.LooseBulk; weathering[i] = false;
         int h = Height[i];
         if (h <= 2) return;
+        Weather(i, tick, h, f);
+    }
+
+    // The same with the temperature factor computed only where there is a block to weather.
+    void CellVolumeAndWeatherAt(int i, int tick, float total, float tempC)
+    {
+        LooseVolume[i] = total * P.LooseBulk; weathering[i] = false;
+        int h = Height[i];
+        if (h <= 2) return;
+        Weather(i, tick, h, TempFactor(tempC));
+    }
+
+    void Weather(int i, int tick, int h, float f)
+    {
         int v = i * Z + h - 1;
         float weather = P.WeatherK * f * (1 + Water[i] + Rain[i]) / (0.1f + VoxelCohesion(v));
         weathering[i] = Units[v] > 0 && Hash32.F(tick, i) < weather;

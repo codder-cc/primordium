@@ -173,7 +173,67 @@ public sealed partial class World
             heatIn[i] += (float)heat;
             rowLooseDecay[row] += heat;   // rows are owned by one worker
         }
-        if (weather) CellVolumeAndWeather(i, tick, total, TempFactor(t));
+        if (weather) CellVolumeAndWeatherAt(i, tick, total, t);
+    }
+
+    // CellChemArrhenius over `rows` rows from y0, species by species (each species' pools are one
+    // contiguous run of memory) instead of cell by cell: every cell sees the same operations in the same
+    // order (species 0…S−1, a product decaying further when its species comes later), so the result is
+    // bit for bit that of the cell-by-cell pass.
+    [ThreadStatic] static float[] chemTotal;
+    [ThreadStatic] static double[] chemHeat, chemDt;
+
+    void CellChemArrheniusRows(int y0, int rows, int tick)
+    {
+        int W = this.W, i0 = y0 * W, n = rows * W;
+        if (chemTotal == null || chemTotal.Length < n) { chemTotal = new float[n]; chemHeat = new double[n]; chemDt = new double[n]; }
+        var total = chemTotal;
+        var heatAt = chemHeat;
+        var dtAt = chemDt;
+        var temp = Temp;
+        for (int k = 0; k < n; k++)
+        {
+            total[k] = 0; heatAt[k] = 0;
+            dtAt[k] = P.EnvEvery * WetFactor(CellWet(i0 + k));
+        }
+        var d = Decay;
+        var decays = d.Decays;
+        var vol = Chem.Volume;
+        int gas = Chem.Gas;
+        bool vol0 = P.Volatility == 0;
+        for (int s = 0; s < Chemistry.S; s++)
+        {
+            var c = C[s];
+            bool decaysS = decays[s], counted = s != gas;
+            float volS = vol[s], lyingS = Chem.Lying(s);
+            Qty[] to1 = decaysS ? C[d.To1[s]] : null, to2 = decaysS && d.To2[s] >= 0 ? C[d.To2[s]] : null;
+            int heatS = d.Heat[s];
+            for (int k = 0; k < n; k++)
+            {
+                int i = i0 + k;
+                var pool = c[i];
+                if (pool.Raw <= 0) continue;
+                if (counted) total[k] += vol0 ? pool.F * volS : pool.F * volS * lyingS;
+                if (!decaysS) continue;
+                double share = DecayShare(DryRate(s, temp[i]), dtAt[k]);
+                Qty m = Qty.FromRaw(Math.Min(pool.Raw, (long)(pool.Raw * share)));   // truncated: never more than lies there
+                if (m.Raw <= 0) continue;
+                c[i] = pool - m; to1[i] += m;
+                if (to2 != null) to2[i] += m;
+                heatAt[k] += m * heatS;
+            }
+        }
+        for (int k = 0; k < n; k++)
+        {
+            int i = i0 + k;
+            double heat = heatAt[k];
+            if (heat != 0)
+            {
+                heatIn[i] += (float)heat;
+                rowLooseDecay[i / W] += heat;   // rows are owned by one worker
+            }
+            CellVolumeAndWeatherAt(i, tick, total[k], temp[i]);
+        }
     }
 
     // The decay alone (tests: no weathering draw, the cell's room untouched).
