@@ -25,6 +25,7 @@ public sealed class Cell
     public double Uptake;           // molecules it took in from outside (leak, channels, pumps), less what it lost (saved)
     // Where its energy went, by path (observation only: not saved, it never changes what the cell does). See Ledger*.
     public readonly double[] Ledger = new double[LedgerN];
+    public long Digested;   // molecules of touched bodies its outward pockets split (observation, not saved)
     public long CopyDone, CopyErrors;   // residues copied and substitutions among them (observation only, not saved)
     public readonly long[] StallLetter = new long[Chem2.L];   // which letter was short when a build stalled for monomers (observation)
     public double DiagXp, DiagXall, DiagTau;   // the first gene's promoter: polymerase occupancy (charged), all binders, synthesis per step (observation)

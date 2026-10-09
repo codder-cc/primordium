@@ -104,6 +104,48 @@ public sealed partial class World
             PoolCheck(target, "pasted model-2 population");
             pasted = res.Made;
         }
+        // Contact hydrolysis (World.Digest): a model-2 body splits a compound held by a model-1 body it touches; the
+        // parts lie loose, the energy of the split is heat; atoms exact, the ledger closes, the victim breaks at MinBody.
+        string digest = "no hydrolysable compound in this chemistry";
+        if (set.Prey >= 0 && set.PredatorDesign != null)
+        {
+            var v = Model2World(5, 0, Array.Empty<int>());
+            v.TrackHeat = true;
+            var prey = CreatureExamples.All[0];
+            var food = new CreatureDesign { Name = "prey", Model = prey.Model, Genome = prey.Genome, Energy = 10, Body = new() { ["0"] = 1, [set.Prey.ToString(System.Globalization.CultureInfo.InvariantCulture)] = 6 } };
+            var hunter = Plant(v, set.PredatorDesign, 1, 20, 20, 0)[0];
+            var victim = Plant(v, food, 1, 20, 20, 0)[0];
+            int vc = victim.Y * v.W + victim.X;
+            Require(hunter.X == victim.X && hunter.Y == victim.Y, "contact test: the two bodies are not in one cell");
+            var b0 = Inputs(v, null);
+            var en0 = v.AuditEnergy();
+            int had = victim.Inv[set.Prey], splits = 0;
+            for (int k = 0; k < 40 && !victim.Dead; k++) splits += v.Digest(hunter, vc, set.Prey, 200);
+            BudgetEqual(b0, Inputs(v, b0), "contact hydrolysis: atoms", 1e-6);
+            string de = EnergyWorldCheck(v, en0, "contact hydrolysis");
+            Require(splits > 0 && (victim.Dead || victim.Inv[set.Prey] < had), $"contact hydrolysis did nothing ({splits} splits)");
+            digest = $"contact hydrolysis {splits} splits of {v.Chem.NameEn[set.Prey]}, victim {(victim.Dead ? "killed" : "alive")}, atoms exact, {de}";
+        }
+        // Viscous motion (MotorDrag 1): a slow push walks the body a cell once its way adds up; law 0 never does.
+        {
+            int drag = P.MotorDrag;
+            try
+            {
+                var v = Model2World(5, 0, Array.Empty<int>());
+                var body = Plant(v, set.PhototrophDesign, 1, 30, 30, 0)[0];
+                float dx = 0, dy = 0;
+                P.MotorDrag = 1;
+                int steps = 0;
+                for (int k = 0; k < 400; k++) { v.Thrust(body, 1, 0, 0.002, ref dx, ref dy); if (body.Vx >= 1) { steps++; body.Vx = 0; } }
+                Require(steps > 0, "viscous motion: a slow steady push never stepped the body");
+                Require(World.DragOf(body) != 1 + body.Mass, "MotorDrag 1 drag is the old one");
+                P.MotorDrag = 0;
+                Require(World.DragOf(body) == 1 + body.Mass, "MotorDrag 0 drag changed");
+                digest += $"; viscous motion {steps} steps in 400 slow pushes";
+            }
+            finally { P.MotorDrag = drag; }
+        }
+        Console.WriteLine($"PASS model 2: {digest}");
         Console.WriteLine($"PASS model 2: DetMath to {worst:E1}; seeded cells compiled for seed 5; a world of {m2.Count} model-2 and {m1.Count} model-1 bodies for 300 ticks: {cells.Count} model-2 alive, {synth} syntheses, {photons} photons, {pushes} pushes; atoms exact, {energy}, pools exact; save/load continues, v13 refuses; design JSON and genome text round trip; population of {pasted} pasted and reassembled");
     }
 }

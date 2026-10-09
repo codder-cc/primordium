@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Primordium.Model2;
 
@@ -30,6 +31,21 @@ public sealed class GeneTable
     public struct Binder { public int Type, Pocket; public double GR, GT; public bool Pol; }
     public Binder[][] Promoter, Block;   // by unit; Block: summed over the 12 windows past the promoter
     public ProteinType[] Types;          // the types the table was made for (by index used in Binder.Type)
+
+    // e^{−β·ΔG} of every binder in R and T at a temperature level (made on first use, then shared: immutable).
+    public sealed class LevelK { public double[][] PR, PT, BR, BT; }
+    readonly LevelK[] levels = new LevelK[Chem2.Levels];
+    public LevelK At(int level)
+    {
+        var k = levels[level];
+        if (k != null) return k;
+        double beta = Chem2.Beta(level);
+        double[][] R(Binder[][] l) => l.Select(x => x.Select(b => DetMath.Exp(-beta * b.GR)).ToArray()).ToArray();
+        double[][] T(Binder[][] l) => l.Select(x => x.Select(b => DetMath.Exp(-beta * b.GT)).ToArray()).ToArray();
+        k = new LevelK { PR = R(Promoter), PT = T(Promoter), BR = R(Block), BT = T(Block) };
+        System.Threading.Interlocked.CompareExchange(ref levels[level], k, null);
+        return levels[level];
+    }
 
     public static int Length(byte[] g) => g.Length * 2;
     public static int At(byte[] g, int i) => (i & 1) == 0 ? g[i >> 1] & 15 : g[i >> 1] >> 4;

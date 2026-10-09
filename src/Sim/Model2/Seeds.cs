@@ -28,8 +28,9 @@ public sealed class SeedSet
     public byte[] Alphabet, Promoter;
     public readonly Dictionary<string, byte[]> Genes = new();
     public readonly Dictionary<string, double> Scores = new();
-    public byte[] Phototroph, Heterotroph, Knockout;   // genomes (residues)
-    public CreatureDesign PhototrophDesign, HeterotrophDesign, KnockoutDesign;
+    public byte[] Phototroph, Heterotroph, Knockout, Predator;   // genomes (residues)
+    public CreatureDesign PhototrophDesign, HeterotrophDesign, KnockoutDesign, PredatorDesign;
+    public int Prey = -1;   // the compound the predator's contact hydrolase splits (−1: none could be made)
     public string Report;
     public double Total;   // how far the genes are from their specs (0: all met)
     public double CarrierH;   // the ground carrier's hydrophobicity (how fast it leaks out through the bare membrane)
@@ -38,6 +39,8 @@ public sealed class SeedSet
 public static class Seeds
 {
     static readonly ConditionalWeakTable<Chemistry, SeedSet> cache = new();
+    public static int ReceptorCount = 2;   // outer receptor pockets on the motor chain
+    public static int ReceptorPrefer = 1;   // the motor's outer pocket holds the food better in 1: R (run while food ahead is richer than inside), 2: T (stay where food is)
 
     public static SeedSet For(Chemistry chem, int effort = 6000) => cache.GetValue(chem, ch => Compile(ch, effort));
 
@@ -148,7 +151,7 @@ public static class Seeds
             if (!spec.Needs.Any(x => x.Kind == Need.Kinds.NoBarePigment)) spec.Needs.Add(new Need { Kind = Need.Kinds.NoBarePigment, Weight = 0.5 });
             // the polymerase must not sit on the transcript's start (it would repress the gene)
             if (polBinder != null && !spec.Needs.Any(x => x.Kind == Need.Kinds.Unblocked)) spec.Needs.Add(new Need { Kind = Need.Kinds.Unblocked, Binder = polBinder });
-            var s = Compiler.Compile(c, spec, letters ?? A, seed, effort * mult, out double score);
+            var s = Compiler.Compile(c, spec, letters ?? A, seed, effort * Math.Min(mult, 2), out double score, 4 * mult);   // a hard spec: more restarts from new random chains
             set.Genes[name] = s; set.Scores[name] = score;
             report.Add($"{name}: score {score.ToString("0.00", CultureInfo.InvariantCulture)} [{Compiler.Explain(c, new ProteinType(c, s), spec)}] {new ProteinType(c, s).Detail(chem)}");
             return s;
@@ -206,24 +209,54 @@ public static class Seeds
             chans.Add(pu.Name);
         }
 
-        var mot = new GeneSpec("Mot", 48);
+        var mot = new GeneSpec("Mot", 60);
         mot.Needs.Add(new Need { Kind = Need.Kinds.Membrane });
         mot.Needs.Add(new Need { Kind = Need.Kinds.Motor, Species = set.Food });
-        // the receptor: what lies outside is dilute (Life2Dilute), so it must hold strongly, and better in R (food ahead: run)
-        var receptor = Need.Pocket(ProteinType.Out, set.Food, prefer: 1, strength: -1.8);
-        receptor.Margin = 2; receptor.Weight = 3;
+        // the receptor: what lies outside is dilute (Life2Dilute), so it must hold strongly; held better in R, food outside
+        // keeps the motor running against the inner pockets that hold the food better in T (fed: tumble) — a comparator of
+        // the outside now and the inside, which lags it
+        var receptor = Need.Pocket(ProteinType.Out, set.Food, prefer: ReceptorPrefer, strength: -1.8);
+        receptor.Margin = 2; receptor.Weight = 3; receptor.Count = ReceptorCount;   // several on one chain act together (MWC: the signal is their product)
         mot.Needs.Add(receptor);
-        mot.Needs.Add(Need.Pocket(ProteinType.In, set.Food, prefer: 2));
-        Gene("Mot", mot, 13, null, 3);
+        mot.Needs.Add(Need.Pocket(ProteinType.In, set.Food, prefer: 1));   // the stroke: held in R, it pushes along the heading (run)
+        mot.Needs.Add(Need.Pocket(ProteinType.In, set.Food, prefer: 2));   // satiety: held in T, a fed cell turns (tumble)
+        Gene("Mot", mot, 13, letters.Select(f => (byte)f).ToArray(), 8);   // any stable letter: a receptor that holds the dilute food outside is rare
         // The knockout: the same motor without its outer pocket (recompiled from it with that need reversed).
-        var ko = new GeneSpec("MotΔ", 48);
+        var ko = new GeneSpec("MotΔ", 60);
         ko.Needs.Add(new Need { Kind = Need.Kinds.Membrane, Weight = 3 });
         ko.Needs.Add(new Need { Kind = Need.Kinds.Motor, Species = set.Food, Weight = 3 });
+        ko.Needs.Add(Need.Pocket(ProteinType.In, set.Food, prefer: 1));
         ko.Needs.Add(Need.Pocket(ProteinType.In, set.Food, prefer: 2));
         ko.Needs.Add(new Need { Kind = Need.Kinds.NoPocket, Side = ProteinType.Out, Weight = 2 });
+        ko.Needs.Add(new Need { Kind = Need.Kinds.NoChannel, Species = set.Food, Weight = 2 });   // nothing else changed: no new pore for the charge
+        ko.Needs.Add(new Need { Kind = Need.Kinds.NoChannel, Species = g, Weight = 2 });
+        ko.Needs.Add(new Need { Kind = Need.Kinds.NoBarePigment, Weight = 1 });
         var koSeq = Knock(c, set.Genes["Mot"], ko, A, effort);
         set.Genes["MotΔ"] = koSeq; set.Scores["MotΔ"] = Compiler.Score(c, new ProteinType(c, koSeq), ko);
         report.Add($"MotΔ: score {set.Scores["MotΔ"].ToString("0.00", CultureInfo.InvariantCulture)} {new ProteinType(c, koSeq)} ({Diff(set.Genes["Mot"], koSeq)} residues changed)");
+
+        // The contact hydrolase: a membrane chain with an outer pocket for a ground compound whose split runs downhill —
+        // pressed against another body it takes those molecules apart (World.Digest). The compound: the one outer
+        // windows of any stable letter hold best among those that split downhill.
+        {
+            int prey = -1; double bestG = P.Life2Cut;
+            foreach (int x in Enumerable.Range(0, Chem2.L).Select(f => 2 * f).Where(x => chem.SplitA[x] >= 0 && chem.SplitEnergy(x) > 0))
+            {
+                double gx = double.MaxValue;
+                foreach (var (q, w) in windows) gx = Math.Min(gx, c.BindSpecies(w, x));
+                if (gx < bestG) { bestG = gx; prey = x; }
+            }
+            set.Prey = prey;
+            if (prey >= 0)
+            {
+                var lys = new GeneSpec("Lys", 48);
+                lys.Needs.Add(new Need { Kind = Need.Kinds.Membrane });
+                lys.Needs.Add(Need.Pocket(ProteinType.Out, prey, strength: P.Life2Cut));
+                lys.Needs.Add(new Need { Kind = Need.Kinds.NoChannel, Species = set.Food });
+                lys.Needs.Add(new Need { Kind = Need.Kinds.NoMotor });
+                Gene("Lys", lys, 15, Enumerable.Range(0, Chem2.L).Select(f => (byte)f).ToArray(), 4);
+            }
+        }
 
         var chf = new GeneSpec("ChF", 44);
         chf.Needs.Add(new Need { Kind = Need.Kinds.Membrane });
@@ -242,6 +275,7 @@ public static class Seeds
         set.Phototroph = Build(new[] { "Pol", "Pg" }.Concat(chanNames).ToArray());
         set.Heterotroph = Build(new[] { "Pol", "Mot", "ChF" }.Concat(chanNames).ToArray());
         set.Knockout = Build(new[] { "Pol", "MotΔ", "ChF" }.Concat(chanNames).ToArray());
+        if (set.Genes.ContainsKey("Lys")) set.Predator = Build(new[] { "Pol", "Pg", "Lys" }.Concat(chanNames).ToArray());
         {
             var pool = A.Concat(A.Select(f => (byte)c.Comp[f])).Distinct().ToArray();
             var all = Enumerable.Range(0, Chem2.L).Select(f => (byte)f).ToArray();
@@ -250,7 +284,7 @@ public static class Seeds
         }
         report.Insert(0, "pairs (and h): " + string.Join(" ", Enumerable.Range(0, Chem2.L).Select(f => $"{f:x}[{c.H[f].ToString("0.00", CultureInfo.InvariantCulture)}]→{c.Comp[f]:x}({c.Pair[f, c.Comp[f]].ToString("0.0", CultureInfo.InvariantCulture)})")) + "; alphabet letters " + string.Concat(A.Select(f => "0123456789abcdef"[f])));
         report.Insert(0, $"chemistry {chem.Model}: carrier {Name(g)} (g* {Name(set.Food)}, gap {chem.Gap[set.Food]}, h {c.LigH[g].ToString("0.00", CultureInfo.InvariantCulture)}), alphabet {string.Join(",", A.Select(f => Name(2 * f)))}, promoter {string.Concat(promoter.Select(f => "0123456789abcdef"[f]))}, binding cost {c.Eps0.ToString("0.00", CultureInfo.InvariantCulture)}, crossing h ≥ {c.TmH.ToString("0.00", CultureInfo.InvariantCulture)}");
-        foreach (var (label, gen) in new[] { ("F-1", set.Phototroph), ("E-1", set.Heterotroph), ("E-1Δ", set.Knockout) })
+        foreach (var (label, gen) in new[] { ("F-1", set.Phototroph), ("E-1", set.Heterotroph), ("E-1Δ", set.Knockout), ("P-1", set.Predator) }.Where(x => x.Item2 != null))
         {
             var units = GeneTable.Parse(c, gen);
             report.Add($"{label}: {gen.Length} residues, {units.Count} units: " + string.Join(" ", units.Select(u => u.Type.Len)));
@@ -266,6 +300,8 @@ public static class Seeds
         set.PhototrophDesign = Design(c, set, "F-1", set.Phototroph, Loc.T("Model 2 phototroph: a pigment charging the carrier, channels for its letters.", "Фототроф модели 2: пигмент заряжает переносчик, каналы для своих букв."));
         set.HeterotrophDesign = Design(c, set, "E-1", set.Heterotroph, Loc.T("Model 2 chemotactic heterotroph: eats the charged carrier through a channel, runs while food ahead is richer than inside.", "Хемотактический гетеротроф модели 2: ест заряженный переносчик через канал, бежит, пока впереди еды больше, чем внутри."));
         set.KnockoutDesign = Design(c, set, "E-1Δ", set.Knockout, Loc.T("E-1 with the motor's outer (receptor) pocket knocked out.", "Э-1 с выключенным внешним (рецепторным) карманом мотора."));
+        if (set.Predator != null)
+            set.PredatorDesign = Design(c, set, "P-1", set.Predator, Loc.T("Model 2 phototroph with a contact hydrolase: an outer pocket that splits a compound of the bodies it touches.", "Фототроф модели 2 с контактной гидролазой: внешний карман расщепляет соединение тел, которых касается."));
         return set;
     }
 

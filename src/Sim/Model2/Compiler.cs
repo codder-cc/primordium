@@ -22,6 +22,7 @@ public sealed class Need
     public byte[] Alphabet;
     public ProteinType Binder;     // Unblocked: the polymerase whose pockets must not hold the transcript's start (null: the chain itself)
     public double Weight = 1;
+    public int Count = 1;          // Pocket: how many such pockets
     public static Need Pocket(int side, int s, int prefer = 0, double strength = -1.5) => new() { Kind = Kinds.Pocket, Side = side, Species = s, Prefer = prefer, Strength = strength };
 }
 
@@ -64,10 +65,12 @@ public static class Compiler
             case Need.Kinds.Soluble: return t.Crossings;
             case Need.Kinds.Pocket:
             {
-                double best = double.MaxValue;
+                // The Count best pockets (each its best ligand slot for the species); a missing one costs as a window.
+                var each = new List<double>();
                 foreach (var p in t.Pockets)
                 {
                     if (n.Side >= 0 && p.Side != n.Side) continue;
+                    double best = double.MaxValue;
                     for (int l = 0; l < p.N; l++)
                     {
                         if (p.Lig(l) != n.Species) continue;
@@ -75,9 +78,12 @@ public static class Compiler
                         double pref = n.Prefer == 1 ? p.GR(l) - p.GT(l) + n.Margin : n.Prefer == 2 ? p.GT(l) - p.GR(l) + n.Margin : 0;
                         best = Math.Min(best, miss + Math.Max(0, pref) * 0.5 + 0.1 * l);
                     }
+                    if (best < double.MaxValue) each.Add(best);
                 }
-                if (best < double.MaxValue) return best;
-                return 1 + Math.Max(0, BestWindow(c, t, n.Species, n.Side) - n.Strength) * 0.25;
+                each.Sort();
+                double sum = 0, window = 1 + Math.Max(0, BestWindow(c, t, n.Species, n.Side) - n.Strength) * 0.25;
+                for (int k = 0; k < Math.Max(1, n.Count); k++) sum += k < each.Count ? each[k] : window;
+                return sum;
             }
             case Need.Kinds.Pump:
             {
@@ -212,12 +218,12 @@ public static class Compiler
     }
 
     // Anneal a sequence of the spec's length over `alphabet` (letters 0–15) from a fixed seed.
-    public static byte[] Compile(Chem2 c, GeneSpec g, byte[] alphabet, long seed, int iterations, out double score)
+    public static byte[] Compile(Chem2 c, GeneSpec g, byte[] alphabet, long seed, int iterations, out double score, int restarts = 4)
     {
         var rng = new SimRng(seed);
         byte[] best = null;
         double bestScore = double.MaxValue;
-        for (int restart = 0; restart < 4 && bestScore > 0; restart++)
+        for (int restart = 0; restart < restarts && bestScore > 0; restart++)
         {
             var seq = new byte[g.Length];
             for (int i = 0; i < seq.Length; i++) seq[i] = alphabet[rng.Next(alphabet.Length)];

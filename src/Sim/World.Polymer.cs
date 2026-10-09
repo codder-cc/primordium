@@ -203,6 +203,19 @@ public sealed partial class World
     public double ConcentrationOutside(Agent a, int cell, int s) =>
         P.Life2Dilute != 0 ? LooseAmount(a, cell, s) * MeanMoleculeVolume / P.VoxelSpace : LooseAmount(a, cell, s) / (double)P.InvPerCell;
 
+    // The same for every kind at once (one look-up of the floor; the values are ConcentrationOutside's exactly).
+    public void ConcentrationsOutside(Agent a, int cell, Span<double> c)
+    {
+        var b = FloorBurial(a, cell);
+        bool dilute = P.Life2Dilute != 0;
+        double v = dilute ? MeanMoleculeVolume : 0;
+        for (int s = 0; s < Chemistry.S && s < c.Length; s++)
+        {
+            float l = Loose(a, cell, b, s);
+            c[s] = dilute ? l * v / P.VoxelSpace : l / (double)P.InvPerCell;
+        }
+    }
+
     double meanMolVolume;
     // The mean room of a ground molecule of this chemistry (Chemistry.Volume).
     public double MeanMoleculeVolume
@@ -361,6 +374,56 @@ public sealed partial class World
         WarmBy(a, de * (double)m / Qty.One);
         if (de > 0) { a.TickChem += (float)(de * (double)m / Qty.One); }
         return true;
+    }
+
+    // ---- contact ----
+
+    [ThreadStatic] static System.Collections.Generic.List<Agent> touched;
+    public long DigestKills;   // bodies killed by contact hydrolysis (observation; not saved)
+
+    // Contact hydrolysis: an outward catalytic site of body `a` splits molecules of kind s (a ground compound whose
+    // split runs downhill) held by the bodies it touches (on its floor in its cell). Each touched body has `k` × (its
+    // s per room of its own) expected splits this tick, whole events by stochastic rounding (the tile's Rng), at most a
+    // molecule each: the split takes the molecule out through the breached membrane — its parts lie loose on the
+    // floor, its energy of splitting is heat in the cell (booked as body decay). A body left with fewer than
+    // P.MinBody units is killed (World.Die; the killer's NKills). No cost to `a` (the reaction runs downhill; the
+    // pocket only speeds it). Returns the splits done.
+    public int Digest(Agent a, int cell, int s, double k)
+    {
+        if (!(k > 0) || Chem.SplitA[s] < 0 || Chem.SplitEnergy(s) <= 0) return 0;
+        var list = touched ??= new System.Collections.Generic.List<Agent>();
+        list.Clear();
+        for (var o = Head[cell]; o != null; o = o.NextInCell) if (o != a && !o.Dead && o.Z == a.Z && Have(o, s) > 0) list.Add(o);
+        var big = Big[cell];
+        if (big != null && big != a && !big.Dead && big.Z == a.Z && Have(big, s) > 0 && !list.Contains(big)) list.Add(big);
+        int done = 0;
+        foreach (var o in list)
+        {
+            double room = (double)P.InvPerCell * Math.Max(1, o.Cells);
+            double lambda = k * Have(o, s) / (double)Qty.One / room;
+            int n = (int)Math.Floor(lambda);
+            if (Rng.NextDouble() < lambda - n) n++;
+            for (int e = 0; e < n && !o.Dead; e++)
+            {
+                long m = Math.Min(Have(o, s), 1L << Qty.Bits);
+                if (m <= 0) break;
+                var q = Qty.FromRaw(m);
+                TakeRaw(o, s, m);
+                o.Mass -= q.F * Chem.Mass[s]; o.Volume -= q.F * Chem.BodyVolume[s];
+                ChangeLoose(a, cell, Chem.SplitA[s], q);
+                if (Chem.SplitB[s] >= 0) ChangeLoose(a, cell, Chem.SplitB[s], q);
+                DecayHeat(a, Chem.SplitEnergy(s) * q.D);
+                done++;
+                if (BodyUnits(o) < P.MinBody)
+                {
+                    int oc = o.Y * W + o.X;
+                    Die(o, oc, CauseKilled);
+                    a.NKills++;
+                    System.Threading.Interlocked.Increment(ref DigestKills);
+                }
+            }
+        }
+        return done;
     }
 
     // ---- force ----

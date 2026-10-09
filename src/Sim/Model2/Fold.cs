@@ -61,7 +61,7 @@ public sealed class ProteinType
         public double GT(int k) => k == 0 ? G0T : k == 1 ? G1T : G2T;
     }
 
-    public enum ActKind : byte { Channel, Split, Bind, Pigment, Motor, Modify, Pump }
+    public enum ActKind : byte { Channel, Split, Bind, Pigment, Motor, Modify, Pump, Digest }
     public struct Act
     {
         public ActKind Kind;
@@ -148,7 +148,11 @@ public sealed class ProteinType
             for (int s = 0; s < Chemistry.S; s++) g = Math.Min(g, Math.Min(c.BindSpecies(wr, s), c.BindSpecies(wt, s)));
             if (g < P.Life2Cut) cand.Add((g, i));
         }
-        cand.Sort((x, y) => x.g != y.g ? x.g.CompareTo(y.g) : x.pos.CompareTo(y.pos));
+        // Equal strength: a window that binds best is the R face of the pocket at its own place and the T face of the one
+        // before it; which of the two forms is the chain's (a parity of its letters there), not always the first —
+        // otherwise every pocket would hold its best ligand in T.
+        int Tie(int pos) => (Seq[pos] ^ Seq[Math.Min(n - 1, pos + 2)]) & 1;
+        cand.Sort((x, y) => x.g != y.g ? x.g.CompareTo(y.g) : Tie(x.pos) != Tie(y.pos) ? Tie(x.pos).CompareTo(Tie(y.pos)) : x.pos.CompareTo(y.pos));
         int max = Math.Max(1, n / 12);
         var used = new bool[n + 1];
         var pockets = new List<Pocket>();
@@ -252,6 +256,14 @@ public sealed class ProteinType
                     else Acts.Add(new Act { Kind = ActKind.Channel, Pocket = k, Lig = l, Species = s, Couple = -1 });
                     continue;
                 }
+                // Facing out, a pocket for a molecule that splits downhill speeds the split of what it touches outside:
+                // the molecules of a body it is pressed against (World.Digest) — the same transition-state law.
+                if (p.Side == Out)
+                {
+                    if (s % 2 == 0 && chem.SplitA[s] >= 0 && chem.SplitEnergy(s) > 0)
+                        Acts.Add(new Act { Kind = ActKind.Digest, Pocket = k, Lig = l, Species = s, Couple = -1, CoupleSpecies = -1 });
+                    continue;
+                }
                 if (p.Side != In) continue;
                 // A split that releases energy, coupled to a ground carrier nearby if the energy suffices.
                 // (Ground substrates only: an excited molecule held in a pocket is a carrier there — its excitation leaves by
@@ -338,7 +350,7 @@ public sealed class ProteinType
         for (int i = 0; i < Acts.Count; i++)
         {
             var a = Acts[i];
-            if (a.Kind != ActKind.Split && a.Kind != ActKind.Bind) continue;
+            if (a.Kind != ActKind.Split && a.Kind != ActKind.Bind && a.Kind != ActKind.Digest) continue;
             var p = Pockets[a.Pocket];
             double g = -Math.Min(p.GR(a.Lig), p.GT(a.Lig));
             if (a.Kind == ActKind.Bind) g = 0.5 * (g - Math.Min(Pockets[a.Pocket2].GR(a.Lig2), Pockets[a.Pocket2].GT(a.Lig2)));

@@ -39,6 +39,8 @@ public sealed class ChemModel : ILifeModel
     // ---- per-call scratch (one Think at a time per thread) ----
     [ThreadStatic] static double[] cIn, cOut, xr, xt, fr;
     [ThreadStatic] static int[] letters;
+    [ThreadStatic] static double[] shareBuf, chargedBuf;
+    [ThreadStatic] static int[] nBuf;
 
     static void Scratch()
     {
@@ -59,11 +61,11 @@ public sealed class ChemModel : ILifeModel
         var c = Chem2.Of(w.Chem);
         if (a.ModelState is not Cell st) { st = new Cell(); a.ModelState = st; }
         if (st.C != c) { st.C = c; foreach (var sl in st.Slots) sl.Type ??= ProteinType.Of(c, sl.Seq); }
-        if (!st.Assembled) { Assemble(w, a, st, c); return; }
+        if (!st.Assembled) { long pt = Tick0(); Assemble(w, a, st, c); Took(6, ref pt); return; }
         Fast(w, a, cell, st, c);
         if (a.Dead) return;
         int every = Math.Max(1, P.Life2Every);
-        if ((a.Age + a.Id) % every == 0) Slow(w, a, cell, st, c);
+        if ((a.Age + a.Id) % every == 0) { long pt = Tick0(); Slow(w, a, cell, st, c); Took(5, ref pt); }
     }
 
     double Room(Agent a) => (double)P.InvPerCell * Math.Max(1, a.Cells);
@@ -131,13 +133,21 @@ public sealed class ChemModel : ILifeModel
         return n;
     }
 
+    // Where the fast and slow steps spend time (bench --model2-demo --k perf --prof; off: nothing is timed).
+    public static bool Profile;
+    public static readonly long[] Prof = new long[8];
+    public static readonly string[] ProfNames = { "concentrations", "leak", "mwc", "acts", "light+motion", "slow", "assemble", "" };
+    static long Tick0() => Profile ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+    static void Took(int k, ref long t) { if (!Profile) return; long n = System.Diagnostics.Stopwatch.GetTimestamp(); System.Threading.Interlocked.Add(ref Prof[k], n - t); t = n; }
+
     void Fast(World w, Agent a, int cell, Cell st, Chem2 c)
     {
+        long pt = Tick0();
         var chem = c.Chem;
         int level = Chem2.Level(a.Tb);
         double kspont = P.DecayK * World.TempFactor(a.Tb), room = Room(a), beta = Chem2.Beta(level);
         Concentrations(w, a, cell, st);
-        Leak(w, a, cell, c, st, room);
+        Took(0, ref pt);
         var slots = st.Slots;
         int ns = Math.Min(slots.Count, 64);
         // Pockets of all slots in one scratch run (≤ 64 pockets in all; more slots or pockets are not stepped).
@@ -151,6 +161,7 @@ public sealed class ChemModel : ILifeModel
             Mwc(w, a, cell, slots[k], t.At(level), pb, k * 4);
             pb += t.Pockets.Length;
         }
+        Took(2, ref pt);
         double thrust = 0, torque = 0, tumbles = 0, pigment = 0;
         for (int k = 0; k < ns; k++)
         {
@@ -264,12 +275,22 @@ public sealed class ChemModel : ILifeModel
                         tumbles += P.Life2Motor * ct;
                         break;
                     }
+                    case ProteinType.ActKind.Digest:
+                    {
+                        // copies holding nothing outside (the floor's own s is too dilute to matter) press the pocket on
+                        // whatever body they touch: expected splits per unit of that body's s concentration
+                        double free = nR * kr / (1 + xr[b + p]) + nT * kt / (1 + xt[b + p]);
+                        int n = w.Digest(a, cell, act.Species, kspont * lv.Cat[i] * free);
+                        if (n > 0) st.Digested += n;
+                        break;
+                    }
                     case ProteinType.ActKind.Modify:
                         Modify(w, a, cell, st, slot, k, t, lv, b, act);
                         break;
                 }
             }
         }
+        Took(3, ref pt);
         if (pigment > 0) Light(w, a, cell, st, Round(w, pigment), pigment);
         if (thrust > 0) { w.Thrust(a, cosH[st.Heading], sinH[st.Heading], thrust, ref st.DriftX, ref st.DriftY); st.Thrusts++; st.Ledger[Cell.LMotor] += thrust; }
         if (torque > 0)
@@ -277,16 +298,20 @@ public sealed class ChemModel : ILifeModel
             w.Spend(a, torque);   // turning the body in the medium: work that ends as heat
             st.Ledger[Cell.LTurn] += torque;
             if (w.Rng.NextDouble() < 1 - DetMath.Exp(-tumbles / P.Life2Turn)) { st.Heading = w.Rng.Next(256); st.Tumbles++; }
+            Took(4, ref pt);
         }
+        else Took(4, ref pt);
     }
 
     // The bare membrane lets molecules through by themselves, the more hydrophobic the more (Life2Leak·h²), down
     // the gradient: how a cell without channels takes in what lies around it and loses what it holds. Only
     // ground states dissolve in it: an excited molecule is too reactive to cross the lipid (a charge stays in
     // unless a channel lets it out).
-    void Leak(World w, Agent a, int cell, Chem2 c, Cell st, double room)
+    // Diffusion is slow next to what proteins do: it runs in the slow step, for its `ticks` at once (the cap keeps a
+    // step from overshooting the equilibrium).
+    void Leak(World w, Agent a, int cell, Chem2 c, Cell st, double room, int ticks)
     {
-        double k = P.Life2Leak;
+        double k = P.Life2Leak * ticks;
         if (k <= 0) return;
         for (int s = 0; s < Chemistry.S; s += 2)
         {
@@ -381,12 +406,26 @@ public sealed class ChemModel : ILifeModel
 
     void Table(World w, Agent a, Cell st, Chem2 c)
     {
-        var types = TypesOf(st);
-        ulong th = GeneTable.TypesHash(types);
+        ulong th = TypesHash(st);   // (no array made while the types stay the same)
         if (st.Table != null && st.TableGenome == a.Hash && st.TableTypes == th) return;
+        var types = TypesOf(st);
         st.Table = GeneTable.For(c, a.G, a.Hash, types);
         st.TableGenome = a.Hash; st.TableTypes = th;
         if (st.Acc.Length != st.Table.Units.Length) Array.Resize(ref st.Acc, st.Table.Units.Length);
+    }
+
+    // GeneTable.TypesHash of TypesOf(st), without making the array.
+    static ulong TypesHash(Cell st)
+    {
+        ulong h = 0xCBF29CE484222325UL;
+        int n = 0;
+        foreach (var s in st.Slots)
+        {
+            if (s.Total <= 0) continue;
+            h ^= s.Type.Hash; h *= 0x100000001B3UL; h = (h << 7) | (h >> 57);
+            n++;
+        }
+        return h ^ (ulong)n;
     }
 
     static ProteinType[] TypesOf(Cell st)
@@ -402,20 +441,33 @@ public sealed class ChemModel : ILifeModel
     // Occupancy sum x = Σ c·(f_R·K_R + (1 − f_R)·K_T) of binders (protein concentrations: copies per room).
     // polOnly: polymerases only, each weighted by how often its carrier pocket holds a charged carrier (`charged`,
     // null: always) — copying couples to charge, so a cell short of it copies slowly.
-    double Occupancy(GeneTable.Binder[] list, Cell st, ProteinType[] types, double[] shareR, double beta, double room, bool polOnly, double[] charged = null)
+    // er/et: e^{−β·ΔG} of the binders in R and T (GeneTable.At); nOf: copies by type index.
+    static double Occupancy(GeneTable.Binder[] list, double[] er, double[] et, int[] nOf, double[] shareR, double room, bool polOnly, double[] charged = null)
     {
         double x = 0, k0 = P.Life2Kd0;
-        foreach (var bd in list)
+        for (int i = 0; i < list.Length; i++)
         {
+            ref var bd = ref list[i];
             if (polOnly && !bd.Pol) continue;
-            int n = 0;
-            foreach (var s in st.Slots) if (s.Type == types[bd.Type]) { n = s.Total; break; }
+            int n = nOf[bd.Type];
             if (n == 0) continue;
             double f = shareR[bd.Type];
-            double y = n / room * (f * DetMath.Exp(-beta * bd.GR) + (1 - f) * DetMath.Exp(-beta * bd.GT)) / k0;
+            double y = n / room * (f * er[i] + (1 - f) * et[i]) / k0;
             x += polOnly && charged != null ? y * charged[bd.Type] : y;
         }
         return x;
+    }
+
+    static int[] CopiesOf(Cell st, ProteinType[] types, ref int[] buf)
+    {
+        if (buf == null || buf.Length < types.Length) buf = new int[Math.Max(16, types.Length)];
+        for (int k = 0; k < types.Length; k++)
+        {
+            int n = 0;
+            foreach (var s in st.Slots) if (s.Type == types[k]) { n = s.Total; break; }
+            buf[k] = n;
+        }
+        return buf;
     }
 
     void Slow(World w, Agent a, int cell, Cell st, Chem2 c)
@@ -423,6 +475,10 @@ public sealed class ChemModel : ILifeModel
         var chem = c.Chem;
         int every = Math.Max(1, P.Life2Every), level = Chem2.Level(a.Tb);
         double beta = Chem2.Beta(level), room = Room(a);
+        Concentrations(w, a, cell, st);
+        long pl = Tick0();
+        Leak(w, a, cell, c, st, room, every);
+        Took(1, ref pl);
         // Decay (proteins wear by their stability, faster when warm).
         double tf = World.TempFactor(a.Tb);
         for (int k = 0; k < st.Slots.Count; k++)
@@ -451,8 +507,11 @@ public sealed class ChemModel : ILifeModel
         var types = table.Types;
         // MWC share in R of every type (for its binding to the genome).
         Concentrations(w, a, cell, st);
-        var shareR = new double[types.Length];
-        var charged = new double[types.Length];
+        if (shareBuf == null || shareBuf.Length < types.Length) { shareBuf = new double[Math.Max(16, types.Length)]; chargedBuf = new double[shareBuf.Length]; }
+        var shareR = shareBuf; var charged = chargedBuf;
+        Array.Clear(shareR, 0, types.Length); Array.Clear(charged, 0, types.Length);
+        var nOf = CopiesOf(st, types, ref nBuf);
+        var kl = table.At(level);
         for (int k = 0; k < types.Length; k++)
         {
             Slot slot = null;
@@ -477,10 +536,10 @@ public sealed class ChemModel : ILifeModel
         // Transcription and synthesis.
         for (int u = 0; u < table.Units.Length; u++)
         {
-            double xp = Occupancy(table.Promoter[u], st, types, shareR, beta, room, true, charged);
+            double xp = Occupancy(table.Promoter[u], kl.PR[u], kl.PT[u], nOf, shareR, room, true, charged);
             if (xp <= 0) continue;
-            double xall = Occupancy(table.Promoter[u], st, types, shareR, beta, room, false);
-            double xb = Occupancy(table.Block[u], st, types, shareR, beta, room, false);
+            double xall = Occupancy(table.Promoter[u], kl.PR[u], kl.PT[u], nOf, shareR, room, false);
+            double xb = Occupancy(table.Block[u], kl.BR[u], kl.BT[u], nOf, shareR, room, false);
             double tau = st.Genomes * P.Life2Tx * xp / (1 + xall) * (1 - xb / (1 + xb));   // every genome copy is a template
             if (u == 0) { st.DiagXp = xp; st.DiagXall = xall; st.DiagTau = tau; }
             st.Acc[u] += tau;
@@ -497,8 +556,8 @@ public sealed class ChemModel : ILifeModel
         // Copying the genome: a polymerase at the origin (the first window) copies Life2Pol residues per step.
         if (st.Genomes == 1 && table.Units.Length > 0 && table.Units[0].Start == 0)
         {
-            double xo = Occupancy(table.Promoter[0], st, types, shareR, beta, room, true, charged);
-            double xall = Occupancy(table.Promoter[0], st, types, shareR, beta, room, false);
+            double xo = Occupancy(table.Promoter[0], kl.PR[0], kl.PT[0], nOf, shareR, room, true, charged);
+            double xall = Occupancy(table.Promoter[0], kl.PR[0], kl.PT[0], nOf, shareR, room, false);
             int steps = Round(w, P.Life2Pol * xo / (1 + xall));
             if (steps > 0) Copy(w, a, st, c, steps, beta, table, types, shareR, room);
         }
@@ -661,11 +720,14 @@ public sealed class ChemModel : ILifeModel
             probe.Slots.Clear();
             for (int k = 0; k < types.Count; k++) { var sl = new Slot { Type = types[k], Seq = types[k].Seq }; sl.N[0] = Math.Max(1, (int)Math.Round(target[k])); probe.Slots.Add(sl); }
             var next = new double[types.Count];
+            int[] pn = null;
+            var nOf = CopiesOf(probe, table.Types, ref pn);
+            var kl = table.At(level);
             for (int u = 0; u < table.Units.Length; u++)
             {
-                double xp = Occupancy(table.Promoter[u], probe, table.Types, shareR, beta, room, true);
-                double xall = Occupancy(table.Promoter[u], probe, table.Types, shareR, beta, room, false);
-                double xb = Occupancy(table.Block[u], probe, table.Types, shareR, beta, room, false);
+                double xp = Occupancy(table.Promoter[u], kl.PR[u], kl.PT[u], nOf, shareR, room, true);
+                double xall = Occupancy(table.Promoter[u], kl.PR[u], kl.PT[u], nOf, shareR, room, false);
+                double xb = Occupancy(table.Block[u], kl.BR[u], kl.BT[u], nOf, shareR, room, false);
                 double tau = P.Life2Tx * xp / (1 + xall) * (1 - xb / (1 + xb));
                 var t = table.Units[u].Type;
                 double decay = 1 - DetMath.Exp(-t.At(level).Decay * tf * every);

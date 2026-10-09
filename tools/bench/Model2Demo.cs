@@ -50,17 +50,20 @@ public sealed partial class World
         // The light chamber (unless --open, or a law named with --set): a bright sun (PhotonK 0.6) on short days (DayLen
         // 400) without seasons (Tilt 0) — the band at row 18 of 64 stays at 15–35 °C; without it the flat bedrock at the
         // equator warms to 45 °C and the seasons move the hot band (both models lose bodies to heat there).
-        var keep = (P.PhotonK, P.DayLen, P.Tilt);
+        var keep = (P.PhotonK, P.DayLen, P.Tilt, P.MotorDrag);
         bool Named(string n) => args.Any(x => x.StartsWith(n + "=", StringComparison.OrdinalIgnoreCase));
         if (Array.IndexOf(args, "--open") < 0)
         {
             if (!Named("PhotonK")) P.PhotonK = 0.6f;
             if (!Named("DayLen")) P.DayLen = 400;
             if (!Named("Tilt")) P.Tilt = 0;
-            Console.WriteLine(string.Create(Inv2, $"light chamber: PhotonK {P.PhotonK}, DayLen {P.DayLen}, Tilt {P.Tilt}; carrier litter {CarrierLitter}, band at row {BandY}"));
+            if (!Named("MotorDrag")) P.MotorDrag = 1;   // cells this small swim in a viscous world (low Reynolds number)
+            Console.WriteLine(string.Create(Inv2, $"light chamber: PhotonK {P.PhotonK}, DayLen {P.DayLen}, Tilt {P.Tilt}, MotorDrag {P.MotorDrag}; carrier litter {CarrierLitter}, band at row {BandY}"));
         }
         try
         {
+            Seeds.ReceptorPrefer = int.Parse(Arg2(args, "--receptor", "1"));
+            Seeds.ReceptorCount = int.Parse(Arg2(args, "--receptors", "2"));
             var set = Seeds.For(new World(TinySettings(seed)).Chem, int.Parse(Arg2(args, "--effort", "6000")));
             CarrierOf = set.Carrier;
             Console.WriteLine(set.Report);
@@ -69,21 +72,24 @@ public sealed partial class World
             if (ks.Contains("3")) K3(args, seed, set);
             if (ks.Contains("perf")) Model2Perf(args, seed, set);
         }
-        finally { P.MatterEnergy = law; (P.PhotonK, P.DayLen, P.Tilt) = keep; }
+        finally { P.MatterEnergy = law; (P.PhotonK, P.DayLen, P.Tilt, P.MotorDrag) = keep; }
     }
 
     // A flat lit world with the seed cells' letters lying as litter (`perCell` molecules of each in every cell).
     static bool Generated;   // --generated: a generated tiny world (terrain, water, litter of its seed) instead of a flat one
-    static World Model2World(int seed, double perCell, IEnumerable<int> species)
+    static World Model2World(int seed, double perCell, IEnumerable<int> species, int life = 0)
     {
-        var w = Generated ? Tiny(seed) : Blank(TinySide, TinySide, TinyLevels, seed);
+        World w;
+        if (Generated) w = new World(TinySettings(seed, 0, false, false, TinySide, TinySide, TinyLevels, life));
+        else if (life == 0) w = Blank(TinySide, TinySide, TinyLevels, seed);
+        else { w = new World(TinySettings(seed, 0, false, false, TinySide, TinySide, TinyLevels, life)); w.Flatten(); }
         foreach (int s in species.Distinct())
             for (int c = 0; c < w.N; c++) w.C[s][c] += Qty.Of(perCell);
         return w;
     }
 
     // What the seed cells are made of: every letter of both strands of their genomes (and of their proteins), the carrier.
-    static int[] SeedLetters(SeedSet set) => new[] { set.PhototrophDesign, set.HeterotrophDesign, set.KnockoutDesign }.SelectMany(d => d.Body.Keys).Select(k => int.Parse(k, Inv2)).Where(s => s % 2 == 0).Append(set.Carrier).Distinct().OrderBy(s => s).ToArray();
+    static int[] SeedLetters(SeedSet set) => new[] { set.PhototrophDesign, set.HeterotrophDesign, set.KnockoutDesign, set.PredatorDesign }.Where(d => d != null).SelectMany(d => d.Body.Keys).Select(k => int.Parse(k, Inv2)).Where(s => s % 2 == 0).Append(set.Carrier).Distinct().OrderBy(s => s).ToArray();
 
     // n bodies in the band of rows around the equator (the light is best there), spread over every longitude.
     static List<Agent> PlantBand(World w, CreatureDesign d, int n, int band = 6)
@@ -262,49 +268,64 @@ public sealed partial class World
 
     static void K2(string[] args, int seed, SeedSet set)
     {
-        int ticks = int.Parse(Arg2(args, "--ticks2", "3000")), n = int.Parse(Arg2(args, "--n2", "32"));
+        int ticks = int.Parse(Arg2(args, "--ticks2", "3000")), n = int.Parse(Arg2(args, "--n2", "32")), reps = int.Parse(Arg2(args, "--reps", "1"));
         double top = double.Parse(Arg2(args, "--food", "20"), Inv2);
-        var results = new List<(string label, double dy, double ci, int alive, int births)>();
-        foreach (var (label, design) in new[] { ("E-1", set.HeterotrophDesign), ("E-1Δ", set.KnockoutDesign) })
+        // Replicates: the same chemistry and scene, life's random streams perturbed (WorldSettings.LifeSeed = rep).
+        var rows = new List<(double eAll, double kAll, double eShare, double kShare, double eDy, double kDy, double eCi, double kCi)>();
+        for (int rep = 0; rep < reps; rep++)
         {
-            var w = Model2World(seed, 3, SeedLetters(set));
-            w.TrackHeat = true;
-            for (int c = 0; c < w.N; c++)
+            var r = new List<(double dy, double ci, double all, double share)>();
+            foreach (var (label, design) in new[] { ("E-1", set.HeterotrophDesign), ("E-1Δ", set.KnockoutDesign) })
             {
-                w.C[set.Carrier][c] += Qty.Of(CarrierLitter);
-                w.C[set.Food][c] += Qty.Of(top * (c / w.W) / (w.H - 1));   // charged food rising along y
-            }
-            int y0 = w.H / 2;
-            var bodies = new List<Agent>();
-            for (int k = 0; k < n; k++) bodies.AddRange(Plant(w, design, 1, (k * w.W) / n, y0, 0));
-            var atoms0 = Inputs(w, null);
-            var e0 = w.AuditEnergy();
-            var lastY = new Dictionary<long, int>();
-            long up = 0, down = 0;
-            int births0 = w.Births;
-            for (int t = 1; t <= ticks; t++)
-            {
-                w.Step();
-                foreach (var a in w.Agents)
+                var w = Model2World(seed, 3, SeedLetters(set), rep);
+                w.TrackHeat = true;
+                for (int c = 0; c < w.N; c++)
                 {
-                    if (a.Dead || a.Model != LifeModels.Chem) continue;
-                    if (lastY.TryGetValue(a.Id, out int ly)) { if (a.Y > ly) up++; else if (a.Y < ly) down++; }
-                    lastY[a.Id] = a.Y;
+                    w.C[set.Carrier][c] += Qty.Of(CarrierLitter);
+                    w.C[set.Food][c] += Qty.Of(top * (c / w.W) / (w.H - 1));   // charged food rising along y
                 }
+                int y0 = w.H / 2;
+                var bodies = new List<Agent>();
+                for (int k = 0; k < n; k++) bodies.AddRange(Plant(w, design, 1, (k * w.W) / n, y0, 0));
+                var atoms0 = Inputs(w, null);
+                var e0 = w.AuditEnergy();
+                var lastY = new Dictionary<long, int>();
+                long up = 0, down = 0;
+                int births0 = w.Births;
+                for (int t = 1; t <= ticks; t++)
+                {
+                    w.Step();
+                    foreach (var a in w.Agents)
+                    {
+                        if (a.Dead || a.Model != LifeModels.Chem) continue;
+                        if (lastY.TryGetValue(a.Id, out int ly)) { if (a.Y > ly) up++; else if (a.Y < ly) down++; }
+                        lastY[a.Id] = a.Y;
+                    }
+                }
+                BudgetEqual(atoms0, Inputs(w, atoms0), $"K2 {label}: atoms", 1e-6);
+                EnergyWorldCheck(w, e0, $"K2 {label}");
+                PoolCheck(w, $"K2 {label}");
+                var alive = w.Agents.Where(a => !a.Dead && a.Model == LifeModels.Chem).ToList();
+                double dy = bodies.Average(a => a.Y - y0);   // founders, alive or where they died
+                double all = alive.Count > 0 ? alive.Average(a => a.Y - y0) : 0, share = alive.Count > 0 ? alive.Count(a => a.Y > y0) / (double)alive.Count : 0;
+                double ci = up + down > 0 ? (up - down) / (double)(up + down) : 0;
+                r.Add((dy, ci, all, share));
+                Console.WriteLine(string.Create(Inv2, $"K2 rep {rep} {label}: {ticks} ticks on a food gradient 0→{top:0} along y: all living cells {all:+0.0;-0.0} rows from the start (mean), {100 * share:0}% on the food side; founders {dy:+0.0;-0.0} rows, chemotaxis index {ci:+0.000;-0.000} ({up} steps up, {down} down), {alive.Count} alive, {w.Births - births0} births; {Count2(w)}"));
             }
-            BudgetEqual(atoms0, Inputs(w, atoms0), $"K2 {label}: atoms", 1e-6);
-            EnergyWorldCheck(w, e0, $"K2 {label}");
-            PoolCheck(w, $"K2 {label}");
-            var alive = w.Agents.Where(a => !a.Dead && a.Model == LifeModels.Chem).ToList();
-            double dy = bodies.Average(a => a.Y - y0);   // founders, alive or where they died
-            double ci = up + down > 0 ? (up - down) / (double)(up + down) : 0;
-            results.Add((label, dy, ci, alive.Count, w.Births - births0));
-            Console.WriteLine(string.Create(Inv2, $"K2 {label}: {ticks} ticks on a food gradient 0→{top:0} along y: founders moved {dy:+0.0;-0.0} cells up the gradient (mean), chemotaxis index {ci:+0.000;-0.000} ({up} steps up, {down} down), {alive.Count} alive, {w.Births - births0} births; {Count2(w)}"));
+            rows.Add((r[0].all, r[1].all, r[0].share, r[1].share, r[0].dy, r[1].dy, r[0].ci, r[1].ci));
         }
-        var (e, ko) = (results[0], results[1]);
-        bool pass = e.dy > ko.dy + 1 && e.ci > ko.ci;
-        Console.WriteLine(string.Create(Inv2, $"K2 {(pass ? "PASS" : "FAIL")}: E-1 {e.dy:+0.0;-0.0} cells, CI {e.ci:+0.000;-0.000}; knockout {ko.dy:+0.0;-0.0} cells, CI {ko.ci:+0.000;-0.000}; atoms exact, energy in tolerance"));
+        // Paired over the replicates: E-1 against its knockout in the same world (mean row of the living cells).
+        var d = rows.Select(x => x.eAll - x.kAll).ToArray();
+        double mean = d.Average(), sd = d.Length > 1 ? Math.Sqrt(d.Sum(x => (x - mean) * (x - mean)) / (d.Length - 1)) : 0;
+        double tStat = sd > 0 ? mean / (sd / Math.Sqrt(d.Length)) : 0;
+        int wins = d.Count(x => x > 0);
+        double sign = 0;   // one-sided sign test: P(at least `wins` of n by chance)
+        for (int k = wins; k <= d.Length; k++) sign += Binomial(d.Length, k) / Math.Pow(2, d.Length);
+        bool pass = d.Length >= 5 ? wins >= d.Length - 1 && tStat > 2 : mean > 1 && rows.Average(x => x.eCi - x.kCi) > 0;
+        Console.WriteLine(string.Create(Inv2, $"K2 {(pass ? "PASS" : "FAIL")}: {d.Length} replicates; living E-1 {rows.Average(x => x.eAll):+0.0;-0.0} rows ({100 * rows.Average(x => x.eShare):0}% on the food side), knockout {rows.Average(x => x.kAll):+0.0;-0.0} ({100 * rows.Average(x => x.kShare):0}%); E-1 ahead in {wins} of {d.Length} (sign test p {sign:0.000}), mean difference {mean:+0.00;-0.00} ± {sd:0.00} rows (paired t {tStat:0.00}); founders {rows.Average(x => x.eDy):+0.0;-0.0} vs {rows.Average(x => x.kDy):+0.0;-0.0}, chemotaxis index {rows.Average(x => x.eCi):+0.000;-0.000} vs {rows.Average(x => x.kCi):+0.000;-0.000}; atoms exact, energy in tolerance"));
     }
+
+    static double Binomial(int n, int k) { double r = 1; for (int i = 1; i <= k; i++) r = r * (n - k + i) / i; return r; }
 
     // ---- K3: model 2 and model 1 in one world ----
 
@@ -316,44 +337,74 @@ public sealed partial class World
         Genome = "label 0\nlit 0\npick\njz 1\nlit 40\nattack\nlabel 1\ndrink\nenergy\nlit 80\nlt\njnz 0\npush 0\nlit 4\ndivide\njmp 0\n",
     };
 
+    // K3 on the flat scene (default) or, with --world WxHxL, on a generated world of that size with its own life (model 1,
+    // P.InitialPop by area) and the seeded model-2 cells planted over it: what lives after --ticks3, who killed whom
+    // (strikes of model 1, contact hydrolysis of the predator P-1), atoms and energy.
     static void K3(string[] args, int seed, SeedSet set)
     {
         int ticks = int.Parse(Arg2(args, "--ticks3", "10000"));
-        var w = Model2World(seed, 3, SeedLetters(set));
-        w.TrackHeat = true;
-        for (int c = 0; c < w.N; c++) { w.C[set.Carrier][c] += Qty.Of(CarrierLitter); w.C[set.Food][c] += Qty.Of(4); w.C[0][c] += Qty.Of(4); }
+        string size = Arg2(args, "--world", "");
+        World w;
         var m2 = new List<Agent>();
-        m2.AddRange(Plant(w, set.PhototrophDesign, 30, w.W / 2, w.H / 2, 28));
-        m2.AddRange(Plant(w, set.HeterotrophDesign, 30, w.W / 2, w.H / 2, 28));
-        var leaf = CreatureExamples.All[0];
         var m1 = new List<Agent>();
-        m1.AddRange(Plant(w, leaf, 40, w.W / 2, w.H / 2, 28));
-        m1.AddRange(Plant(w, Hunter(), 30, w.W / 2, w.H / 2, 28));
+        var leaf = CreatureExamples.All[0];
+        if (size.Length == 0)
+        {
+            w = Model2World(seed, 3, SeedLetters(set));
+            for (int c = 0; c < w.N; c++) { w.C[set.Carrier][c] += Qty.Of(CarrierLitter); w.C[set.Food][c] += Qty.Of(4); w.C[0][c] += Qty.Of(4); if (set.Prey >= 0) w.C[set.Prey][c] += Qty.Of(4); }
+            m2.AddRange(Plant(w, set.PhototrophDesign, 30, w.W / 2, w.H / 2, 28));
+            m2.AddRange(Plant(w, set.HeterotrophDesign, 30, w.W / 2, w.H / 2, 28));
+            if (set.PredatorDesign != null) m2.AddRange(Plant(w, set.PredatorDesign, 30, w.W / 2, w.H / 2, 28));
+            m1.AddRange(Plant(w, leaf, 40, w.W / 2, w.H / 2, 28));
+            m1.AddRange(Plant(w, Hunter(), 30, w.W / 2, w.H / 2, 28));
+        }
+        else
+        {
+            var dims = size.Split('x').Select(int.Parse).ToArray();
+            w = new World(TinySettings(seed, -1, false, !FlareLaw, dims[0], dims[1], dims[2]));
+            m1.AddRange(w.Agents.Where(a => !a.Dead));
+            // model 2 in groups over the land, by rows of every latitude (each group where it lands)
+            var rng = new SimRng(seed * 31 + 7);
+            int groups = int.Parse(Arg2(args, "--groups", "24"));
+            foreach (var d in new[] { set.PhototrophDesign, set.HeterotrophDesign, set.PredatorDesign }.Where(d => d != null))
+                for (int k = 0; k < groups / 3; k++)
+                {
+                    var r = w.SpawnDesign(d, rng.Next(w.W), w.H / 6 + rng.Next(2 * w.H / 3), new SpawnOptions { Count = 5, Radius = 3, Matter = MatterSource.Import, Energy = EnergySource.Import });
+                    if (r.Ok) m2.AddRange(r.Agents);
+                }
+        }
+        w.TrackHeat = true;
         var atoms0 = Inputs(w, null);
         var e0 = w.AuditEnergy();
         var seen = new HashSet<Agent>(m2.Concat(m1));
         var killed = new int[3];   // by model of the victim
         var counted = new HashSet<long>();
-        Console.WriteLine($"K3 seed {seed}: planted {m2.Count} model-2 (F-1, E-1) and {m1.Count} model-1 (Leaf, Hunter-1)");
+        Console.WriteLine($"K3 seed {seed} {(size.Length == 0 ? "flat scene" : "world " + size)}: planted {m2.Count} model-2 (F-1, E-1{(set.PredatorDesign != null ? ", P-1 hydrolysing " + w.Chem.NameEn[set.Prey] : "")}), model 1: {m1.Count}");
+        int peak2 = 0;
         for (int t = 1; t <= ticks; t++)
         {
             w.Step();
             foreach (var a in w.Agents) seen.Add(a);
             foreach (var a in seen) if (a.Dead && a.Cause == CauseKilled && counted.Add(a.Id)) killed[a.Model == LifeModels.Chem ? 2 : 1]++;
             seen.RemoveWhere(a => a.Dead);
-            if (t % Math.Max(1, ticks / 5) == 0)
+            if (t % 100 == 0) peak2 = Math.Max(peak2, w.Agents.Count(a => !a.Dead && a.Model == LifeModels.Chem));
+            if (t % Math.Max(1, ticks / 10) == 0)
             {
                 PoolCheck(w, $"K3 tick {t}");
                 BudgetEqual(atoms0, Inputs(w, atoms0), $"K3 tick {t}: atoms", 1e-6);
                 int n1 = w.Agents.Count(a => !a.Dead && a.Model == LifeModels.Vm), n2 = w.Agents.Count(a => !a.Dead && a.Model == LifeModels.Chem);
-                double up = w.Agents.Where(a => !a.Dead && a.ModelState is Cell).Sum(a => ((Cell)a.ModelState).Uptake);
-                Console.WriteLine($"  tick {t}: model 1 {n1}, model 2 {n2} ({Count2(w)}); killed: model-1 bodies {killed[1]}, model-2 bodies {killed[2]}; model-2 uptake now held {up:0.0}");
+                int p1 = w.Agents.Count(a => !a.Dead && a.Model == LifeModels.Chem && set.Predator != null && a.G.Length * 2 == set.Predator.Length && a.Hash == PredatorHash(set));
+                long dig = w.Agents.Where(a => !a.Dead && a.ModelState is Cell).Sum(a => ((Cell)a.ModelState).Digested);
+                Console.WriteLine($"  tick {t}: model 1 {n1}, model 2 {n2} (P-1 genotype {p1}; {Count2(w)}); killed: model-1 bodies {killed[1]} (by hydrolysis {w.DigestKills}), model-2 bodies {killed[2]}; splits by living hydrolysers {dig}");
             }
         }
         string energy = EnergyWorldCheck(w, e0, "K3");
         int a1 = w.Agents.Count(a => !a.Dead && a.Model == LifeModels.Vm), a2 = w.Agents.Count(a => !a.Dead && a.Model == LifeModels.Chem);
-        Console.WriteLine($"K3 {(a1 > 0 && a2 > 0 && killed[2] > 0 ? "PASS" : "PARTIAL")}: after {ticks} ticks model 1 {a1}, model 2 {a2} alive; model-2 bodies killed {killed[2]}, model-1 bodies killed {killed[1]}; atoms exact; {energy}");
+        Console.WriteLine($"K3 {(a1 > 0 && a2 > 0 ? "PASS" : "FAIL")}: after {ticks} ticks model 1 {a1}, model 2 {a2} alive (model 2 at most {peak2}); model-2 bodies killed {killed[2]}, model-1 bodies killed {killed[1]}, of them by model-2 hydrolysis {w.DigestKills}; atoms exact; {energy}");
     }
+
+    static ulong PredatorHash(SeedSet set) => set.Predator == null ? 0 : Hash64(GeneTable.Pack(set.Predator));
+    static ulong Hash64(byte[] g) { var a = new Agent(0, 0, 0, g, new byte[g.Length], LifeModels.Chem); return a.Hash; }
 
     // ---- speed ----
 
@@ -367,12 +418,15 @@ public sealed partial class World
             var bodies = Plant(w, design, n, w.W / 2, w.H / 2, 40);
             for (int t = 0; t < 20; t++) w.Step();   // assembly and the first slow steps
             double busy0 = w.AgentBusy;
+            ChemModel.Profile = Array.IndexOf(args, "--prof") >= 0; Array.Clear(ChemModel.Prof);
             long bodyTicks = 0;
             var sw = Stopwatch.StartNew();
             for (int t = 0; t < ticks; t++) { bodyTicks += w.Agents.Count(a => !a.Dead); w.Step(); }
             sw.Stop();
             double us = (w.AgentBusy - busy0) * 1000 / Math.Max(1, bodyTicks);
             Console.WriteLine(string.Create(Inv2, $"perf {label}: {bodies.Count} planted, {bodyTicks / (double)ticks:0} bodies on average over {ticks} ticks: agent phase {us:0.00} µs per body per tick, whole step {sw.Elapsed.TotalMilliseconds / ticks:0.00} ms per tick (processors {Environment.ProcessorCount})"));
+            if (ChemModel.Profile) Console.WriteLine("   model 2 by part, µs per body per tick: " + string.Join(", ", Enumerable.Range(0, 7).Select(k => ChemModel.ProfNames[k] + " " + (ChemModel.Prof[k] * 1e6 / Stopwatch.Frequency / Math.Max(1, bodyTicks)).ToString("0.00", Inv2))));
+            ChemModel.Profile = false;
         }
     }
 }
