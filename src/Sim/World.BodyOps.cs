@@ -86,6 +86,7 @@ public sealed partial class World
                 slot = k; break;
             }
         }
+        Settle(a);   // law 1: what it owed is paid from what it held before the molecule is folded away
         RemoveMol(a, m);
         a.Mass += Chem.Mass[m]; // folded substrate remains physically inside the body
         a.Volume += Chem.Volume[m];
@@ -159,6 +160,17 @@ public sealed partial class World
     // Energy from a reaction: part of what is released warms the body instead.
     void Release(Agent a, float de)
     {
+        if (MatterLaw)
+        {
+            // Law 1 (World.Charge): an uphill reaction takes its energy from carriers into the product's bonds
+            // (the caller checked they hold it); a downhill one warms the body and charges it.
+            if (de <= 0) { Relax(a, -de, false, false); a.LifeUphill -= de; return; }
+            ReleaseGain(a, de);
+            a.GainChem += de * (1 - P.CaptureHeat);
+            a.TickChem += de;
+            a.LastMeal = a.Age;
+            return;
+        }
         double e0 = a.Energy, h0 = a.HeatHeld;
         if (de <= 0) { a.Energy += de; a.LifeUphill -= de; Flows[FRounding] += de - (a.Energy - e0); return; }
         double keep = de * (1.0 - P.HeatShare);
@@ -183,7 +195,7 @@ public sealed partial class World
         for (; done < times; done++)
         {
             if (a.Inv[s1] == 0 || a.Inv[s2] == 0 || (s1 == s2 && a.Inv[s1] < 2)) break;
-            if (de < 0 && Avail(a) + de < P.EnergyReserve) break;
+            if (de < 0 && (Avail(a) + de < P.EnergyReserve || !CarriersCover(a, -de, s1, s2))) break;
             RemoveMol(a, s1); RemoveMol(a, s2); AddMol(a, p);
             Release(a, de);
         }
@@ -208,7 +220,7 @@ public sealed partial class World
         for (; done < times; done++)
         {
             if (a.Inv[s] == 0) break;
-            if (de < 0 && Avail(a) + de < P.EnergyReserve) break;
+            if (de < 0 && (Avail(a) + de < P.EnergyReserve || !CarriersCover(a, -de, s, -1))) break;
             RemoveMol(a, s); AddMol(a, x); if (y >= 0) AddMol(a, y);
             Release(a, de);
         }
@@ -470,6 +482,7 @@ public sealed partial class World
     {
         Dissipate(a, P.CostExpel);
         if (a.Inv[s] == 0) return;
+        Settle(a);   // law 1: costs before the molecule leaves are paid from what the body held
         RemoveMol(a, s);
         if (ResProbe != null) ResExpel(s);
         EpMol(EnergyEconomyProbe.ExpelMol, s);
@@ -538,11 +551,12 @@ public sealed partial class World
             RemoveMol(t, s);
             AddMol(a, s);
             EpMol(EnergyEconomyProbe.TornMol, s);
+            if (MatterLaw && EnergyProbe != null) EpAdd(EnergyEconomyProbe.TornStore, Chem.Gap[s]);   // law 1: the charge it carries
             food?.Prey(a, t, Chem.E[s]);
             pred?.Tear(a, t, s, Chem);
             torn++;
         }
-        if (torn > 0)
+        if (torn > 0 && !MatterLaw)   // law 1: molecules carry their own charge, no store travels with them
         {
             double before = EnergyProbe != null ? a.Energy : 0;
             CarryStore(t, a, torn);
@@ -557,7 +571,7 @@ public sealed partial class World
         Note(EvKind.Attack);
         Act(a, ActAttack, tc == cell ? -1 : Neighbour4(cell, tc));
         AddFlash(t.X, t.Y, FlashAttack, tc == cell ? -1 : Neighbour4(cell, tc));
-        if (t.InvTotal < P.MinBody || t.Energy <= 0)
+        if (BodyUnits(t) < P.MinBody || (!MatterLaw && t.Energy <= 0))
         {
             pred?.Kill(a, t, tc, Chem);
             EpKilled(t);
@@ -590,9 +604,13 @@ public sealed partial class World
         RemoveMol(t, s);
         AddMol(a, s);
         EpMol(EnergyEconomyProbe.TakenMol, s);
-        double had = EnergyProbe != null ? a.Energy : 0;
-        CarryStore(t, a, 1);
-        if (EnergyProbe != null) EpAdd(EnergyEconomyProbe.TakenStore, a.Energy - had);
+        if (MatterLaw) { if (EnergyProbe != null) EpAdd(EnergyEconomyProbe.TakenStore, Chem.Gap[s]); }   // law 1: its own charge
+        else
+        {
+            double had = EnergyProbe != null ? a.Energy : 0;
+            CarryStore(t, a, 1);
+            if (EnergyProbe != null) EpAdd(EnergyEconomyProbe.TakenStore, a.Energy - had);
+        }
         FoodProbe?.Prey(a, t, Chem.E[s]);
         a.NTakes++;
         if (BitOperations.IsPow2(a.NTakes)) BioNote(a, Tick, BioKind.Theft, t.Id, a.NTakes);
@@ -605,6 +623,7 @@ public sealed partial class World
         Dissipate(a, P.CostSocial * 0.5f);
         var t = Partner(a, cell);
         if (t == null || a.Inv[s] == 0) return;
+        Settle(a);
         RemoveMol(a, s);
         AddMol(t, s);
         a.NGives++;
@@ -619,8 +638,17 @@ public sealed partial class World
         var t = Partner(a, cell);
         float e = (float)Math.Min(Math.Clamp(amount, 0, 255) * P.ShareUnit, Avail(a) - P.EnergyReserve);
         if (t == null || e <= 0) return;
-        a.Energy -= e;
-        t.Energy += e;
+        if (MatterLaw)
+        {
+            Settle(a);
+            e = (float)HandCharge(a, t, e);   // law 1: charged molecules go over (World.Charge)
+            if (e <= 0) return;
+        }
+        else
+        {
+            a.Energy -= e;
+            t.Energy += e;
+        }
         t.TickGot += e;
         t.LifeGot += e;
         Note(EvKind.Share);
@@ -848,6 +876,7 @@ public sealed partial class World
             if (a.Inv[s] >= P.PileUnits && (best < 0 || a.Inv[s] > a.Inv[best])) best = s;
         if (best < 0 || Avail(a) < P.CostPile + P.EnergyReserve) return;
         Dissipate(a, P.CostPile);
+        Settle(a);
         var add = new ushort[Chemistry.S];
         int n = Math.Min(a.Inv[best], ushort.MaxValue);
         add[best] = (ushort)n;
@@ -867,6 +896,7 @@ public sealed partial class World
         int level = c == cell ? a.Z : WalkLevel(c, a.Z);
         if (level < 3 || level >= Z - 1) return;
         if (a.InvTotal < 4 + P.MinBody || Avail(a) < P.CostGrow + P.EnergyReserve) return;
+        Settle(a);
         var add = new ushort[Chemistry.S];
         for (int k = 0; k < 4; k++) { int s = RandomMol(a); add[s]++; RemoveMol(a, s); }
         Dissipate(a, P.CostGrow);

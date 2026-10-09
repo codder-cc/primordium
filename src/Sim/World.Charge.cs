@@ -105,6 +105,15 @@ public sealed partial class World
         return a.Due > 0;
     }
 
+    // Law 1: can the remainder and the carriers it holds — without the whole molecules s1 (and s2) it is about
+    // to use as reactants — pay `need` into an uphill reaction? (Law 0: its check is on Energy alone.)
+    bool CarriersCover(Agent a, double need, int s1, int s2)
+    {
+        if (!MatterLaw) return true;
+        long q = ChargeRaw(a) - ((long)Chem.Gap[s1] << Qty.Bits) - (s2 >= 0 ? (long)Chem.Gap[s2] << Qty.Bits : 0);
+        return Math.Max(0, a.Energy) + q / QOne >= need;
+    }
+
     // ---- moving fractional molecules ----
 
     // A part m of the body's molecules of kind `from` becomes `to1` (+ `to2`): relaxation (s* → s), excitation
@@ -270,7 +279,8 @@ public sealed partial class World
             }
             if (best < 0) break;
             int se = Chem.SplitEnergy(best);
-            long m = Math.Min(Have(a, best), (long)Math.Ceiling((need - got) / (se * keepShare) * QOne));
+            // Enough to cover what excitation on the grid of whole quanta leaves out (≤ one quantum per kind).
+            long m = Math.Min(Have(a, best), (long)Math.Ceiling(((need - got) * QOne + 2 * Chemistry.S) / (se * keepShare)));
             if (m <= 0) break;
             Shift(a, best, Chem.SplitA[best], Chem.SplitB[best], Qty.FromRaw(m));
             double bond = m * (double)se / QOne, de = bond * P.EnergyK;

@@ -416,11 +416,16 @@ public sealed partial class World
             (150, "VoxelSpace", 1.5), (250, "GasExpand", 2), (350, "Gravity", 1.6), (450, "HeatShare", 0.5), (500, "CostBase", 2),
             (550, "EnergyK", 1.25), (650, "DecayK", 3), (700, "VoxelSpace", 0.6), (800, "EnergyK", 0.8 / 1.25),
         };
+        // Body energy as matter switched on and off (P.MatterEnergy, World.Charge): the stores become a legacy
+        // remainder, then fill again; charge stays in the molecules either way.
+        var switches = new (int tick, string name, double value)[] { (300, "MatterEnergy", 1), (420, "CaptureHeat", 0.15), (600, "MatterEnergy", 0), (850, "MatterEnergy", 1) };
         string notes = "";
         for (int t = 1; t <= 1000; t++)
         {
             foreach (var (tick, name, factor) in plan)
                 if (tick == t) Require(w.SetParam(name, ParamRegistry.Get(name) * factor), $"law {name}");
+            foreach (var (tick, name, value) in switches)
+                if (tick == t) Require(w.SetParam(name, value), $"law {name}");
             w.Step();
             if (t % 250 != 0) continue;
             var atoms = w.ElementBudget();
@@ -432,10 +437,10 @@ public sealed partial class World
             notes = EnergyWorldCheck(w, e0, $"laws changed mid-run, tick {t}");
         }
         var flows = w.AuditEnergy().Flows;
-        Require(w.ParamLog.Count == plan.Length, $"law log {w.ParamLog.Count} of {plan.Length}");
+        Require(w.ParamLog.Count == plan.Length + switches.Length, $"law log {w.ParamLog.Count} of {plan.Length + switches.Length}");
         Require(flows[FScale] != 0, "EnergyK ≠ 1 made no EnergyK flow");
         w.CheckCellLists();
-        Console.WriteLine($"PASS laws changed mid-run ({string.Join(", ", plan.Select(p => p.name).Distinct())}): atoms close, {notes}, EnergyK flow {flows[FScale]:F1}; population {w.Agents.Count}");
+        Console.WriteLine($"PASS laws changed mid-run ({string.Join(", ", plan.Select(p => p.name).Concat(switches.Select(p => p.name)).Distinct())}): atoms close, {notes}, EnergyK flow {flows[FScale]:F1}; population {w.Agents.Count}");
         ParamRegistry.ResetDefaults();
     }
 

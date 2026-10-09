@@ -221,6 +221,16 @@ public sealed partial class World
     void StrikeHeat(Agent a, Agent t, double q)
     {
         if (q <= 0) return;
+        if (MatterLaw)
+        {
+            // Law 1: from the attacker's carriers (relaxed, not into its cell) into the victim's held heat.
+            double got = Relax(a, q, false, true);
+            double h = Math.Min(got, q), h0 = t.HeatHeld;
+            t.HeatHeld += h;
+            t.Tb += (float)h * 6f / (5f + t.Mass);
+            Flows[FRounding] += h - (t.HeatHeld - h0);
+            return;
+        }
         double before = a.Energy + t.HeatHeld;
         a.Energy -= q;
         t.HeatHeld += q;

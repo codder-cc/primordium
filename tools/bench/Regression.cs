@@ -46,7 +46,10 @@ public sealed partial class World
             if (Mat[v] != 0) Mix((ulong)v << 32 ^ (ulong)Mat[v] << 24 ^ (ulong)Units[v] << 8 ^ Order[v]);
         foreach (var c in C) for (int i = 0; i < N; i++) Mix((ulong)c[i].Raw);
         foreach (var a in Agents)
+        {
             Mix((ulong)a.Id ^ (ulong)a.X << 40 ^ (ulong)a.Y << 50 ^ (ulong)a.Z << 20 ^ (ulong)BitConverter.DoubleToInt64Bits(a.Energy) ^ a.Hash);
+            if (MatterLaw) Mix((ulong)ChargeRaw(a) ^ (ulong)BitConverter.DoubleToInt64Bits(a.Due));   // law 1: the energy is in the molecules
+        }
         return h;
     }
     static void BudgetEqual(double[] a, double[] b, string stage, double tolerance = 0.002)

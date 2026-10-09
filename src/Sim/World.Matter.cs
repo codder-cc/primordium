@@ -442,8 +442,15 @@ public sealed partial class World
     }
 
     // Action/upkeep energy dissipates as heat; energy transfers and endothermic reactions do not.
+    // With P.MatterEnergy 1 a cost is owed (Agent.Due) and settled from the body's charge (World.Charge):
+    // at the end of its own tick, or at once if it is paid outside that tick (pushed, struck from orbit).
     void Dissipate(Agent a, double cost)
     {
+        if (MatterLaw)
+        {
+            if (cost > 0) { a.Due += cost; if (cur?.Body != a) Settle(a); }
+            return;
+        }
         double heat = Math.Min(Math.Max(0, a.Energy), Math.Max(0, cost)), before = a.Energy;
         int cell = a.Y * W + a.X;
         heatIn[cell] += (float)heat;

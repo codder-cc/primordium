@@ -75,7 +75,7 @@ public sealed partial class World
             if (InWater(c, level)) a.Lift += a.Z - level;
             else Dissipate(a, P.CostFall * Math.Max(0, a.Z - level - 1) * (1 + a.Mass * P.Gravity));
             a.Z = level;
-            if (a.Energy <= 0) Die(a, c, CauseBroken);
+            if (Starved(a)) Die(a, c, CauseBroken);
         }
     }
 

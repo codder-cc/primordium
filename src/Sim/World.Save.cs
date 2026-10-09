@@ -63,7 +63,10 @@ public sealed partial class World
     // 16: the world's size (WorldSettings.Width/Height/Levels) — in the settings and, for the list of saves,
     // at the end of the header (width, height, levels). A file before it is 256×160×192 whatever its
     // settings say; a world of another size cannot be written in an older format.
-    public const int SaveVersion = 16, OldestSaveVersion = 1;
+    // 17: a body's debt for its tick (Agent.Due, P.MatterEnergy 1: costs it could not settle from its charge
+    // yet; 0 for every body of a world with the law off) at the end of its record, after its ledge pressing.
+    // Older files: no body owes anything.
+    public const int SaveVersion = 17, OldestSaveVersion = 1;
     static readonly byte[] SaveMagic = Encoding.ASCII.GetBytes("PRIMSAVE");
     const int EndMarker = 0x21444E45;   // "END!"
 
@@ -649,6 +652,8 @@ public sealed partial class World
             s.V(ref dir);
             a.ClimbDir = (sbyte)(dir - 1);
         }
+        if (s.Version >= 17) s.V(ref a.Due);
+        else if (!s.Reading && a.Due > 0) throw new InvalidOperationException($"save format {s.Version} cannot hold a body's debt (Agent.Due)");
     }
 
     // ---- the chronicle (save version 2) ----

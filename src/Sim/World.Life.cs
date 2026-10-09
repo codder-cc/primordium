@@ -75,7 +75,10 @@ public sealed partial class World
     void Live(Agent a)
     {
         long liveStart = ProfileOps ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+        var ctx = cur;
+        if (ctx != null) ctx.Body = a;   // its own costs wait for the end of its tick (World.Charge)
         LiveBody(a);
+        if (ctx != null) ctx.Body = null;
         if (ProfileOps && cur != null) cur.OpTicks[Genome.OpSlots] += System.Diagnostics.Stopwatch.GetTimestamp() - liveStart;
     }
 
@@ -86,7 +89,7 @@ public sealed partial class World
         if (a.Dead) return;
         if (a.Target?.Dead == true) a.Target = null;
         if (a.LinkWant?.Dead == true) a.LinkWant = null;
-        double e0 = a.Energy;
+        double e0 = Held(a);
         float kids0 = a.LifeKids, spent0 = a.LifeUpkeep + a.LifeHarm + a.LifeSpill;   // the energy probe (observation)
         a.TickPhoto = a.TickChem = a.TickMine = a.TickAttack = a.TickHeat = 0;
         long restStart = ProfileOps ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
@@ -165,8 +168,9 @@ public sealed partial class World
         a.EnzN = n;
 
         // Holding a store of energy leaks some of it as heat — little in a modest store, steeply more
-        // the more is hoarded beyond it. There is no cap.
-        if (a.Energy > 0)
+        // the more is hoarded beyond it. There is no cap. (Law 1: the charge is held by molecules, and leaks
+        // the way they do — decay, reactive damage, wear; there is no store to leak.)
+        if (!MatterLaw && a.Energy > 0)
         {
             double ratio = a.Energy / a.Store, hold = P.HoldK * a.Energy * ratio * ratio;
             Dissipate(a, hold);
@@ -179,7 +183,8 @@ public sealed partial class World
         a.EmaGot += (a.TickGot - a.EmaGot) * 0.01f;
         a.EmaUpkeep += (upkeep + a.LastCycles * P.CostInstr - a.EmaUpkeep) * 0.01f;
         a.EmaHarm += (harm - a.EmaHarm) * 0.01f;
-        a.EmaNet += ((float)(a.Energy - e0) - a.EmaNet) * 0.01f;
+        Settle(a);   // law 1: this tick's costs, from what it holds now (nothing with the law off)
+        a.EmaNet += ((float)(Held(a) - e0) - a.EmaNet) * 0.01f;
         a.TickGot = 0;
         a.Age++;
         if ((a.Age & 7) == 0) ChronLive(a);   // the chronicle looks: depth, caves, water (observation only)
@@ -217,12 +222,12 @@ public sealed partial class World
         if (WearLaw) Wear(a, cell);
         if (EnergyProbe != null) EpLive(a, e0, kids0, spent0);
 
-        if (a.Energy <= 0)
+        if (Starved(a))
         {
             if (flareHarm > upkeep && flareHarm >= harm) { FlareKilled(); Die(a, cell, CauseFlare); }
             else Die(a, cell, harm > upkeep ? CauseClimate : CauseStarve);
         }
-        else if (a.InvTotal < P.MinBody) Die(a, cell, CauseBroken);
+        else if (BodyUnits(a) < P.MinBody) Die(a, cell, CauseBroken);
     }
 
     // Recoil from expelled mass or pushes of a motor protein accumulate into motion. On land one block
@@ -335,8 +340,18 @@ public sealed partial class World
                 continue;
             }
             if (a.Id > b.Id) continue;
-            double f = (a.Energy - b.Energy) * P.LinkFlow;
-            a.Energy -= f; b.Energy += f;
+            double f;
+            if (MatterLaw)
+            {
+                // Law 1: the richer one's charged molecules flow to the poorer (a colony's nutrient current).
+                f = (Charge(a) - Charge(b)) * P.LinkFlow;
+                f = f > 0 ? HandCharge(a, b, f) : -HandCharge(b, a, -f);
+            }
+            else
+            {
+                f = (a.Energy - b.Energy) * P.LinkFlow;
+                a.Energy -= f; b.Energy += f;
+            }
             var to = f > 0 ? b : a;
             to.TickGot += (float)Math.Abs(f);
             to.LifeGot += (float)Math.Abs(f);
@@ -368,6 +383,8 @@ public sealed partial class World
     void Die(Agent a, int cell, int cause, int burialVoxel = -1)
     {
         if (a.Dead) return;
+        Settle(a);    // law 1: what it owes is paid from what it still holds; what it cannot pay never moved
+        a.Due = 0;
         cell = a.Y * W + a.X;   // where it actually is: its own deeds may have pushed it elsewhere this tick
         if (burialVoxel < 0 && InCave(a)) burialVoxel = cell * Z + Math.Max(1, a.Z - 1);
         EpDeath(a);   // the energy probe (observation)
@@ -457,15 +474,18 @@ public sealed partial class World
         if (tot < P.MinBody || a.InvTotal - tot < P.MinBody) { Interlocked.Increment(ref DivFail[4]); return; }
 
         Dissipate(a, cost);
+        Settle(a);   // law 1: paid from what it holds before the child takes its share (with its charge)
         var life = LifeModels.Get(a.Model);
         var (g, p) = life.Mutate(a.G, a.Prot, Rng);
         var child = new Agent(NewId(), a.Lineage, a.Gen + 1, g, p, a.Model) { Tb = a.Tb };
         Looks.Inherit(child, a, Rng);
-        child.Energy = a.Energy * frac;
+        double before = Held(a);
+        child.Energy = a.Energy > 0 ? a.Energy * frac : 0;   // law 1: a legacy remainder (0 for bodies born under it)
         a.Energy -= child.Energy;
-        a.LifeKids += (float)(cost + child.Energy);
+        if (!MatterLaw) a.LifeKids += (float)(cost + child.Energy);
         for (int s = 0; s < Chemistry.S; s++)
             for (int k = 0; k < give[s]; k++) { RemoveMol(a, s); AddMol(child, s); }
+        if (MatterLaw) a.LifeKids += (float)(cost + before - Held(a));   // law 1: the charge its molecules took along
         life.InheritState(a, child);
         Born(a, child, to);
         Act(a, ActDivide, to == cell ? -1 : Neighbour4(cell, to));
@@ -473,7 +493,7 @@ public sealed partial class World
 
     void Born(Agent parent, Agent child, int cell, Agent mate = null)
     {
-        child.LifeStart = (float)child.Energy;
+        child.LifeStart = (float)Held(child);
         child.Z = WalkLevel(cell, parent.Z);
         SetLift(child, cell, child.Z, Level(parent));   // born in water: at its parent's height
         Place(child, cell);
@@ -497,6 +517,7 @@ public sealed partial class World
         var t = Partner(a, cell);
         if (t == null || t.Model != a.Model || Tick - t.MateTick > P.HandshakeTicks || Avail(t) < P.MateMinEnergy || Avail(a) < P.MateMinEnergy) return;
         if (!Fits(cell, a.Z, (a.Volume + t.Volume) * P.MateShare) || a.InvTotal < 2 * P.MinBody || t.InvTotal < 2 * P.MinBody) return;
+        Settle(a);   // law 1: paid from what it holds before it gives its share
         var life = LifeModels.Get(a.Model);
         var (g0, p0) = life.Cross(a, t, Rng);
         var (g, p) = life.Mutate(g0, p0, Rng);
@@ -504,15 +525,18 @@ public sealed partial class World
         Looks.Inherit(child, Rng.NextDouble() < 0.5 ? a : t, Rng);
         foreach (var parent in new[] { a, t })
         {
-            double e = parent.Energy * P.MateShare;
+            double held = MatterLaw ? Held(parent) : 0;
+            double e = parent.Energy * P.MateShare;   // law 1: of a legacy remainder only (0 for bodies born under it)
+            if (MatterLaw && e < 0) e = 0;
             parent.Energy -= e;
-            parent.LifeKids += (float)e;
+            if (!MatterLaw) parent.LifeKids += (float)e;
             child.Energy += e;
             for (int s = 0; s < Chemistry.S; s++)
             {
                 int k = (int)(parent.Inv[s] * P.MateShare);
                 for (int j = 0; j < k && parent.InvTotal > P.MinBody; j++) { RemoveMol(parent, s); AddMol(child, s); }
             }
+            if (MatterLaw) parent.LifeKids += (float)(held - Held(parent));   // the charge its molecules took along
         }
         if (child.InvTotal < P.MinBody)
         {
@@ -586,31 +610,39 @@ public sealed partial class World
             if (q < 0) break;
             AddMol(a, q);
         }
-        // Harvest only released bond energy; all reaction products stay in the world.
+        // Harvest only released bond energy; all reaction products stay in the world. Law 1 (World.Charge):
+        // only as much as the new body's molecules can hold as charge once captured (CaptureHeat warms it).
+        float need = P.SpawnEnergy;
+        if (MatterLaw)
+        {
+            double keep = 1 - P.CaptureHeat;
+            need = keep > 0 ? (float)Math.Min(need, Math.Max(0, Capacity(a) - Charge(a)) / keep) : 0;
+        }
         float energy = 0;
-        if (looseOnly || Chem.Model != 0) energy = (float)LocalReactions(i, P.SpawnEnergy, true);
+        if (looseOnly || Chem.Model != 0) energy = need > 0 ? (float)LocalReactions(i, need, true) : 0;
         else
-            for (int tries = 0; tries < Chemistry.S && energy < P.SpawnEnergy; tries++)
+            for (int tries = 0; tries < Chemistry.S && energy < need; tries++)
             {
                 int best = -1;
                 for (int s = 0; s < Chemistry.S; s++)
                     if (Chem.SplitExo[s] && C[s][i] >= 0.1f && (best < 0 || Chem.SplitEnergy(s) > Chem.SplitEnergy(best))) best = s;
                 if (best < 0) break;
-                Qty take = Qty.Min(C[best][i], (P.SpawnEnergy - energy) / Chem.SplitEnergy(best));
+                Qty take = Qty.Min(C[best][i], (need - energy) / Chem.SplitEnergy(best));
                 C[best][i] -= take;
                 C[Chem.SplitA[best]][i] += take;
                 if (Chem.SplitB[best] >= 0) C[Chem.SplitB[best]][i] += take;
                 energy += (float)(take * Chem.SplitEnergy(best));
                 Flows[FAbio] += take * Chem.SplitEnergy(best);
             }
-        if (a.InvTotal < P.MinBody || energy <= 0)
+        if (a.InvTotal < P.MinBody || (energy <= 0 && (!MatterLaw || ChargeRaw(a) <= 0)))
         {
             for (int s = 0; s < Chemistry.S; s++) C[s][i] += a.Inv[s];
             heatIn[i] += energy;
             Flows[FStillborn] += energy;
             return false;
         }
-        a.Energy = a.LifeStart = energy;
+        if (MatterLaw) { ReleaseGain(a, energy); a.LifeStart = (float)Held(a); }   // law 1: its molecules are charged
+        else a.Energy = a.LifeStart = energy;
         a.Z = Height[i];
         Place(a, i); Agents.Add(a); Spawns++;
         EvoRegister(a);   // a founder: a root of the family tree
@@ -737,7 +769,7 @@ public sealed partial class World
             if (a.Dead) continue;
             c.Pop++;
             c.AvgLen += a.G.Length;
-            c.AvgEnergy += (float)a.Energy;
+            c.AvgEnergy += (float)Held(a);
             c.AvgAge += a.Age;
             c.AvgCycles += a.LastCycles;
             c.AvgTb += a.Tb;

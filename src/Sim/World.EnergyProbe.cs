@@ -115,7 +115,7 @@ public sealed partial class World
         var d = EpSlot;
         int b = EnergyEconomyProbe.DietBase + Diet(a) * EnergyEconomyProbe.DietKeys;
         d[b + EnergyEconomyProbe.DTicks]++;
-        d[b + EnergyEconomyProbe.DNet] += a.Energy - e0;
+        d[b + EnergyEconomyProbe.DNet] += Held(a) - e0;
         d[b + EnergyEconomyProbe.DKids] += a.LifeKids - kids0;
         d[b + EnergyEconomyProbe.DPhoto] += a.TickPhoto;
         d[b + EnergyEconomyProbe.DChem] += a.TickChem;

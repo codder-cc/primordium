@@ -71,6 +71,7 @@ public sealed partial class World
         public Agent DepthAgent;
         public int DepthBest;
         public double Busy;   // ms spent stepping this tile's agents (diagnostics)
+        public Agent Body;    // the body whose tick this is (P.MatterEnergy 1: its costs are settled at the end, World.Charge)
         public readonly long[] OpTicks = new long[Genome.OpSlots + 2];   // with ProfileOps: time per instruction kind, + VM-less rest, + births
     }
     public static bool ProfileOps;   // tools/bench --ops: time every instruction kind (slows the run a little)
