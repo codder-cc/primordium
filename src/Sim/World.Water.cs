@@ -54,6 +54,13 @@ public sealed partial class World
     // deeper the body is.
     float Exposure(Agent a, int cell, int s)
     {
+        if (P.Volatility != 0)
+        {
+            // Volatility 1: the share in the air dissolves from the surface, the rest lies on the bottom.
+            float v = Chem.Volatile[s];
+            float lying = OnFloor(a) ? 1 : P.Solubility * MathF.Exp(-a.Lift);
+            return v <= 0 ? lying : v >= 1 ? MathF.Exp(-AirBelow(a, cell)) : v * MathF.Exp(-AirBelow(a, cell)) + (1 - v) * lying;
+        }
         if (s == Chem.Gas) return MathF.Exp(-AirBelow(a, cell));
         return OnFloor(a) ? 1 : P.Solubility * MathF.Exp(-a.Lift);
     }

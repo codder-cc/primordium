@@ -393,6 +393,16 @@ public static class P
     // CaveGasK: blocks of roof for an e-fold less of the column's air reaching a body under a roof
     // (0 — off: under a roof only what lies on the cave floor, as before).
     public static float GasDiffK = 1f, CaveGasK = 0f;
+    // Volatility (Chemistry.Volatile). 0 — one species is the gas (the least cohesive: least mass·(0.1 +
+    // bond)): it alone diffuses through the air, is a bubble in bodies, dissolves from the surface, is
+    // scavenged by rain and never settles or is poured. 1 — every species has a volatility, the share of
+    // its loose pool in the air: v = e^(−(L − L_min)/VolatilityL), L = mass·(0.1 + bond) its cohesive energy
+    // (Clausius–Clapeyron at the reference temperature: the most volatile species is all vapour); that
+    // share diffuses (Diff·v), bubbles (×(1 + (GasExpand − 1)·v)), dissolves from the surface, is
+    // scavenged by rain; the rest settles, is poured and counts as litter. Below VolatilityMin a species
+    // is taken as not volatile at all (a resolution: no diffusion pass for a share that small).
+    public static int Volatility = 0;
+    public static float VolatilityL = 0.2f, VolatilityMin = 0.02f;
     // LeachK (World.Leach): share per tick of the lightest loose molecule (any species, the air's gas too) on wet ground (standing water or
     // full rain) that percolating water carries below the top block, out of reach of bodies on the
     // surface until the top block goes; heavier molecules by their mobility Diff (0.13/√mass). 0 — off.

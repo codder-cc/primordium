@@ -355,6 +355,10 @@ public static class ParamRegistry
         F("IceInsulation", "Вода", "Ice floats: how deep the cold reaches into open water per step, and how much ice slows freezing as much again, blocks", "Лёд плавает: на сколько блоков холод проникает в открытую воду за шаг и сколько льда вдвое замедляет промерзание, блоков", 0.05, 10, 0.05);
         I("CaveWater", "Вода", "Water enters caves through open faces, floods and drains them (1 on, 0 caves stay dry)", "Вода затекает в пещеры через открытые грани, затапливает их и уходит (1 — вкл, 0 — пещеры сухие)", 0, 1, 1);
         // Resources (World.Resources)
+        I("Volatility", "Ресурсы", "Volatility: 1 — every species has a share in the air by its cohesive energy, e^(−(L − L_min)/VolatilityL), L = mass·(0.1 + bond): that share diffuses, bubbles in bodies, dissolves from the surface and is scavenged by rain, the rest settles and is litter; 0 — one species (the least cohesive) is the gas and alone does all that, as before",
+          "Летучесть: 1 — у каждого вида есть доля в воздухе по энергии сцепления, e^(−(L − L_min)/VolatilityL), L = масса·(0,1 + связь): эта доля диффундирует, пузырится в телах, растворяется с поверхности и осаждается дождём, остальное оседает и лежит как рыхлое; 0 — один вид (наименее сцепленный) — газ и только он делает всё это, как раньше", 0, 1, 1, effect: ParamEffect.BodyVolume);
+        F("VolatilityL", "Ресурсы", "Volatility 1: cohesive energy mass·(0.1 + bond) above the most volatile species per e-fold less of a species in the air (k·T at the reference temperature)", "Летучесть 1: энергия сцепления масса·(0,1 + связь) сверх самого летучего вида на e-кратно меньшую долю вида в воздухе (k·T при опорной температуре)", 0.01, 20, 0.01, ParamEffect.BodyVolume);
+        F("VolatilityMin", "Ресурсы", "Volatility 1: a share in the air below this counts as none (resolution: no diffusion pass for it)", "Летучесть 1: доля в воздухе ниже этой считается нулевой (разрешение: для неё нет прохода диффузии)", 0, 0.5, 0.001, ParamEffect.BodyVolume);
         F("GasDiffK", "Ресурсы", "Air gas diffusion multiplier (1 as before; less makes gas more local, eaten out on the spot)", "Множитель диффузии газа воздуха (1 — как раньше; меньше — газ локальнее, выедается на месте)", 0, 2, 0.01);
         F("CaveGasK", "Ресурсы", "Gas under a roof: roof blocks per e-fold weakening of access to the column's gas (0 off: under a roof, only what lies on the cavity floor)", "Газ под крышей: блоков крыши на e-кратное ослабление доступа к газу столба (0 — выкл: под крышей только лежащее на полу полости)", 0, 50, 0.5);
         F("LeachK", "Ресурсы", "Leaching: share per tick of the lightest loose molecule on the surface that water (standing or rain) carries into the ground under the top block; heavier molecules less, by mobility; out of reach until that block goes (0 off)", "Вымывание: доля самой лёгкой рыхлой молекулы на поверхности, которую вода (стоячая или дождь) уносит за тик в грунт под верхний блок; тяжёлые молекулы — меньше, по подвижности; недоступно, пока блок не уйдёт (0 — выкл)", 0, 0.01, 0.00001);
@@ -449,8 +453,8 @@ public static class ParamRegistry
 
     static void F(string name, string group, string en, string ru, double min, double max, double step, ParamEffect effect = ParamEffect.None, bool live = true) =>
         Add(name, group, en, ru, min, max, step, false, effect, live);
-    static void I(string name, string group, string en, string ru, double min, double max, double step, bool live = true) =>
-        Add(name, group, en, ru, min, max, step, true, ParamEffect.None, live);
+    static void I(string name, string group, string en, string ru, double min, double max, double step, bool live = true, ParamEffect effect = ParamEffect.None) =>
+        Add(name, group, en, ru, min, max, step, true, effect, live);
 
     static void Add(string name, string group, string en, string ru, double min, double max, double step, bool isInt, ParamEffect effect, bool live)
     {

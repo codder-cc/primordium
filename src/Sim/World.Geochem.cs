@@ -51,7 +51,15 @@ public sealed partial class World
         geoScale = P.DepthScale; geoMid = P.DepthMid; geoVeinThr = P.VeinThreshold; geoVeinGain = P.VeinGain;
         for (int e = 0; e < Chemistry.ElementCount; e++) DepthBias[e] = 2 * Hash32.F(Seed, e, 0x6E0C) - 1;
         // The volatile one — the atmosphere's gas — keeps its elements up: they are surface elements.
-        for (int e = 0; e < Chemistry.ElementCount; e++) if (Chem.Atoms[Chem.Gas, e] > 0) DepthBias[e] = -MathF.Abs(DepthBias[e]);
+        // Volatility 1: an element is pulled up by the most volatile species it is in (its share in the air):
+        // all the way for the gas's elements, as before, part of the way for the elements of other volatiles.
+        var up = new float[Chemistry.ElementCount];
+        for (int e = 0; e < Chemistry.ElementCount; e++)
+            if (P.Volatility == 0) up[e] = Chem.Atoms[Chem.Gas, e] > 0 ? 1 : 0;
+            else for (int s = 0; s < Chemistry.S; s++) if (Chem.Atoms[s, e] > 0) up[e] = Math.Max(up[e], Chem.Volatile[s]);
+        for (int e = 0; e < Chemistry.ElementCount; e++)
+            if (up[e] >= 1) DepthBias[e] = -MathF.Abs(DepthBias[e]);
+            else if (up[e] > 0) DepthBias[e] += (-MathF.Abs(DepthBias[e]) - DepthBias[e]) * up[e];
         // The guaranteed deep element: of the others, the one the chemistry stores most of its releasable
         // energy in (energy each exothermic split frees, shared by its atoms) — reduced, energy-rich matter
         // lies deep, the surface is what is left once it has given its energy away. Ties: lower index.
@@ -59,10 +67,11 @@ public sealed partial class World
         double best = -1;
         for (int e = 0; e < Chemistry.ElementCount; e++)
         {
-            if (Chem.Atoms[Chem.Gas, e] > 0) continue;
+            if (up[e] >= 1) continue;
             double stored = 0;
             for (int s = 0; s < Chemistry.S; s++)
                 if (Chem.SplitExo[s]) stored += (double)Chem.SplitEnergy(s) * Chem.Atoms[s, e] / Chem.AtomCount(s);
+            stored *= 1 - up[e];   // Volatility 1: an element half in the air keeps half its claim on the deep
             if (stored > best) { best = stored; deep = e; }
         }
         float min = P.DeepElementMin;

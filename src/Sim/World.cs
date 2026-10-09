@@ -588,12 +588,18 @@ public sealed partial class World
         if (CanopyLaw) DistributeCanopy();   // variant B of shading: the photons go to the bodies' own stores (World.Sky)
     }
 
-    // Only the gas moves on its own: it spreads through the air (hardly over walls).
+    // Only what is in the air moves on its own: it spreads through the air (hardly over walls). With
+    // Volatility 0 that is the gas alone; with 1 every volatile species, at Diff × its share in the air.
     void Diffuse()
     {
-        var c = C[Chem.Gas];
+        if (P.Volatility == 0) { Diffuse(Chem.Gas, Chem.Diff[Chem.Gas]); return; }
+        foreach (int s in Chem.Volatiles) Diffuse(s, Chem.Diff[s] * Chem.Volatile[s]);
+    }
+
+    void Diffuse(int s, float d)
+    {
+        var c = C[s];
         var next = back;
-        float d = Chem.Diff[Chem.Gas];
         if (P.GasDiffK != 1) d *= P.GasDiffK;   // World.Resources: the same integer flow per edge, both ways
         Parallel.For(0, H / 8, chunk =>   // each cell reads the old buffer only: rows are independent
         {
@@ -619,10 +625,19 @@ public sealed partial class World
             for (int i = 0; i < N; i++) gross += Math.Abs(next[i].Raw - c[i].Raw);
             ResProbe.DiffusionGross += gross / 2;
         }
-        C[Chem.Gas] = back; back = c; // swap buffers instead of copying a planet every tick
+        C[s] = back; back = c; // swap buffers instead of copying a planet every tick
     }
 
     readonly bool[] weathering;
+
+    // Rain carries `captured` of species s out of a column's air onto its top block.
+    void RainOut(int i, int s, Qty captured)
+    {
+        if (captured <= Qty.Of(0.00001)) return;
+        int v = i * Z + Height[i] - 1;
+        C[s][i] -= captured; BurialAt(v).Matter[s] += captured; MassChanged(v);
+        if (ResProbe != null) ResProbe.Rain[RegionOf(i)] += captured.Raw;
+    }
 
     void EnvChem()
     {
@@ -647,13 +662,9 @@ public sealed partial class World
             // Precipitation adsorbs existing atmospheric molecules onto the exposed aggregate.
             if (Tick % P.MetamorphEvery == 0 && Rain[i] > 0 && Height[i] > 2 && RainSum > 0)
             {
-                Qty captured = C[Chem.Gas][i] * Math.Min(P.RainCapture, Rain[i] * Moisture * P.RainShare / RainSum * (P.MetamorphEvery / P.EnvEvery));
-                if (captured > Qty.Of(0.00001))
-                {
-                    int v = i * Z + Height[i] - 1;
-                    C[Chem.Gas][i] -= captured; BurialAt(v).Matter[Chem.Gas] += captured; MassChanged(v);
-                    if (ResProbe != null) ResProbe.Rain[RegionOf(i)] += captured.Raw;
-                }
+                float rain = Math.Min(P.RainCapture, Rain[i] * Moisture * P.RainShare / RainSum * (P.MetamorphEvery / P.EnvEvery));
+                if (P.Volatility == 0) RainOut(i, Chem.Gas, C[Chem.Gas][i] * rain);
+                else foreach (int s in Chem.Volatiles) RainOut(i, s, C[s][i] * (rain * Chem.Volatile[s]));   // what is in the air of each
             }
             if (weathering[i])
             {
@@ -670,12 +681,13 @@ public sealed partial class World
     {
         float f = TempFactor(Temp[i]), total = 0;
         int gas = Chem.Gas;
+        bool vol0 = P.Volatility == 0;
         if (ArrheniusLaw) { CellChemArrhenius(i, row, tick); return; }   // World.Decay: one law for every pool instead of LooseDecayK
         for (int s = 0; s < Chemistry.S; s++)
         {
             float amount = C[s][i].F;
             if (amount <= 0) continue;
-            if (s != gas) total += amount * Chem.Volume[s];
+            if (s != gas) total += vol0 ? amount * Chem.Volume[s] : amount * Chem.Volume[s] * Chem.Lying(s);
             if (Chem.SplitExo[s])
             {
                 Qty m = amount * P.LooseDecayK * f;   // one molecule s → A + B, exactly the same amount each
@@ -741,6 +753,7 @@ public sealed partial class World
         {
             if (s == Chem.Gas) continue;
             var c = C[s];
+            if (P.Volatility != 0) { double lying = Chem.Lying(s), sum = 0; for (int i = 0; i < N; i++) sum += c[i]; t += sum * lying; continue; }   // the share in the air is not litter
             for (int i = 0; i < N; i++) t += c[i];
         }
         return (float)(t / N);

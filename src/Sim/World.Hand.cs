@@ -35,11 +35,13 @@ public sealed partial class World
         return brush;
     }
 
-    // A molecule kind to pour, at random (not the gas: it has no aggregate worth heaping).
+    // A molecule kind to pour, at random (not the gas: it has no aggregate worth heaping; with Volatility 1
+    // a kind is kept with the chance of its share that is not in the air).
     public int RandomPourable()
     {
         int s;
-        do s = mainRng.Next(Chemistry.S); while (s == Chem.Gas);
+        if (P.Volatility == 0) { do s = mainRng.Next(Chemistry.S); while (s == Chem.Gas); return s; }
+        do s = mainRng.Next(Chemistry.S); while (s == Chem.Gas || mainRng.NextDouble() >= Chem.Lying(s));
         return s;
     }
 

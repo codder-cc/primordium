@@ -84,6 +84,7 @@ public sealed partial class World
         ParamRegistry.ResetDefaults();   // P is shared by every world in the process
         Timed("LawsRegression", LawsRegression);
         Timed("LawsEnergyRegression", LawsEnergyRegression);
+        Timed("VolatilityRegression", VolatilityRegression);
         Timed("SaveLoadRegression", SaveLoadRegression);
         Timed("SizeRegression", SizeRegression);
         Timed("ScenarioRegression", ScenarioRegression);

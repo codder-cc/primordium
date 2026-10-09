@@ -22,6 +22,10 @@ public sealed class Chemistry
     public readonly float[] Looseness = new float[S];
     public readonly float[] Volume = new float[S];   // room one molecule takes: its mass over how tightly it packs
     public readonly float[] BodyVolume = new float[S];   // room it takes held in a body: the gas is a bubble there
+    // Share of a species' loose pool in the air (P.Volatility; ApplyParams): with the law off 1 for the gas,
+    // 0 for the rest; Volatiles lists the species above zero (those that diffuse).
+    public readonly float[] Volatile = new float[S];
+    public int[] Volatiles = System.Array.Empty<int>();
     public readonly bool[] SplitExo = new bool[S], Solid = new bool[S];
     // The reactive-damage law's species factor (World.Life, P.ReactK): how hard a molecule hits the
     // protein substrate of a body it touches — the mean affinity of its atoms × the excitation energy it
@@ -277,12 +281,25 @@ public sealed class Chemistry
     // those laws change (World.ApplyParamChanges).
     public void ApplyParams()
     {
+        bool law = P.Volatility != 0;
+        float l0 = Cohesive(Gas);
         for (int s = 0; s < S; s++)
         {
-            BodyVolume[s] = s == Gas ? Volume[s] * P.GasExpand : Volume[s];
+            float v = !law ? (s == Gas ? 1f : 0f) : s == Gas ? 1f : MathF.Exp(-(Cohesive(s) - l0) / Math.Max(1e-3f, P.VolatilityL));
+            Volatile[s] = v < P.VolatilityMin && s != Gas ? 0f : v;
+            BodyVolume[s] = !law ? (s == Gas ? Volume[s] * P.GasExpand : Volume[s]) : Volume[s] * (1 + (P.GasExpand - 1) * Volatile[s]);
             MatCap[s + 2] = Math.Clamp((int)MathF.Round(P.VoxelSpace / Volume[s]), 1, ushort.MaxValue);
         }
+        Volatiles = Enumerable.Range(0, S).Where(s => Volatile[s] > 0).ToArray();
     }
+
+    // The cohesive energy that keeps a molecule out of the air: its mass × (0.1 + bond) (the gas is the
+    // species with the least; Volatility 1 ranks every species by it).
+    public float Cohesive(int s) => Mass[s] * (0.1f + Bond[s]);
+
+    // The share of a loose pool of s that is not in the air: litter on the ground (1 for all but the gas
+    // with Volatility 0).
+    public float Lying(int s) => 1f - Volatile[s];
 
     // A downhill reaction: B < 0 — the split of A (into SplitA/SplitB), otherwise the bind A + B → P;
     // Energy is what it releases (> 0).

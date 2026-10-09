@@ -21,6 +21,7 @@ public sealed partial class World
         ParamRegistry.ResetDefaults();
         LawsRegression();
         LawsEnergyRegression();
+        VolatilityRegression();
         SaveLoadRegression();
         SizeRegression();
         LifeSeedRegression();
@@ -419,7 +420,10 @@ public sealed partial class World
         // Body energy as matter switched on and off (P.MatterEnergy, World.Charge): the stores become a legacy
         // remainder, then fill again; charge stays in the molecules either way.
         var switches = new (int tick, string name, double value)[] { (300, "MatterEnergy", 1), (420, "CaptureHeat", 0.15), (600, "MatterEnergy", 0), (850, "MatterEnergy", 1),
-            (200, "ArrheniusDecay", 1), (500, "DecayWetK", 4), (700, "ArrheniusDecay", 0), (900, "ArrheniusDecay", 1) };   // one decay law (World.Decay) on and off
+            (200, "ArrheniusDecay", 1), (500, "DecayWetK", 4), (700, "ArrheniusDecay", 0), (900, "ArrheniusDecay", 1),   // one decay law (World.Decay) on and off
+            // Every species in the air by its volatility, hardness without a solid class, the uphill chance by
+            // k·T, copying without credit for useful code — on and off mid-run.
+            (100, "Volatility", 1), (380, "ContinuousHardness", 1), (460, "UphillKT", 1), (560, "UsefulCredit", 0), (750, "Volatility", 0), (950, "Volatility", 1) };
         string notes = "";
         for (int t = 1; t <= 1000; t++)
         {
@@ -443,6 +447,45 @@ public sealed partial class World
         w.CheckCellLists();
         Console.WriteLine($"PASS laws changed mid-run ({string.Join(", ", plan.Select(p => p.name).Concat(switches.Select(p => p.name)).Distinct())}): atoms close, {notes}, EnergyK flow {flows[FScale]:F1}; population {w.Agents.Count}");
         ParamRegistry.ResetDefaults();
+    }
+
+    // Volatility 1: every species has a share in the air by its cohesive energy. The gas is all vapour, as
+    // with the law off (its bubble the same); more than one species diffuses; a pile of a volatile species
+    // spreads to the neighbours (with the law off it stays); atoms add up exactly.
+    static void VolatilityRegression()
+    {
+        int old = P.Volatility;
+        try
+        {
+            (double spread, int volatiles, double drift, float gasBubble, int s) Run(int law)
+            {
+                P.Volatility = law;
+                var w = new World(TinySettings(2));
+                w.Chem.ApplyParams();
+                var ch = w.Chem;
+                int s = ch.Volatiles.Length > 1 ? ch.Volatiles.Where(q => q != ch.Gas).OrderByDescending(q => ch.Volatile[q]).First()
+                    : Enumerable.Range(0, Chemistry.S).Where(q => q != ch.Gas).OrderBy(ch.Cohesive).First();
+                int c = w.H / 2 * w.W + w.W / 2;
+                for (int i = 0; i < w.N; i++) w.C[s][i] = Qty.Zero;
+                w.C[s][c] = Qty.Of(30);   // little: no settling or sliding off
+                var atoms0 = w.ElementBudget();
+                for (int t = 0; t < 200; t++) w.Step();
+                var atoms = w.ElementBudget();
+                double drift = 0;
+                for (int e = 0; e < atoms.Length; e++) drift = Math.Max(drift, Math.Abs(atoms[e] - w.InteriorInput[e] - w.HandInput[e] - atoms0[e]));
+                double spread = 0;   // what reached the four neighbours
+                for (int k = 0; k < 4; k++) spread += w.C[s][w.Nb(c, k)].F;
+                return (spread, ch.Volatiles.Length, drift, ch.BodyVolume[ch.Gas] / ch.Volume[ch.Gas], s);
+            }
+            var off = Run(0);
+            var on = Run(1);
+            string got = $"law 0: {off.volatiles} volatile, {off.spread:F2} into the neighbours, gas bubble ×{off.gasBubble:F1}; law 1: {on.volatiles} volatile, a pile of 30 of species {on.s} put {on.spread:F2} into the neighbours, gas bubble ×{on.gasBubble:F1}; atom drift {Math.Max(off.drift, on.drift):F3}";
+            Require(off.volatiles == 1 && on.volatiles > 1 && on.gasBubble == off.gasBubble, "volatility: " + got);
+            Require(on.spread > 1 && on.spread > 10 * off.spread, "volatility: diffusion: " + got);
+            Require(off.drift < 0.5 && on.drift < 0.5, "volatility: atoms: " + got);
+            Console.WriteLine("PASS volatility: " + got);
+        }
+        finally { P.Volatility = old; }
     }
 
     // A life seed changes only life: the same planet (terrain, chemistry, litter), other first bodies;

@@ -343,6 +343,14 @@ public sealed partial class World
                 for (int s = 0; s < Chemistry.S; s++)
                     Console.WriteLine($"  {s,2} {ch.Formula(s) + (s % 2 == 1 ? "*" : ""),-12} E {ch.E[s],3}  above elements {ch.E[s] - ch.EnergyZero * ch.AtomCount(s),4}  form {ch.Formation[s],6:0.0} caged {ch.Caged[s]}  split {(ch.SplitA[s] >= 0 ? ch.SplitEnergy(s).ToString("+0;-0;0") : "-"),4}  R {r[s],4:0}  bond {ch.Bond[s]:0.00}{(ch.Solid[s] ? " solid" : "")}{(s == ch.Gas ? " gas" : "")}{(ch.VentHigh.Contains(s) ? " vent" : "")}");
             foreach (var line in ChemLines(ch, r)) Console.WriteLine("  " + line);
+            {
+                // What Volatility 1 would put in the air (with the current VolatilityL, VolatilityMin).
+                int was = P.Volatility;
+                P.Volatility = 1; ch.ApplyParams();
+                Console.WriteLine($"  volatility 1 (L {P.VolatilityL}): {ch.Volatiles.Length} volatile: " + string.Join(", ", ch.Volatiles.OrderByDescending(s => ch.Volatile[s])
+                    .Select(s => $"{ch.Formula(s)}{(s % 2 == 1 ? "*" : "")} {ch.Volatile[s]:0.000} (L {ch.Cohesive(s):0.00}{(s == ch.Gas ? ", gas" : "")})")));
+                P.Volatility = was; ch.ApplyParams();
+            }
             exoAll += ch.Unstable.Length;
             groundExoAll += Enumerable.Range(0, Chemistry.S).Count(s => s % 2 == 0 && ch.SplitExo[s] && ch.AtomCount(s) > 1);
             for (int a = 0; a < Chemistry.S; a++) for (int b = a; b < Chemistry.S; b++) { int p = ch.Combine[a, b]; if (p < 0) continue; bindAll++; if (ch.E[a] + ch.E[b] > ch.E[p]) bindExoAll++; if (ch.E[a] + ch.E[b] < ch.E[p]) bindUpAll++; }

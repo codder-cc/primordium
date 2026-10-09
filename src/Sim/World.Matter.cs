@@ -503,10 +503,11 @@ public sealed partial class World
         if (low != c)
         {
             float f = (volume - limit) / volume;
+            bool vol0 = P.Volatility == 0;
             for (int s = 0; s < Chemistry.S; s++)
             {
                 if (s == Chem.Gas) continue;
-                Qty m = C[s][c] * f;
+                Qty m = vol0 ? C[s][c] * f : C[s][c] * (f * Chem.Lying(s));   // what is in the air does not slide
                 C[s][c] -= m; C[s][low] += m;
             }
             LooseVolume[c] -= volume - limit; LooseVolume[low] += volume - limit;
@@ -516,10 +517,11 @@ public sealed partial class World
         float share = (volume - limit) / volume;
         var add = new ushort[Chemistry.S];
         int moved = 0;
+        bool lawOff = P.Volatility == 0;
         for (int s = 0; s < Chemistry.S; s++)
         {
             if (s == Chem.Gas) continue;
-            int n = Math.Min((int)(C[s][c] * share), ushort.MaxValue);   // what is not pressed in stays loose
+            int n = Math.Min((int)(lawOff ? C[s][c] * share : C[s][c] * (share * Chem.Lying(s))), ushort.MaxValue);   // what is not pressed in stays loose (and the air's share)
             if (n <= 0) continue;
             C[s][c] -= n; add[s] = (ushort)n; moved += n;
             EpMol(EnergyEconomyProbe.SettleMol, s, n);   // the energy probe (observation)

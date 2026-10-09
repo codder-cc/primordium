@@ -150,13 +150,14 @@ public sealed partial class World
         var decays = d.Decays;
         var vol = Chem.Volume;
         int gas = Chem.Gas;
+        bool vol0 = P.Volatility == 0;
         float t = Temp[i], total = 0;
         double dt = P.EnvEvery * WetFactor(CellWet(i)), heat = 0;
         for (int s = 0; s < Chemistry.S; s++)
         {
             var pool = C[s][i];
             if (pool.Raw <= 0) continue;
-            if (s != gas) total += pool.F * vol[s];
+            if (s != gas) total += vol0 ? pool.F * vol[s] : pool.F * vol[s] * Chem.Lying(s);
             if (!decays[s]) continue;
             double share = DecayShare(DryRate(s, t), dt);
             Qty m = Qty.FromRaw(Math.Min(pool.Raw, (long)(pool.Raw * share)));   // truncated: never more than lies there

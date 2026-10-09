@@ -603,13 +603,16 @@ public sealed partial class World
     // reaction of that matter, splits and binds alike. Otherwise (the initial bodies, groups, legacy
     // abiogenesis) also from a soft top block (barrier < 2), with binds only in the bonds chemistry
     // (Chemistry.Model 1: there splits seldom release energy; the legacy chemistry keeps its splits only).
+    // Whole molecules of s lying loose in cell i (Volatility 1: not its share in the air).
+    int LyingCount(int s, int i) => P.Volatility == 0 ? (int)C[s][i].F : (int)(C[s][i].F * Chem.Lying(s));
+
     bool SpawnAt(int i, bool force, bool looseOnly = false)
     {
         if (!Fits(i, Height[i], P.SpawnBody * 4f) || (!force && Submerged(i))) return false;
         int top = i * Z + Height[i] - 1;
         bool soft = !looseOnly && top >= 0 && VoxelBarrier(top) < 2;
         int available = soft ? Units[top] : 0;
-        for (int s = 0; s < Chemistry.S; s++) if (s != Chem.Gas) available += (int)C[s][i].F;
+        for (int s = 0; s < Chemistry.S; s++) if (s != Chem.Gas) available += LyingCount(s, i);
         if (available < P.SpawnBody) return false;
         long id = NewId();
         var a = new Agent(id, id, 0, Genome.Random(Rng)) { Tb = Temp[i], Z = Height[i] };
@@ -617,7 +620,7 @@ public sealed partial class World
         for (int k = 0; k < P.SpawnBody; k++)
         {
             int total = 0;
-            for (int s = 0; s < Chemistry.S; s++) if (s != Chem.Gas) total += (int)C[s][i].F;
+            for (int s = 0; s < Chemistry.S; s++) if (s != Chem.Gas) total += LyingCount(s, i);
             int q = -1;
             if (total > 0)
             {
@@ -625,7 +628,7 @@ public sealed partial class World
                 for (int s = 0; s < Chemistry.S; s++)
                 {
                     if (s == Chem.Gas) continue;
-                    choice -= (int)C[s][i].F;
+                    choice -= LyingCount(s, i);
                     if (choice < 0) { q = s; C[s][i] -= 1; break; }
                 }
             }
@@ -735,7 +738,7 @@ public sealed partial class World
         float wet = m / d * MathF.Exp(1 - m / d);
         if (wet < 1e-6f) return 0;
         int loose = 0;
-        for (int s = 0; s < Chemistry.S; s++) if (s != Chem.Gas) loose += (int)C[s][i].F;
+        for (int s = 0; s < Chemistry.S; s++) if (s != Chem.Gas) loose += LyingCount(s, i);
         if (loose < P.SpawnBody) return 0;   // not enough loose matter for a body (SpawnAt would refuse)
         double ready = Math.Min(1, LocalReactions(i, P.SpawnEnergy, false) / P.SpawnEnergy);
         return (float)(P.AbioCellRate * ready * TempFactor(Temp[i]) * wet);
