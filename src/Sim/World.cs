@@ -593,40 +593,73 @@ public sealed partial class World
     // Volatility 0 that is the gas alone; with 1 every volatile species, at Diff × its share in the air.
     void Diffuse()
     {
-        if (P.Volatility == 0) { Diffuse(Chem.Gas, Chem.Diff[Chem.Gas]); return; }
-        foreach (int s in Chem.Volatiles) Diffuse(s, Chem.Diff[s] * Chem.Volatile[s]);
+        int m = 0;
+        if (P.Volatility == 0) { diffSpec[m] = Chem.Gas; diffD[m++] = Chem.Diff[Chem.Gas]; }
+        else foreach (int s in Chem.Volatiles) { diffSpec[m] = s; diffD[m++] = Chem.Diff[s] * Chem.Volatile[s]; }
+        Diffuse(m);
     }
 
-    void Diffuse(int s, float d)
+    readonly int[] diffSpec = new int[Chemistry.S];
+    readonly float[] diffD = new float[Chemistry.S];
+    readonly Qty[][] diffSrc = new Qty[Chemistry.S][], diffDst = new Qty[Chemistry.S][];
+    Qty[][] diffBack;   // a spare buffer per species beyond the first (the first uses `back`)
+
+    // All m species of diffSpec in one pass over the rows (each species exactly as alone: its own buffers,
+    // the same arithmetic per cell), so the rows' neighbour and weight arrays are read once per chunk.
+    void Diffuse(int m)
     {
-        var c = C[s];
-        var next = back;
-        if (P.GasDiffK != 1) d *= P.GasDiffK;   // World.Resources: the same integer flow per edge, both ways
+        if (m == 0) return;
+        if (m > 1) diffBack ??= new Qty[Chemistry.S][];
+        for (int j = 0; j < m; j++)
+        {
+            int s = diffSpec[j];
+            float d = diffD[j];
+            if (P.GasDiffK != 1) d *= P.GasDiffK;   // World.Resources: the same integer flow per edge, both ways
+            diffD[j] = d;
+            diffSrc[j] = C[s];
+            diffDst[j] = j == 0 ? back : diffBack[j] ??= new Qty[N];
+        }
         Parallel.For(0, H / 8, chunk =>   // each cell reads the old buffer only: rows are independent
         {
             int W = this.W;
-            for (int i = chunk * 8 * W, end = i + 8 * W; i < end; i++)
+            var nb = this.nb;
+            var diffW = this.diffW;
+            for (int j = 0; j < m; j++)
             {
-                // Per edge, in fixed point: the flow i→j is computed from the same difference and
-                // weight as j→i with the opposite sign, and truncated toward zero (symmetric), so
-                // what one cell gives the other receives exactly.
-                int b = i * 4;
-                long ci = c[i].Raw, sum = ci;
-                for (int k = 0; k < 4; k++)
+                var c = diffSrc[j];
+                var next = diffDst[j];
+                float d = diffD[j];
+                for (int i = chunk * 8 * W, end = i + 8 * W; i < end; i++)
                 {
-                    float w = diffW[b + k];
-                    if (w != 0) sum += (long)((c[nb[b + k]].Raw - ci) * (double)(d * w));
+                    // Per edge, in fixed point: the flow i→j is computed from the same difference and
+                    // weight as j→i with the opposite sign, and truncated toward zero (symmetric), so
+                    // what one cell gives the other receives exactly.
+                    // An edge of weight 0 gives (long)(x · 0.0) = 0: no branch needed; the integer sum
+                    // does not depend on the order of its terms.
+                    int b = i * 4;
+                    long ci = c[i].Raw;
+                    long f0 = (long)((c[nb[b]].Raw - ci) * (double)(d * diffW[b]));
+                    long f1 = (long)((c[nb[b + 1]].Raw - ci) * (double)(d * diffW[b + 1]));
+                    long f2 = (long)((c[nb[b + 2]].Raw - ci) * (double)(d * diffW[b + 2]));
+                    long f3 = (long)((c[nb[b + 3]].Raw - ci) * (double)(d * diffW[b + 3]));
+                    next[i] = Qty.FromRaw(ci + f0 + f1 + f2 + f3);
                 }
-                next[i] = Qty.FromRaw(sum);
             }
         });
-        if (ResProbe != null)
+        for (int j = 0; j < m; j++)
         {
-            double gross = 0;
-            for (int i = 0; i < N; i++) gross += Math.Abs(next[i].Raw - c[i].Raw);
-            ResProbe.DiffusionGross += gross / 2;
+            var c = diffSrc[j];
+            var next = diffDst[j];
+            if (ResProbe != null)
+            {
+                double gross = 0;
+                for (int i = 0; i < N; i++) gross += Math.Abs(next[i].Raw - c[i].Raw);
+                ResProbe.DiffusionGross += gross / 2;
+            }
+            C[diffSpec[j]] = next;   // swap buffers instead of copying a planet every tick
+            if (j == 0) back = c; else diffBack[j] = c;
+            diffSrc[j] = diffDst[j] = null;
         }
-        C[s] = back; back = c; // swap buffers instead of copying a planet every tick
     }
 
     readonly bool[] weathering;
