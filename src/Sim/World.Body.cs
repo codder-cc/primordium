@@ -18,8 +18,8 @@ public sealed partial class World
 
     int Offset(int cell, int dx, int dy)
     {
-        int x = cell % W, y = cell / W + dy;
-        return y < 0 || y >= H ? -1 : y * W + ((x + dx) % W + W) % W;
+        int row = cell / W, x = cell - row * W, y = row + dy;
+        return y < 0 || y >= H ? -1 : y * W + WrapX(x + dx);
     }
 
     int FootCell(Agent a, int k) => k == 0 ? a.Y * W + a.X : a.Foot[k];

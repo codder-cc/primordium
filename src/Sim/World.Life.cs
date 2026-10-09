@@ -31,8 +31,9 @@ public sealed partial class World
         if (Head[cell] != null) Head[cell].PrevInCell = a;
         Head[cell] = a;
         Count[cell]++;
-        a.X = cell % W;
-        a.Y = cell / W;
+        int y = cell / W;
+        a.X = cell - y * W;
+        a.Y = y;
     }
 
     void Unplace(Agent a, int cell)

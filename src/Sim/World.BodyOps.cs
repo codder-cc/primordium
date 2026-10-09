@@ -336,7 +336,7 @@ public sealed partial class World
         int x = a.X, y = a.Y, h0 = (int)Level(a);
         for (int k = 1; k <= range; k++)
         {
-            x = (x + DX[d] + W) % W;
+            x = WrapX(x + DX[d]);
             y += DY[d];
             if (y < 0 || y >= H) return new LookResult(0, k, 2);
             int c = y * W + x;

@@ -32,6 +32,9 @@ public sealed partial class World
     // Half-width in x of a disk of radius r that touches no column twice (x wraps): r itself unless the world
     // is narrower than the disk.
     int AroundX(int r) => Math.Min(r, (W - 1) / 2);
+    // x wrapped around the planet; no division when it is already inside (the usual case).
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public int WrapX(int x) => (uint)x < (uint)W ? x : ((x % W) + W) % W;
     public static readonly int[] DX = { 1, 0, -1, 0 }, DY = { 0, 1, 0, -1 };
     public const int FlashAttack = 0, FlashKill = 1, FlashInject = 2, FlashDig = 3, FlashPile = 4, FlashLink = 5, FlashExpel = 6, FlashDeath = 7,
         FlashGrow = 8, FlashStrike = 9;
@@ -527,6 +530,7 @@ public sealed partial class World
         if (clim) { lum *= CycleLum(); PrepareClimShift(lum); }
         Parallel.For(0, H, y =>
         {
+            int W = this.W, H = this.H;   // (hot loops read the size into locals)
             float lat = (0.5f - (y + 0.5f) / H) * MathF.PI * 0.92f;
             float sl = MathF.Sin(lat), cl = MathF.Cos(lat);
             // Climate of this latitude today: how high the sun climbs at noon — with the cosine law, the
@@ -555,7 +559,8 @@ public sealed partial class World
                         {
                             int py = (int)MathF.Round(y - dn * k);
                             if (py < 0 || py >= H) break;
-                            int px = (((int)MathF.Round(x + de * k)) % W + W) % W;
+                            int px = (int)MathF.Round(x + de * k);   // k ≤ 24 < W: one wrap at most
+                            if (px < 0) px += W; else if (px >= W) px -= W;
                             if (Height[py * W + px] * P.BlockH - h0 > k * tanE) { l *= 0.15f; break; }
                         }
                     }
@@ -584,6 +589,7 @@ public sealed partial class World
         if (P.GasDiffK != 1) d *= P.GasDiffK;   // World.Resources: the same integer flow per edge, both ways
         Parallel.For(0, H / 8, chunk =>   // each cell reads the old buffer only: rows are independent
         {
+            int W = this.W;
             for (int i = chunk * 8 * W, end = i + 8 * W; i < end; i++)
             {
                 // Per edge, in fixed point: the flow i→j is computed from the same difference and
@@ -618,7 +624,9 @@ public sealed partial class World
         // Each worker owns distinct cells; structural mutations are committed after the barrier.
         Parallel.For(0, H / 8, chunk =>
         {
-            for (int i = chunk * 8 * W, end = i + 8 * W; i < end; i++) CellChem(i, (int)Tick);
+            int W = this.W, tick = (int)Tick;
+            for (int y = chunk * 8; y < chunk * 8 + 8; y++)
+                for (int i = y * W, end = i + W; i < end; i++) CellChem(i, tick, y);
         });
         Lap(1);
         bool leach = LeachLaw && Tick % P.MetamorphEvery == 0;   // World.Leach: litter soaks into the ground
@@ -650,7 +658,7 @@ public sealed partial class World
         Lap(2);
     }
 
-    void CellChem(int i, int tick)
+    void CellChem(int i, int tick, int row)
     {
         float f = TempFactor(Temp[i]), total = 0;
         int gas = Chem.Gas;
@@ -665,7 +673,7 @@ public sealed partial class World
                 C[s][i] -= m; C[Chem.SplitA[s]][i] += m;
                 if (Chem.SplitB[s] >= 0) C[Chem.SplitB[s]][i] += m;
                 heatIn[i] += (float)(m * Chem.SplitEnergy(s));
-                rowLooseDecay[i / W] += m * Chem.SplitEnergy(s);   // rows are owned by one worker
+                rowLooseDecay[row] += m * Chem.SplitEnergy(s);   // rows are owned by one worker
             }
         }
         // Atmospheric material remains in the budget even over water. Rain deposits existing

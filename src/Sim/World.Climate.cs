@@ -77,9 +77,11 @@ public sealed partial class World
         RainSum = sum;
     }
 
-    float TempEq(int i)
+    float TempEq(int i) => TempEq(i, i / W);
+
+    float TempEq(int i, int y)   // y: the cell's row
     {
-        float t = climRow[i / W] + P.TDay * (Light[i] - 0.25f) - Lapse * (Height[i] - LapseBase) + 35f * ventHeat[i] - 4f * Math.Min(1f, Snow[i] * 3);
+        float t = climRow[y] + P.TDay * (Light[i] - 0.25f) - Lapse * (Height[i] - LapseBase) + 35f * ventHeat[i] - 4f * Math.Min(1f, Snow[i] * 3);
         return dryOn ? t + dryT[i] : t;   // a drought is warmer (World.ClimateCycles)
     }
 
@@ -92,13 +94,14 @@ public sealed partial class World
         if (climOn) StepClimateState();   // glaciation, ash, droughts, the chronicle of epochs (World.ClimateCycles)
         Parallel.For(0, H, y =>
         {
+            int W = this.W;   // (hot loops read the size into locals)
             for (int x = 0; x < W; x++)
             {
                 int i = y * W + x;
                 bool wet = Water[i] > 0.5f;
                 float k = wet ? P.TRelaxWater : P.TRelax;   // water keeps its warmth
                 // What bodies under a roof shed warms the cave air instead (World.Cave; 0 with the law off).
-                Temp[i] += (heatIn[i] - caveHeatIn[i]) * P.HeatToTemp * (wet ? 0.25f : 1f) + (TempEq(i) - Temp[i]) * k;
+                Temp[i] += (heatIn[i] - caveHeatIn[i]) * P.HeatToTemp * (wet ? 0.25f : 1f) + (TempEq(i, y) - Temp[i]) * k;
                 BodyHeat[i] += (heatIn[i] - BodyHeat[i]) * 0.2f;
                 DeathMap[i] *= 0.985f;
                 heatIn[i] = 0;
@@ -106,6 +109,7 @@ public sealed partial class World
         });
         Parallel.For(0, H, y =>
         {
+            int W = this.W;
             for (int x = 0; x < W; x++)
             {
                 int i = y * W + x, b = i * 4;
@@ -125,6 +129,7 @@ public sealed partial class World
         Parallel.For(0, H, y =>
         {
             float ev = 0;
+            int W = this.W;
             for (int x = 0; x < W; x++)
             {
                 int i = y * W + x;
@@ -166,6 +171,7 @@ public sealed partial class World
         float perTick = 0.5f / P.EnvEvery, deep = P.SwimDepth;
         Parallel.For(0, H, y =>
         {
+            int W = this.W;
             for (int x = 0; x < W; x++)
             {
                 int i = y * W + x, b = i * 4;
@@ -179,6 +185,7 @@ public sealed partial class World
         });
         Parallel.For(0, H, y =>
         {
+            int W = this.W;
             for (int x = 0; x < W; x++)
             {
                 int i = y * W + x, b = i * 4;
