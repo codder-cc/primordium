@@ -517,7 +517,8 @@ public sealed partial class World
         cell = FullestCell(a);
         float total = 0;
         var fb = FloorBurial(a, cell);
-        for (int s = 0; s < Chemistry.S; s++) total += Loose(a, cell, fb, s);
+        Span<float> lying = stackalloc float[Chemistry.S];   // each species read once (Loose only reads)
+        for (int s = 0; s < Chemistry.S; s++) total += lying[s] = Loose(a, cell, fb, s);
         if (total < 0.5f)
         {
             Dissipate(a, P.CostIntake * (1 + a.Packing * a.Packing));
@@ -527,7 +528,7 @@ public sealed partial class World
         }
         double r = Rng.NextDouble() * total;
         int q = 0;
-        for (; q < Chemistry.S - 1 && r >= Loose(a, cell, fb, q); q++) r -= Loose(a, cell, fb, q);
+        for (; q < Chemistry.S - 1 && r >= lying[q]; q++) r -= lying[q];
         Intake(a, cell, q);
     }
 

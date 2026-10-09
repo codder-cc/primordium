@@ -39,13 +39,13 @@ public sealed partial class World
 
     void ReactiveDamage(Agent a)
     {
-        float tf = TempFactor(a.Tb);
+        float tf = float.NaN;   // TempFactor(a.Tb), computed only where a chance needs it (it is a pure function)
         int home = a.Y * W + a.X;
         if (a.InvTotal > 0)
         {
             int s = RandomMol(a);
             float r = Chem.Reactivity[s];
-            if (r > 0 && Rng.NextDouble() < P.ReactK * r * tf * a.InvTotal)
+            if (r > 0 && Rng.NextDouble() < P.ReactK * r * (tf = TempFactor(a.Tb)) * a.InvTotal)
             {
                 RemoveMol(a, s);
                 AddMol(a, Chemistry.Ground(s));
@@ -60,6 +60,7 @@ public sealed partial class World
         int q = excited[Rng.Next(excited.Length)];
         float lying = LooseAmount(a, pc, q);
         if (lying < 1f) return;
+        if (float.IsNaN(tf)) tf = TempFactor(a.Tb);
         if (Rng.NextDouble() < P.ReactK * P.ReactContact * Chem.Reactivity[q] * tf * lying * excited.Length)
         {
             ChangeLoose(a, pc, q, -1f);
