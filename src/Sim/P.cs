@@ -495,6 +495,25 @@ public static class P
     public static float Life2Decay = 0.0005f;    // chance per tick a protein copy of neutral stability falls apart (at 15 °C)
     public static float Life2MembraneLipid = 0.05f;   // membrane area per unit of amphiphilicity of a held molecule
     public static float Life2Divide = 0.5f;      // membrane area over the area of a sphere of the body's volume at which it splits (2^(1/3): two spheres)
+    // Signalling between chains (CHANGELOG 2026-10-09 (13)). TransMod 1: a pocket holding the window around an exposed
+    // excitable residue of another chain, next to a pocket for an excited carrier, excites that residue (kinase in
+    // trans; the window differs between the target's R and T faces, so the rate depends on its conformation).
+    // Array 1: a pocket holding a window of its own chain face to face (R on R, T on T) couples the copies into one
+    // allosteric (MWC) unit of 1 + (n − 1)·θ_contact copies. 0: neither (the prototype).
+    public static int Life2TransMod = 1;
+    // Lysis 1: an outer pocket for a compound that splits downhill lowers that split's Arrhenius barrier for the molecules
+    // of the bodies it touches by CatalysisMax × its fit (matched atoms over the molecule's) × rigidity, as model 1's
+    // proteins lower a face's barrier; the parts are taken in through the contact and a coupled inner pocket for a ground
+    // carrier takes the split's energy. 0: the prototype (transition-state law on the old spontaneous rate, parts on the floor).
+    public static int Life2Lysis = 1;
+    // Harvest 1: a membrane chain's outer pocket for an excited molecule next to an inner pocket for a ground carrier passes
+    // the excitation of what it holds outside to the carrier (Life2Transfer a copy, the gaps' difference heat; the molecule
+    // stays on the floor relaxed). 0: no such act.
+    public static int Life2Harvest = 1;
+    // PhotoShare 1: a photon caught by a coupled pigment of a body holding less than a whole ground carrier molecule
+    // excites what it holds (the energy into that share, the rest heat); 0: it needs a whole molecule (else all heat).
+    public static int Life2PhotoShare = 1;
+    public static int Life2Array = 1;
 
     // Chronicle (observation only: none of these changes what happens in the world)
     public static int ChronicleCap = 10000;     // ordinary events kept (important ones are kept for ever)

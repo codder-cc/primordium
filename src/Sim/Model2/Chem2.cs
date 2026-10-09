@@ -43,6 +43,7 @@ public sealed class Chem2
 
     public readonly ConcurrentDictionary<SeqKey, ProteinType> Types = new();
     public readonly ConcurrentDictionary<(ulong genome, ulong types), GeneTable> Tables = new();
+    public readonly ConcurrentDictionary<(ulong donor, ulong target), ModLink[]> Links = new();
 
     static readonly ConditionalWeakTable<Chemistry, Chem2> of = new();
     public static Chem2 Of(Chemistry c) => of.GetValue(c, k => new Chem2(k));
@@ -189,6 +190,16 @@ public sealed class Chem2
     public static int Level(float tb) => Math.Clamp((int)Math.Floor(tb + 0.5f) - LevelLow, 0, Levels - 1);
     public static double Beta(int level) => 0.5 * 288.0 / (273.0 + level + LevelLow);
 
+    // e^{−β·gap} by temperature level and whole gap (0–63): what the hot loop reads instead of an exponential.
+    static readonly double[] boltz = MakeBoltz();
+    static double[] MakeBoltz()
+    {
+        var t = new double[Levels * 64];
+        for (int l = 0; l < Levels; l++) for (int g = 0; g < 64; g++) t[l * 64 + g] = DetMath.Exp(-Beta(l) * g);
+        return t;
+    }
+    public static double Boltz(int level, int gap) => gap >= 0 && gap < 64 ? boltz[level * 64 + gap] : DetMath.Exp(-Beta(level) * gap);
+
     // Free energy of a pocket (target atoms t, polarity q, hydrophobicity h, best gap x) binding a ligand of
     // atoms c, polarity lq, hydrophobicity lh, excited with gap lx (lx 0: ground).
     public double Bind(ReadOnlySpan<double> t, double q, double h, int x, ReadOnlySpan<double> c, double lq, double lh, int lx)
@@ -242,6 +253,56 @@ public sealed class Chem2
             w.X = Math.Max(w.X, X[f]);
         }
         return w;
+    }
+
+    // For every window of three letters (index 256·a + 16·b + c) the strongest pocket face any three letters make for it
+    // (as a tethered window, BindWindow) and that face's letters: what a chain's window can be held by at best (for
+    // the seed compiler; made on first use).
+    double[] bestHold; int[] bestHolder;
+    public double BestHold(ReadOnlySpan<byte> seq, int at, out int holder)
+    {
+        if (System.Threading.Volatile.Read(ref bestHold) == null)
+        {
+            var g = new double[L * L * L]; var h = new int[L * L * L];
+            var faces = new Window[L * L * L];
+            Span<byte> tri = stackalloc byte[K];
+            for (int p = 0; p < faces.Length; p++) { tri[0] = (byte)(p >> 8); tri[1] = (byte)(p >> 4 & 15); tri[2] = (byte)(p & 15); faces[p] = PocketOf(tri, 0); }
+            for (int x = 0; x < g.Length; x++)
+            {
+                tri[0] = (byte)(x >> 8); tri[1] = (byte)(x >> 4 & 15); tri[2] = (byte)(x & 15);
+                double best = double.MaxValue; int bp = 0;
+                for (int p = 0; p < faces.Length; p++) { double v = BindWindow(faces[p], tri, 0); if (v < best) { best = v; bp = p; } }
+                g[x] = best; h[x] = bp;
+            }
+            bestHolder = h; System.Threading.Volatile.Write(ref bestHold, g);   // a race computes the same
+        }
+        int i = seq[at] << 8 | seq[at + 1] << 4 | seq[at + 2];
+        holder = bestHolder[i];
+        return bestHold[i];
+    }
+
+    // The copying law's factors at a temperature level and discrimination d (ChemModel.Copy), made once: [16·t + b]
+    // e^{β·d·(ε(t,b) − ε(t,comp t))} and [256 + 16·t + b] 1 − e^{−β·d·max(0, ε(t,comp t) − ε(t,b))} (the proofreading
+    // pass's chance to take b off). The same numbers the loop computed; a pure function of its key.
+    readonly ConcurrentDictionary<(int, long), double[]> copyTables = new();
+    public double[] CopyTable(int level, double d)
+    {
+        var key = (level, BitConverter.DoubleToInt64Bits(d));
+        if (copyTables.TryGetValue(key, out var t)) return t;
+        double beta = Beta(level);
+        t = new double[2 * L * L];
+        for (int a = 0; a < L; a++)
+        {
+            double top = Pair[a, Comp[a]];
+            for (int b = 0; b < L; b++)
+            {
+                t[a * L + b] = DetMath.Exp(beta * d * (Pair[a, b] - top));
+                t[L * L + a * L + b] = 1 - DetMath.Exp(-beta * d * Math.Max(0, Pair[a, Comp[a]] - Pair[a, b]));
+            }
+        }
+        if (copyTables.Count > 4096) copyTables.Clear();
+        copyTables.TryAdd(key, t);
+        return t;
     }
 
     // The chance a copy puts a wrong letter opposite a template letter, averaged over `templates`, with the

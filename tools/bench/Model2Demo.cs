@@ -64,11 +64,28 @@ public sealed partial class World
         {
             Seeds.ReceptorPrefer = int.Parse(Arg2(args, "--receptor", "1"));
             Seeds.ReceptorCount = int.Parse(Arg2(args, "--receptors", "2"));
+            Seeds.Chemotaxis = Array.IndexOf(args, "--no-e2") < 0;
+            Seeds.PoiseLogOdds = double.Parse(Arg2(args, "--poise", "-0.1"), Inv2);
+            Seeds.E2Receptors = int.Parse(Arg2(args, "--e2-receptors", "1"));
+            // --adapt with --world: the compiler sees what lies on the floors of that world (carrier and letters at hand)
+            Seeds.Litter = null; Seeds.PreyBodies = null;
+            string wsize = Arg2(args, "--world", "");
+            if (Array.IndexOf(args, "--adapt") >= 0 && wsize.Length > 0)
+            {
+                var dims = wsize.Split('x').Select(int.Parse).ToArray();
+                var w0 = new World(TinySettings(seed, -1, false, !FlareLaw, dims[0], dims[1], dims[2]));
+                Seeds.Litter = LitterOf(w0);
+                var bodies0 = w0.Agents.Where(a => !a.Dead).ToList();
+                Seeds.PreyBodies = Enumerable.Range(0, Chemistry.S).Select(s => bodies0.Count > 0 ? bodies0.Average(a => (double)a.Inv[s]) : 0).ToArray();
+                Console.WriteLine("model-1 bodies hold: " + string.Join(" ", Enumerable.Range(0, Chemistry.S).Where(s => Seeds.PreyBodies[s] > 0.05).Select(s => string.Create(Inv2, $"{s}:{Seeds.PreyBodies[s]:0.0}"))));
+                Console.WriteLine("litter per floor: " + string.Join(" ", Enumerable.Range(0, Chemistry.S / 2).Select(f => string.Create(Inv2, $"{2 * f}:{Seeds.Litter[2 * f]:0.00}+{Seeds.Litter[2 * f + 1]:0.00}"))));
+            }
             var set = Seeds.For(new World(TinySettings(seed)).Chem, int.Parse(Arg2(args, "--effort", "6000")));
             CarrierOf = set.Carrier;
             Console.WriteLine(set.Report);
             if (ks.Contains("1")) K1(args, seed, set);
             if (ks.Contains("2")) K2(args, seed, set);
+            if (ks.Contains("2e")) K2E(args, seed, set);
             if (ks.Contains("3")) K3(args, seed, set);
             if (ks.Contains("perf")) Model2Perf(args, seed, set);
         }
@@ -86,6 +103,14 @@ public sealed partial class World
         foreach (int s in species.Distinct())
             for (int c = 0; c < w.N; c++) w.C[s][c] += Qty.Of(perCell);
         return w;
+    }
+
+    // Mean loose molecules per floor by species over the world's surface (what a membrane there meets).
+    static double[] LitterOf(World w)
+    {
+        var l = new double[Chemistry.S];
+        for (int s = 0; s < Chemistry.S; s++) { double sum = 0; for (int c = 0; c < w.N; c++) sum += w.C[s][c].D; l[s] = sum / w.N; }
+        return l;
     }
 
     // What the seed cells are made of: every letter of both strands of their genomes (and of their proteins), the carrier.
@@ -327,6 +352,89 @@ public sealed partial class World
 
     static double Binomial(int n, int k) { double r = 1; for (int i = 1; i <= k; i++) r = r * (n - k + i) / i; return r; }
 
+    // ---- K2 with E-2 (receptor array + adaptation enzyme) against its knockouts ----
+    // The same gradient scene as K2 (charged food rising along y, --food at the top), per replicate (LifeSeed = rep) one
+    // world for each of E-2, E-2ΔAd (no adaptation enzyme) and E-2ΔR (no receptor pockets); founders planted on the middle
+    // row. Measured: mean row of the living cells and of the founders against the start, the chemotaxis index of steps,
+    // tumbles and pushes per cell-tick, and how much of Mot2 is excited (the adaptation's state). Paired over the
+    // replicates: E-2 minus each knockout (mean, sd, paired t, effect size d_z = mean/sd, wins, one-sided sign test).
+    static void K2E(string[] args, int seed, SeedSet set)
+    {
+        if (set.ChemotaxerDesign == null) { Console.WriteLine("K2e: E-2 was not compiled for this chemistry"); return; }
+        int rep0 = int.Parse(Arg2(args, "--rep0", "0"));   // the first replicate's LifeSeed (to split a series over processes)
+        int ticks = int.Parse(Arg2(args, "--ticks2", "3000")), n = int.Parse(Arg2(args, "--n2", "32")), reps = int.Parse(Arg2(args, "--reps", "6"));
+        double top = double.Parse(Arg2(args, "--food", "20"), Inv2);
+        var c2 = Chem2.Of(new World(TinySettings(seed)).Chem);
+        var motSeq = set.Genes["Mot2"]; var koSeq = set.Genes["Mot2ΔR"];
+        var designs = new[] { ("E-2", set.ChemotaxerDesign), ("E-2ΔAd", set.NoAdaptDesign), ("E-2ΔR", set.NoReceptorDesign) };
+        var only = Arg2(args, "--only", "");
+        var all = new double[designs.Length, reps]; var founders = new double[designs.Length, reps]; var cis = new double[designs.Length, reps];
+        for (int rep = 0; rep < reps; rep++)
+            for (int di = 0; di < designs.Length; di++)
+            {
+                var (label, design) = designs[di];
+                if (only.Length > 0 && !only.Split(',').Contains(label)) continue;
+                var w = Model2World(seed, 3, SeedLetters(set), rep + rep0);
+                w.TrackHeat = true;
+                for (int c = 0; c < w.N; c++)
+                {
+                    w.C[set.Carrier][c] += Qty.Of(CarrierLitter);
+                    w.C[set.Food][c] += Qty.Of(top * (c / w.W) / (w.H - 1));
+                }
+                int y0 = w.H / 2;
+                var bodies = new List<Agent>();
+                for (int k = 0; k < n; k++) bodies.AddRange(Plant(w, design, 1, (k * w.W) / n, y0, 0));
+                var atoms0 = Inputs(w, null);
+                var e0 = w.AuditEnergy();
+                var lastY = new Dictionary<long, int>();
+                long up = 0, down = 0, cellTicks = 0;
+                int births0 = w.Births;
+                double modSum = 0; long modN = 0;
+                for (int t = 1; t <= ticks; t++)
+                {
+                    w.Step();
+                    foreach (var a in w.Agents)
+                    {
+                        if (a.Dead || a.Model != LifeModels.Chem) continue;
+                        cellTicks++;
+                        if (lastY.TryGetValue(a.Id, out int ly)) { if (a.Y > ly) up++; else if (a.Y < ly) down++; }
+                        lastY[a.Id] = a.Y;
+                        if (t % 100 == 0 && a.ModelState is Cell cs)
+                            foreach (var sl in cs.Slots)
+                                if (sl.Total > 0 && (sl.Seq.AsSpan().SequenceEqual(motSeq) || sl.Seq.AsSpan().SequenceEqual(koSeq))) { modSum += (sl.Total - sl.N[0]) / (double)sl.Total; modN++; }
+                    }
+                }
+                BudgetEqual(atoms0, Inputs(w, atoms0), $"K2e {label}: atoms", 1e-6);
+                EnergyWorldCheck(w, e0, $"K2e {label}");
+                PoolCheck(w, $"K2e {label}");
+                var alive = w.Agents.Where(a => !a.Dead && a.Model == LifeModels.Chem).ToList();
+                double dy = bodies.Average(a => a.Y - y0);
+                double mean = alive.Count > 0 ? alive.Average(a => a.Y - y0) : 0, share = alive.Count > 0 ? alive.Count(a => a.Y > y0) / (double)alive.Count : 0;
+                double ci = up + down > 0 ? (up - down) / (double)(up + down) : 0;
+                all[di, rep] = mean; founders[di, rep] = dy; cis[di, rep] = ci;
+                long tum = alive.Sum(a => ((Cell)a.ModelState).Tumbles), pus = alive.Sum(a => ((Cell)a.ModelState).Thrusts);
+                double age = alive.Sum(a => (double)Math.Max(1, a.Age));
+                Console.WriteLine(string.Create(Inv2, $"K2e rep {rep + rep0} {label}: living {mean:+0.0;-0.0} rows ({100 * share:0}% on the food side), founders {dy:+0.0;-0.0}, CI {ci:+0.000;-0.000} ({up} up, {down} down; {(up + down) / (double)Math.Max(1, cellTicks):0.000} steps per cell-tick), {alive.Count} alive, {w.Births - births0} births; tumbles {tum / age:0.000}, pushes {pus / age:0.000} per cell-tick; Mot2 excited {(modN > 0 ? modSum / modN : 0):0.000}; {LedgerLine(w)}"));
+            }
+        foreach (int ko in new[] { 1, 2 })
+        {
+            if (only.Length > 0) break;
+            var d = Enumerable.Range(0, reps).Select(r => all[0, r] - all[ko, r]).ToArray();
+            var df = Enumerable.Range(0, reps).Select(r => founders[0, r] - founders[ko, r]).ToArray();
+            var dc = Enumerable.Range(0, reps).Select(r => cis[0, r] - cis[ko, r]).ToArray();
+            string Stat(double[] x)
+            {
+                double m = x.Average(), sd = x.Length > 1 ? Math.Sqrt(x.Sum(v => (v - m) * (v - m)) / (x.Length - 1)) : 0;
+                double tt = sd > 0 ? m / (sd / Math.Sqrt(x.Length)) : 0;
+                int wins = x.Count(v => v > 0);
+                double sign = 0;
+                for (int k = wins; k <= x.Length; k++) sign += Binomial(x.Length, k) / Math.Pow(2, x.Length);
+                return string.Create(Inv2, $"{m:+0.000;-0.000} ± {sd:0.000} (t {tt:0.00}, d_z {(sd > 0 ? m / sd : 0):0.00}, ahead {wins}/{x.Length}, sign p {sign:0.000})");
+            }
+            Console.WriteLine($"K2e E-2 − {designs[ko].Item1}: living rows {Stat(d)}; founders {Stat(df)}; CI {Stat(dc)}");
+        }
+    }
+
     // ---- K3: model 2 and model 1 in one world ----
 
     // A model-1 hunter: strikes whoever shares its cell, drinks what lies around, divides when rich.
@@ -396,6 +504,12 @@ public sealed partial class World
                 int p1 = w.Agents.Count(a => !a.Dead && a.Model == LifeModels.Chem && set.Predator != null && a.G.Length * 2 == set.Predator.Length && a.Hash == PredatorHash(set));
                 long dig = w.Agents.Where(a => !a.Dead && a.ModelState is Cell).Sum(a => ((Cell)a.ModelState).Digested);
                 Console.WriteLine($"  tick {t}: model 1 {n1}, model 2 {n2} (P-1 genotype {p1}; {Count2(w)}); killed: model-1 bodies {killed[1]} (by hydrolysis {w.DigestKills}), model-2 bodies {killed[2]}; splits by living hydrolysers {dig}");
+                if (Array.IndexOf(args, "--diag") >= 0 && n2 > 0)
+                {
+                    Console.WriteLine("    " + LedgerLine(w));
+                    var cells2 = w.Agents.Where(a => !a.Dead && a.ModelState is Cell).ToList();
+                    Console.WriteLine("    loose at the cells / in them: " + string.Join(" ", SeedLetters(set).Select(s => string.Create(Inv2, $"{s}:{cells2.Average(a => w.ConcentrationOutside(a, a.Y * w.W + a.X, s)) * P.VoxelSpace / w.MeanMoleculeVolume:0.00}/{cells2.Average(a => (HaveRaw(a, s) + HaveRaw(a, s + 1)) / (double)Qty.One):0.00}"))) + string.Create(Inv2, $"; Tb {cells2.Average(a => a.Tb):0.0}, light {cells2.Average(a => w.Light[a.Y * w.W + a.X]):0.00}, in water {cells2.Count(a => w.InWater(a.Y * w.W + a.X, a.Z))}, in caves {cells2.Count(a => w.InCave(a))}; deaths starved {w.DeathsStarve}, broken {w.DeathsBroken}, climate {w.DeathsClimate}, killed {w.DeathsKilled}"));
+                }
             }
         }
         string energy = EnergyWorldCheck(w, e0, "K3");

@@ -28,6 +28,15 @@ namespace Primordium.Model2;
 //   motor      a membrane chain with a pocket inside for an excited carrier turns its charge into a push
 //              (in R along the heading; in T a torque: tumbling)
 //   window     any pocket may bind a window of the genome (promoters, operators: GeneTable)
+// An excitation transfer one chain makes on another's site (ProteinType.LinksOf): the site, the donor's pocket that holds
+// the window around it, its pocket for the excited carrier (and which ligand), and the four free energies of holding
+// the window (donor face × target face: R–R, R–T, T–R, T–T).
+public struct ModLink
+{
+    public int Site, Pocket, Carrier, CarrierLig, Species;
+    public double GRR, GRT, GTR, GTT;
+}
+
 public sealed class ProteinType
 {
     public const int MaxLig = 3, MaxSites = 2, In = 0, Out = 1, Tm = 2;
@@ -61,7 +70,7 @@ public sealed class ProteinType
         public double GT(int k) => k == 0 ? G0T : k == 1 ? G1T : G2T;
     }
 
-    public enum ActKind : byte { Channel, Split, Bind, Pigment, Motor, Modify, Pump, Digest }
+    public enum ActKind : byte { Channel, Split, Bind, Pigment, Motor, Modify, Pump, Digest, Harvest }
     public struct Act
     {
         public ActKind Kind;
@@ -80,6 +89,8 @@ public sealed class ProteinType
         public double[] L = new double[4];
         public double[] Cat;             // per act: catalytic speed-up (Split/Bind), 0 otherwise
         public double Decay;             // per tick, before TempFactor
+        public double ContactK, ContactShift;   // the homotypic contact: e^{−β·mean ΔG}/K_0 and β·(ΔG_RR − ΔG_TT)
+        public double Beta;
     }
 
     public ProteinType(Chem2 c, byte[] seq)
@@ -203,12 +214,17 @@ public sealed class ProteinType
         for (int k = 0; k < Pockets.Length; k++)
             for (int l = 0; l < Pockets[k].N; l++)
                 if (chem.Gap[Pockets[k].Lig(l)] > 0) CarrierPocket = true;
-        // Sites: exposed residues near a pocket for an excited carrier, the two with the largest effect on ΔG_RT.
+        // Sites: exposed residues near a pocket for an excited carrier (the chain excites them itself), the two with the
+        // largest effect on ΔG_RT; then, while fewer than two, exposed excitable residues another chain may excite (a pocket
+        // of that chain holding the window around it next to a pocket for an excited carrier: ModLink) — also by effect.
         var sites = new List<(double eff, int pos, int donor)>();
+        var transSites = new List<(double eff, int pos, int donor)>();
         for (int i = 0; i < n; i++)
         {
             int f = Seq[i];
             if (tm[i] || c.H[f] >= 0.45) continue;
+            if (c.X[f] > 0 && i >= 1 && i + 2 < n)
+                transSites.Add((Math.Abs(P.Life2EpsC * ((i & 1) == 0 ? 1 : -1) * c.H[f] * (c.BStar[f] - c.B[f]) / sqrt), i, -1));
             int donor = -1;
             for (int k = 0; k < Pockets.Length && donor < 0; k++)
             {
@@ -224,6 +240,12 @@ public sealed class ProteinType
             sites.Add((Math.Abs(eff), i, donor));
         }
         sites.Sort((x, y) => x.eff != y.eff ? y.eff.CompareTo(x.eff) : x.pos.CompareTo(y.pos));
+        if (sites.Count < MaxSites && P.Life2TransMod != 0)
+        {
+            transSites.RemoveAll(x => sites.Exists(y => y.pos == x.pos) || x.eff <= 0);
+            transSites.Sort((x, y) => x.eff != y.eff ? y.eff.CompareTo(x.eff) : x.pos.CompareTo(y.pos));
+            for (int k = 0; k < transSites.Count && sites.Count < MaxSites; k++) sites.Add(transSites[k]);
+        }
         int ns = Math.Min(MaxSites, sites.Count);
         Sites = new int[ns]; SiteGap = new int[ns]; SiteDonor = new int[ns];
         for (int k = 0; k < ns; k++) { Sites[k] = sites[k].pos; SiteGap[k] = c.X[Seq[sites[k].pos]]; SiteDonor[k] = sites[k].donor; }
@@ -261,7 +283,27 @@ public sealed class ProteinType
                 if (p.Side == Out)
                 {
                     if (s % 2 == 0 && chem.SplitA[s] >= 0 && chem.SplitEnergy(s) > 0)
-                        Acts.Add(new Act { Kind = ActKind.Digest, Pocket = k, Lig = l, Species = s, Couple = -1, CoupleSpecies = -1 });
+                    {
+                        // Work: the share of the split's activation energy the pocket takes away (law Life2Lysis 1) — how much of
+                        // the molecule its better face fits (matched atoms over the molecule's) times its rigidity, at most
+                        // CatalysisMax (as model 1's proteins lower a face's barrier in rock); a pocket inside next to it for
+                        // a ground carrier takes the split's energy into the carrier (coupled, as a split inside).
+                        var face = p.GR(l) <= p.GT(l) ? p.R : p.T;
+                        double match = 0, atoms = 0;
+                        for (int e = 0; e < Chem2.E; e++) { match += Math.Min(c.LigAtoms[s, e], face.T[e]); atoms += c.LigAtoms[s, e]; }
+                        double fit = atoms > 0 ? match / atoms : 0;
+                        var d = new Act { Kind = ActKind.Digest, Pocket = k, Lig = l, Species = s, Couple = -1, CoupleSpecies = -1, Work = P.CatalysisMax * fit * Math.Min(1, face.Rho / c.BondMax) };
+                        if (P.Life2Lysis != 0) FindCouple(c, k, chem.SplitEnergy(s), true, ref d);
+                        Acts.Add(d);
+                    }
+                    // Facing out, a pocket for an excited molecule next to a pocket inside for a ground carrier whose gap the
+                    // molecule's covers: the excitation passes from the held molecule to the carrier (transfer downhill, the
+                    // rest heat) — the molecule stays outside, relaxed (law Life2Harvest).
+                    if (P.Life2Harvest != 0 && Crossings > 0 && chem.Gap[s] > 0)
+                    {
+                        var h = new Act { Kind = ActKind.Harvest, Pocket = k, Lig = l, Species = s, Couple = -1, CoupleSpecies = -1 };
+                        if (FindCouple(c, k, chem.Gap[s], true, ref h)) Acts.Add(h);
+                    }
                     continue;
                 }
                 if (p.Side != In) continue;
@@ -307,7 +349,88 @@ public sealed class ProteinType
             }
         }
         for (int k = 0; k < Sites.Length; k++)
-            Acts.Add(new Act { Kind = ActKind.Modify, Pocket = SiteDonor[k], Site = k, Couple = -1 });
+            if (SiteDonor[k] >= 0) Acts.Add(new Act { Kind = ActKind.Modify, Pocket = SiteDonor[k], Site = k, Couple = -1 });
+
+        // 5. A homotypic contact: a pocket that holds a window of the same chain (on its own side) in the same conformation
+        // of both copies — R face on R face ([at, at+2]) and T face on T face ([at+1, at+3], the register shift). Copies
+        // held by it lie side by side and turn together (an allosteric array: one MWC unit over the contacted copies).
+        ContactPocket = -1;
+        if (P.Life2Array != 0)
+        {
+            double bestC = P.Life2Cut;
+            for (int k = 0; k < Pockets.Length; k++)
+            {
+                if (Pockets[k].Side == Tm) continue;
+                for (int at = 0; at + Chem2.K < n; at++)
+                {
+                    if (Sides[at + 1] != Pockets[k].Side || tm[at + 1]) continue;
+                    double rr = c.BindWindow(Pockets[k].R, Seq, at), tt = c.BindWindow(Pockets[k].T, Seq, at + 1);
+                    double g = Math.Max(rr, tt);
+                    if (g < bestC) { bestC = g; ContactPocket = k; ContactAt = at; ContactRR = rr; ContactTT = tt; }
+                }
+            }
+        }
+    }
+
+    // The homotypic contact (ContactPocket −1: none) — its pocket, the window it holds, the free energies R–R and T–T.
+    public int ContactPocket = -1, ContactAt;
+    public double ContactRR, ContactTT;
+
+    // The excitation transfers chain `e` (the donor: a pocket holding a window of `t` around a site, next to — within 12
+    // residues, on the same side — a pocket for an excited carrier whose gap covers the site's) can make on chain `t`'s
+    // sites ("phosphorylation" in trans, design §4.6). The window faces: the target presents [j−1, j+1] in R and
+    // [j, j+2] in T, the donor's pocket its R or T face; four free energies per link. Pure function of both sequences.
+    public static ModLink[] LinksOf(Chem2 c, ProteinType e, ProteinType t)
+    {
+        if (P.Life2TransMod == 0 || t.Sites.Length == 0 || !e.CarrierPocket) return Array.Empty<ModLink>();
+        var key = (e.Hash, t.Hash);
+        if (c.Links.TryGetValue(key, out var have)) return have;
+        var arr = ComputeLinks(c, e, t);
+        if (c.Links.Count > 1 << 16) c.Links.Clear();   // a pure function of the key: forgetting costs time only
+        c.Links.TryAdd(key, arr);
+        return arr;
+    }
+
+    public static ModLink[] ComputeLinks(Chem2 c, ProteinType e, ProteinType t)
+    {
+        if (P.Life2TransMod == 0 || t.Sites.Length == 0 || !e.CarrierPocket) return Array.Empty<ModLink>();
+        var list = new List<ModLink>();
+        var chem = c.Chem;
+        for (int k = 0; k < t.Sites.Length; k++)
+        {
+            if (t.SiteDonor[k] >= 0) continue;   // excited by its own chain
+            int j = t.Sites[k], side = t.Sides[j];
+            if (j < 1 || j + 2 >= t.Len) continue;
+            ModLink best = default; best.Pocket = -1;
+            double bestG = P.Life2Cut;
+            for (int p = 0; p < e.Pockets.Length; p++)
+            {
+                ref var pk = ref e.Pockets[p];
+                if (pk.Side != side) continue;
+                // the carrier next to it that can pay the site's gap (the strongest binder)
+                int cp = -1, cl = -1; double cg = double.MaxValue;
+                for (int q = 0; q < e.Pockets.Length; q++)
+                {
+                    if (q == p || e.Pockets[q].Side != side || Math.Abs(e.Pockets[q].Pos - pk.Pos) > 12) continue;
+                    for (int l = 0; l < e.Pockets[q].N; l++)
+                    {
+                        int s = e.Pockets[q].Lig(l);
+                        if (chem.Gap[s] <= 0 || chem.Gap[s] < t.SiteGap[k]) continue;
+                        double g = Math.Min(e.Pockets[q].GR(l), e.Pockets[q].GT(l));
+                        if (g < cg) { cg = g; cp = q; cl = l; }
+                    }
+                }
+                if (cp < 0) continue;
+                double rr = c.BindWindow(pk.R, t.Seq, j - 1), rt = c.BindWindow(pk.R, t.Seq, j);
+                double tr = c.BindWindow(pk.T, t.Seq, j - 1), tt = c.BindWindow(pk.T, t.Seq, j);
+                double g0 = Math.Min(Math.Min(rr, rt), Math.Min(tr, tt));
+                if (g0 >= bestG) continue;
+                bestG = g0;
+                best = new ModLink { Site = k, Pocket = p, Carrier = cp, CarrierLig = cl, Species = e.Pockets[cp].Lig(cl), GRR = rr, GRT = rt, GTR = tr, GTT = tt };
+            }
+            if (best.Pocket >= 0) list.Add(best);
+        }
+        return list.ToArray();
     }
 
     static int LoopParity(int[] loop, int i, bool[] tm) => loop[i] & 1;
@@ -339,7 +462,7 @@ public sealed class ProteinType
         var t = levels[level];
         if (t != null) return t;
         double beta = Chem2.Beta(level), k0 = P.Life2Kd0;
-        t = new TypeLevel { KR = new double[Pockets.Length * MaxLig], KT = new double[Pockets.Length * MaxLig], Cat = new double[Acts.Count] };
+        t = new TypeLevel { KR = new double[Pockets.Length * MaxLig], KT = new double[Pockets.Length * MaxLig], Cat = new double[Acts.Count], Beta = beta };
         for (int k = 0; k < Pockets.Length; k++)
             for (int l = 0; l < Pockets[k].N; l++)
             {
@@ -357,6 +480,7 @@ public sealed class ProteinType
             t.Cat[i] = Math.Min(P.Life2CatMax, DetMath.Exp(beta * P.Life2CatTS * p.R.Rho * Math.Max(0, g)));
         }
         t.Decay = P.Life2Decay * DetMath.Exp(-beta * Math.Clamp(DgFold, -4, 4));
+        if (ContactPocket >= 0) { t.ContactK = DetMath.Exp(-beta * 0.5 * (ContactRR + ContactTT)) / k0; t.ContactShift = beta * (ContactRR - ContactTT); }
         levels[level] = t;   // a race fills the same values
         return t;
     }
@@ -386,6 +510,8 @@ public sealed class ProteinType
         var parts = new List<string> { $"ℓ{Len}" };
         if (Crossings > 0) parts.Add($"TM×{Crossings}");
         foreach (var a in Acts) parts.Add(a.Kind.ToString().ToLowerInvariant() + (a.Kind == ActKind.Modify ? "" : $":{a.Species}") + (a.Couple >= 0 ? $"→{a.CoupleSpecies}" : ""));
+        for (int k = 0; k < Sites.Length; k++) parts.Add($"site@{Sites[k]}{(SiteDonor[k] < 0 ? "(trans)" : "")}:{DgRT[1 << k] - DgRT[0]:+0.00;-0.00}");
+        if (ContactPocket >= 0) parts.Add($"array@{ContactAt}:{ContactRR:0.0}/{ContactTT:0.0}");
         return string.Join(" ", parts);
     }
 }

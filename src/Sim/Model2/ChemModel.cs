@@ -92,7 +92,11 @@ public sealed class ChemModel : ILifeModel
 
     // MWC for one slot: per pocket the summed binding X in R and T (xr, xt at base), and the share in R per
     // modification state (fr[base4 + state]).
-    void Mwc(World w, Agent a, int cell, Slot slot, ProteinType.TypeLevel lv, int pb, int fb)
+    // A chain with a homotypic contact (ProteinType.ContactPocket, law Life2Array) turns with the copies it holds: the
+    // unit is the copy and (n − 1)·θ partners (θ = x/(1 + x), x the other copies per room over the contact's K_d), all in
+    // one conformation — MWC across copies: a copy's log-odds of T is its own plus the unit's partners' mean
+    // (Λ_s = λ_s + (n − 1)·θ·λ̄, λ = β·ΔG_RT(state) + ln(den/num) + θ·β(ΔG_RR − ΔG_TT)). The gain of a receptor array.
+    void Mwc(World w, Agent a, int cell, Slot slot, ProteinType.TypeLevel lv, int pb, int fb, double room = 0)
     {
         var t = slot.Type;
         double num = 1, den = 1;
@@ -108,6 +112,20 @@ public sealed class ChemModel : ILifeModel
             }
             xr[pb + p] = sr; xt[pb + p] = sT;
             num *= 1 + sr; den *= 1 + sT;
+        }
+        int n = slot.Total;
+        if (t.ContactPocket >= 0 && n >= 2 && room > 0)
+        {
+            double x = (n - 1) / room * lv.ContactK, theta = x / (1 + x), partners = (n - 1) * theta;
+            double beta = lv.Beta, lnRatio = DetMath.Log(den / num) + theta * lv.ContactShift, mean = 0;
+            for (int s = 0; s < 4; s++) mean += slot.N[s] * (beta * t.DgRT[s] + lnRatio);
+            mean /= n;
+            for (int s = 0; s < 4; s++)
+            {
+                double lam = Math.Clamp(beta * t.DgRT[s] + lnRatio + partners * mean, -60, 60);
+                fr[fb + s] = 1 / (1 + DetMath.Exp(lam));
+            }
+            return;
         }
         for (int s = 0; s < 4; s++) fr[fb + s] = num / (num + lv.L[s] * den);
     }
@@ -158,7 +176,7 @@ public sealed class ChemModel : ILifeModel
             var t = slots[k].Type;
             if (pb + t.Pockets.Length > 64) { ns = k; break; }
             pbase[k] = pb;
-            Mwc(w, a, cell, slots[k], t.At(level), pb, k * 4);
+            Mwc(w, a, cell, slots[k], t.At(level), pb, k * 4, room);
             pb += t.Pockets.Length;
         }
         Took(2, ref pt);
@@ -171,9 +189,10 @@ public sealed class ChemModel : ILifeModel
             var lv = t.At(level);
             int b = pbase[k];
             Split(slot, k * 4, out double nR, out double nT);
-            for (int i = 0; i < t.Acts.Count; i++)
+            var acts = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(t.Acts);
+            for (int i = 0; i < acts.Length; i++)
             {
-                var act = t.Acts[i];
+                ref readonly var act = ref acts[i];
                 int p = act.Pocket, l = act.Lig;
                 double kr = act.Kind == ProteinType.ActKind.Pigment || act.Kind == ProteinType.ActKind.Modify ? 0 : lv.KR[p * ProteinType.MaxLig + l];
                 double kt = act.Kind == ProteinType.ActKind.Pigment || act.Kind == ProteinType.ActKind.Modify ? 0 : lv.KT[p * ProteinType.MaxLig + l];
@@ -248,7 +267,7 @@ public sealed class ChemModel : ILifeModel
                         // Loaded from outside, unloaded inside, driven by the carrier's discharge: the net flux runs
                         // while the inside is less than e^{β·gap} the outside (the carrier's gap bounds the work of a
                         // cycle), and the pore loads from inside too — the back flux.
-                        double back = cIn[s] * DetMath.Exp(-beta * chem.Gap[act.CoupleSpecies]);
+                        double back = cIn[s] * Chem2.Boltz(level, chem.Gap[act.CoupleSpecies]);
                         if (o <= back) break;
                         double carrier = Occupied(slot, k, act.Couple, act.CoupleLig, lv, b, nR, nT, w, a, cell);
                         double held = nR * kr / (1 + xr[b + p]) + nT * kt / (1 + xt[b + p]);
@@ -280,16 +299,59 @@ public sealed class ChemModel : ILifeModel
                         // copies holding nothing outside (the floor's own s is too dilute to matter) press the pocket on
                         // whatever body they touch: expected splits per unit of that body's s concentration
                         double free = nR * kr / (1 + xr[b + p]) + nT * kt / (1 + xt[b + p]);
-                        int n = w.Digest(a, cell, act.Species, kspont * lv.Cat[i] * free);
-                        if (n > 0) st.Digested += n;
+                        if (P.Life2Lysis == 0)
+                        {
+                            int n0 = w.Digest(a, cell, act.Species, kspont * lv.Cat[i] * free);
+                            if (n0 > 0) st.Digested += n0;
+                            break;
+                        }
+                        // Law Life2Lysis 1: a touched molecule of the kind is held by the outer copies as x/(1 + x) (x: copies free
+                        // per room over K_d) and split at the Arrhenius rate with the barrier its pocket lowers; the parts are
+                        // taken in through the contact, the split's energy charges the coupled carrier or is heat.
+                        double x = free / room, held = x / (1 + x);
+                        if (!(held > 0)) break;
+                        double rate = w.CatalysedSplitRate(act.Species, a.Tb, act.Work) * held;
+                        double couple = act.Couple >= 0 ? Occupied(slot, k, act.Couple, act.CoupleLig, lv, b, nR, nT, w, a, cell) : 0;
+                        long charged0 = World.DigestCharged;
+                        int n = w.Digest(a, cell, act.Species, rate, true, true, act.CoupleSpecies, couple);
+                        if (n > 0)
+                        {
+                            st.Digested += n;
+                            st.Ledger[Cell.LPrey] += n * chem.SplitEnergy(act.Species);
+                            if (World.DigestCharged > charged0) st.Ledger[Cell.LCapture] += (World.DigestCharged - charged0) * chem.Gap[chem.PhotoUp[act.CoupleSpecies]];
+                            cIn[chem.SplitA[act.Species]] = World.HaveRaw(a, chem.SplitA[act.Species]) / Qty.One / room;
+                            if (chem.SplitB[act.Species] >= 0) cIn[chem.SplitB[act.Species]] = World.HaveRaw(a, chem.SplitB[act.Species]) / Qty.One / room;
+                        }
                         break;
                     }
                     case ProteinType.ActKind.Modify:
                         Modify(w, a, cell, st, slot, k, t, lv, b, act);
                         break;
+                    case ProteinType.ActKind.Harvest:
+                    {
+                        // copies holding the excited molecule outside and the ground carrier inside pass Life2Transfer
+                        // excitations a tick (an exact amount, as a channel moves one)
+                        int s = act.Species;
+                        double o = Out(w, a, cell, s);
+                        if (!(o > 0)) break;
+                        double held = nR * o * kr / (1 + xr[b + p]) + nT * o * kt / (1 + xt[b + p]);
+                        double carrier = Occupied(slot, k, act.Couple, act.CoupleLig, lv, b, nR, nT, w, a, cell);
+                        double j = P.Life2Transfer * held * carrier;
+                        if (!(j > 0)) break;
+                        var moved = w.Harvest(a, cell, s, act.CoupleSpecies, Qty.Of(j));
+                        if (moved.Raw > 0)
+                        {
+                            cOut[s] = double.NaN; cOut[Chemistry.Ground(s)] = double.NaN;
+                            int g = act.CoupleSpecies;
+                            cIn[g] = World.HaveRaw(a, g) / Qty.One / room; cIn[g + 1] = World.HaveRaw(a, g + 1) / Qty.One / room;
+                            st.Ledger[Cell.LHarvest] += moved.D * chem.Gap[chem.PhotoUp[g]];
+                        }
+                        break;
+                    }
                 }
             }
         }
+        if (P.Life2TransMod != 0) TransModify(w, a, cell, st, c, level, ns, pbase, room);
         Took(3, ref pt);
         if (pigment > 0) Light(w, a, cell, st, Round(w, pigment), pigment);
         if (thrust > 0) { w.Thrust(a, cosH[st.Heading], sinH[st.Heading], thrust, ref st.DriftX, ref st.DriftY); st.Thrusts++; st.Ledger[Cell.LMotor] += thrust; }
@@ -313,6 +375,10 @@ public sealed class ChemModel : ILifeModel
     {
         double k = P.Life2Leak * ticks;
         if (k <= 0) return;
+        // the floor read once for all kinds (the same values ConcentrationOutside gives one by one)
+        Span<double> all = stackalloc double[Chemistry.S];
+        w.ConcentrationsOutside(a, cell, all);
+        for (int s = 0; s < Chemistry.S; s++) if (double.IsNaN(cOut[s])) cOut[s] = all[s];
         for (int s = 0; s < Chemistry.S; s += 2)
         {
             double h = c.LigH[s];
@@ -362,7 +428,7 @@ public sealed class ChemModel : ILifeModel
             if (slot == null) continue;
             int photon = (int)act.Work;
             st.Photons++;
-            if (act.Couple >= 0 && w.PhotoCharge(a, act.CoupleSpecies, photon)) { st.Ledger[Cell.LPhoto] += chem.Gap[chem.PhotoUp[act.CoupleSpecies]]; continue; }
+            if (act.Couple >= 0 && w.PhotoCharge(a, act.CoupleSpecies, photon, out double share)) { st.Ledger[Cell.LPhoto] += chem.Gap[chem.PhotoUp[act.CoupleSpecies]] * share; st.Ledger[Cell.LPhotoHeat] += chem.Gap[chem.PhotoUp[act.CoupleSpecies]] * (1 - share); continue; }
             w.PhotoHeat(a, photon);
             st.Ledger[Cell.LPhotoHeat] += photon;
         }
@@ -398,6 +464,98 @@ public sealed class ChemModel : ILifeModel
                 if (!w.ExciteResidue(a, carrier, gap)) break;
                 st.Ledger[Cell.LModify] += st.C.Chem.Gap[carrier] * (double)World.ResidueRaw / Qty.One;
                 slot.N[s]--; slot.N[s | bit]++;
+            }
+        }
+    }
+
+    // Excitation transfer between chains (law Life2TransMod, ProteinType.LinksOf): copies of a donor holding a target's
+    // window around a site, with an excited carrier in the pocket next to it, excite the site. A target copy is held as
+    // x/(1 + x), x = donor copies per room × (its share in R·e^{−βΔG(R face)} + in T·e^{−βΔG(T face)}) / K_0, by the face it
+    // presents in its own conformation (so the rate follows the target's state: the adaptation of a receptor by a
+    // second protein, Barkai–Leibler); each donor copy turns over at most Life2Transfer a tick (a saturated enzyme works
+    // at its own pace). Sites excited only so relax by themselves (Life2ModRelax), their energy heat.
+    void TransModify(World w, Agent a, int cell, Cell st, Chem2 c, int level, int ns, Span<int> pbase, double room)
+    {
+        var slots = st.Slots;
+        ulong key = 0xCBF29CE484222325UL;
+        for (int k = 0; k < ns; k++) { key ^= slots[k].Type.Hash; key *= 0x100000001B3UL; key = (key << 7) | (key >> 57); }
+        key ^= (ulong)ns;
+        if (st.Links == null || st.LinkKey != key)
+        {
+            var list = new List<Cell.LinkRef>();
+            for (int e = 0; e < ns; e++)
+                for (int t = 0; t < ns; t++)
+                    foreach (var l in ProteinType.LinksOf(c, slots[e].Type, slots[t].Type)) list.Add(new Cell.LinkRef { E = e, T = t, L = l });
+            st.Links = list.ToArray(); st.LinkKey = key; st.LinkLevel = -1;
+        }
+        // trans-only sites relax by themselves (a chain's own sites relax in Modify)
+        for (int k = 0; k < ns; k++)
+        {
+            var slot = slots[k];
+            var t = slot.Type;
+            for (int j = 0; j < t.Sites.Length; j++)
+            {
+                if (t.SiteDonor[j] >= 0) continue;
+                int bit = 1 << j;
+                for (int s = 0; s < 4; s++)
+                {
+                    if ((s & bit) == 0 || slot.N[s] == 0) continue;
+                    int n = Math.Min(slot.N[s], Round(w, slot.N[s] * P.Life2ModRelax));
+                    for (int e = 0; e < n; e++) { w.RelaxResidue(a, t.SiteGap[j]); slot.N[s]--; slot.N[s & ~bit]++; }
+                }
+            }
+        }
+        if (st.Links.Length == 0) return;
+        if (st.LinkLevel != level)
+        {
+            double beta = Chem2.Beta(level);
+            if (st.LinkK == null || st.LinkK.Length != 4 * st.Links.Length) st.LinkK = new double[4 * st.Links.Length];
+            for (int i = 0; i < st.Links.Length; i++)
+            {
+                ref var l = ref st.Links[i].L;
+                st.LinkK[4 * i] = DetMath.Exp(-beta * l.GRR); st.LinkK[4 * i + 1] = DetMath.Exp(-beta * l.GRT);
+                st.LinkK[4 * i + 2] = DetMath.Exp(-beta * l.GTR); st.LinkK[4 * i + 3] = DetMath.Exp(-beta * l.GTT);
+            }
+            st.LinkLevel = level;
+        }
+        double k0 = P.Life2Kd0;
+        Span<double> lam = stackalloc double[4];
+        for (int i = 0; i < st.Links.Length; i++)
+        {
+            ref var lr = ref st.Links[i];
+            var es = slots[lr.E]; var ts = slots[lr.T];
+            if (es.Total == 0 || ts.Total == 0) continue;
+            var lvE = es.Type.At(level);
+            Split(es, lr.E * 4, out double eR, out double eT);
+            double carrier = Occupied(es, lr.E, lr.L.Carrier, lr.L.CarrierLig, lvE, pbase[lr.E], eR, eT, w, a, cell);
+            if (!(carrier > 0)) continue;
+            double fE = eR / Math.Max(1e-12, eR + eT), cE = es.Total / room;
+            double xR = cE * (fE * st.LinkK[4 * i] + (1 - fE) * st.LinkK[4 * i + 2]) / k0;
+            double xT = cE * (fE * st.LinkK[4 * i + 1] + (1 - fE) * st.LinkK[4 * i + 3]) / k0;
+            double thR = xR / (1 + xR), thT = xT / (1 + xT);
+            int site = lr.L.Site, bit = 1 << site, gap = ts.Type.SiteGap[site];
+            double sum = 0;
+            for (int s = 0; s < 4; s++)
+            {
+                lam[s] = 0;
+                if ((s & bit) != 0 || ts.N[s] == 0) continue;
+                double f = fr[lr.T * 4 + s];
+                lam[s] = ts.N[s] * P.Life2Transfer * carrier * (f * thR + (1 - f) * thT);
+                sum += lam[s];
+            }
+            double cap = es.Total * P.Life2Transfer * carrier;
+            double scale = sum > cap ? cap / sum : 1;
+            for (int s = 0; s < 4; s++)
+            {
+                if (lam[s] <= 0) continue;
+                int n = Math.Min(ts.N[s], Round(w, lam[s] * scale));
+                for (int e = 0; e < n; e++)
+                {
+                    if (!w.ExciteResidue(a, lr.L.Species, gap)) break;
+                    st.Ledger[Cell.LModify] += st.C.Chem.Gap[lr.L.Species] * (double)World.ResidueRaw / Qty.One;
+                    ts.N[s]--; ts.N[s | bit]++;
+                    st.TransMods++;
+                }
             }
         }
     }
@@ -518,7 +676,7 @@ public sealed class ChemModel : ILifeModel
             foreach (var s in st.Slots) if (s.Type == types[k]) { slot = s; break; }
             if (slot == null || slot.Total == 0) continue;
             var lv = types[k].At(level);
-            Mwc(w, a, cell, slot, lv, 0, 0);
+            Mwc(w, a, cell, slot, lv, 0, 0, room);
             Split(slot, 0, out double nR, out double nT);
             shareR[k] = nR / Math.Max(1e-9, nR + nT);
             // The best occupancy of a pocket of its by an excited carrier (what drives a polymerase).
@@ -559,7 +717,7 @@ public sealed class ChemModel : ILifeModel
             double xo = Occupancy(table.Promoter[0], kl.PR[0], kl.PT[0], nOf, shareR, room, true, charged);
             double xall = Occupancy(table.Promoter[0], kl.PR[0], kl.PT[0], nOf, shareR, room, false);
             int steps = Round(w, P.Life2Pol * xo / (1 + xall));
-            if (steps > 0) Copy(w, a, st, c, steps, beta, table, types, shareR, room);
+            if (steps > 0) Copy(w, a, st, c, steps, level, table, types, shareR, room);
         }
         Divide(w, a, cell, st, c);
     }
@@ -575,7 +733,7 @@ public sealed class ChemModel : ILifeModel
     // Copy `steps` residues of the genome onto the replica: each letter chosen by the pairing law (Boltzmann
     // over the monomers at hand, sharpened by the polymerase's rigidity), both strands built from monomers
     // with the bonds' charge. Stops where a monomer or the charge runs out.
-    void Copy(World w, Agent a, Cell st, Chem2 c, int steps, double beta, GeneTable table, ProteinType[] types, double[] shareR, double room)
+    void Copy(World w, Agent a, Cell st, Chem2 c, int steps, int level, GeneTable table, ProteinType[] types, double[] shareR, double room)
     {
         int n = GeneTable.Length(a.G);
         if (st.Replica.Length != n)
@@ -595,6 +753,7 @@ public sealed class ChemModel : ILifeModel
                 if (held >= 2) proofread = true;
             }
         double d = c.Discrimination(rho);
+        var tab = c.CopyTable(level, d);   // the pairing law's factors (the same numbers, made once)
         int passes = proofread ? Math.Max(0, P.Life2Proofread) : 0;
         double checks = 0;
         Span<double> wgt = stackalloc double[Chem2.L];
@@ -609,7 +768,7 @@ public sealed class ChemModel : ILifeModel
         {
             int t = GeneTable.At(a.G, fork);
             double z = 0, top = c.Pair[t, c.Comp[t]];
-            for (int b = 0; b < Chem2.L; b++) { z += wgt[b] * perRoom * DetMath.Exp(beta * d * (c.Pair[t, b] - top)); cum[b] = z; }
+            for (int b = 0; b < Chem2.L; b++) { z += wgt[b] * perRoom * tab[t * Chem2.L + b]; cum[b] = z; }
             if (z <= 0) break;
             // A step inserts a letter only if a monomer arrives and holds: the chance grows with the monomers at hand
             // weighed by how well they pair (z in units of a perfect partner, against Life2Kd0) — short of the
@@ -625,8 +784,7 @@ public sealed class ChemModel : ILifeModel
             {
                 checks += P.Life2ProofCost;
                 if (pick == c.Comp[t]) continue;
-                double de = c.Pair[t, c.Comp[t]] - c.Pair[t, pick];
-                if (w.Rng.NextDouble() >= 1 - DetMath.Exp(-beta * d * Math.Max(0, de))) continue;
+                if (w.Rng.NextDouble() >= tab[Chem2.L * Chem2.L + t * Chem2.L + pick]) continue;
                 checks += 1;
                 r = w.Rng.NextDouble() * z;
                 pick = 0;

@@ -42,7 +42,10 @@ public sealed partial class World
 
         // The seeded cells of seed 1 (a small effort: the self-test checks the paths, --model2-demo the behaviour).
         var w = Model2World(5, 3, Array.Empty<int>());
+        Seeds.Litter = null; Seeds.PreyBodies = null;
+        Seeds.Chemotaxis = false;   // (E-2 cannot be made in seed 5: its carrier cannot excite exposed residues; tested on seed 7 below)
         var set = Seeds.Compile(w.Chem, 1500, 3);
+        Seeds.Chemotaxis = true;
         foreach (int s in SeedLetters(set)) for (int c = 0; c < w.N; c++) w.C[s][c] += Qty.Of(3);
         for (int c = 0; c < w.N; c++) { w.C[set.Carrier][c] += Qty.Of(12); w.C[set.Food][c] += Qty.Of(2); }
         var c2 = Chem2.Of(w.Chem);
@@ -145,6 +148,34 @@ public sealed partial class World
             }
             finally { P.MotorDrag = drag; }
         }
+        // Signalling between chains (Life2TransMod, Life2Array; seed 7, whose carrier can excite exposed residues): E-2 —
+        // a receptor array on the motor and an adaptation enzyme exciting its sites — lives 300 ticks on a food gradient;
+        // the enzyme excites the receptor in trans, atoms exact, the ledger closes, every pool (with its excited sites) equals its books.
+        string e2 = "E-2 not compiled";
+        {
+            var w7 = Model2World(7, 3, Array.Empty<int>());
+            var s7 = Seeds.Compile(w7.Chem, 1000, 1);
+            if (s7.ChemotaxerDesign != null)
+            {
+                foreach (int s in SeedLetters(s7)) for (int c = 0; c < w7.N; c++) w7.C[s][c] += Qty.Of(3);
+                for (int c = 0; c < w7.N; c++) { w7.C[s7.Carrier][c] += Qty.Of(12); w7.C[s7.Food][c] += Qty.Of(20.0 * (c / w7.W) / (w7.H - 1)); }
+                w7.TrackHeat = true;
+                var mot = ProteinType.Of(Chem2.Of(w7.Chem), s7.Genes["Mot2"]);
+                var e2s = Plant(w7, s7.ChemotaxerDesign, 12, w7.W / 2, w7.H / 2, 10);
+                var b7 = Inputs(w7, null);
+                var en7 = w7.AuditEnergy();
+                for (int t = 0; t < 300; t++) w7.Step();
+                PoolCheck(w7, "E-2 world");
+                BudgetEqual(b7, Inputs(w7, b7), "E-2 world: atoms", 1e-6);
+                string en = EnergyWorldCheck(w7, en7, "E-2 world");
+                var live = w7.Agents.Where(a => !a.Dead && a.ModelState is Cell).Select(a => (Cell)a.ModelState).ToList();
+                long mods = live.Sum(c => c.TransMods);
+                int links = ProteinType.ComputeLinks(Chem2.Of(w7.Chem), ProteinType.Of(Chem2.Of(w7.Chem), s7.Genes["Ad"]), mot).Length;
+                Require(live.Count > 0 && links > 0 && mods > 0, $"E-2: {live.Count} alive, Ad links to Mot2 {links}, {mods} sites excited in trans");
+                e2 = $"E-2 (seed 7): {live.Count} alive, {mods} sites excited in trans, Mot2 {(mot.ContactPocket >= 0 ? "in an array" : "without array")}, atoms exact, {en}";
+            }
+        }
+        Console.WriteLine($"PASS model 2: {e2}");
         Console.WriteLine($"PASS model 2: {digest}");
         Console.WriteLine($"PASS model 2: DetMath to {worst:E1}; seeded cells compiled for seed 5; a world of {m2.Count} model-2 and {m1.Count} model-1 bodies for 300 ticks: {cells.Count} model-2 alive, {synth} syntheses, {photons} photons, {pushes} pushes; atoms exact, {energy}, pools exact; save/load continues, v13 refuses; design JSON and genome text round trip; population of {pasted} pasted and reassembled");
     }

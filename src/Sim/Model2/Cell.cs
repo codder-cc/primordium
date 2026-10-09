@@ -30,13 +30,21 @@ public sealed class Cell
     public readonly long[] StallLetter = new long[Chem2.L];   // which letter was short when a build stalled for monomers (observation)
     public double DiagXp, DiagXall, DiagTau;   // the first gene's promoter: polymerase occupancy (charged), all binders, synthesis per step (observation)
     public readonly long[] Stalls = new long[4];   // builds that stalled: synthesis for monomers, for charge; copy for monomers, for charge (observation)
-    public const int LPhoto = 0, LPhotoHeat = 1, LCapture = 2, LPump = 3, LChargeIn = 4, LChargeOut = 5, LSynth = 6, LCopy = 7, LMotor = 8, LTurn = 9, LModify = 10, LProof = 11, LedgerN = 12;
-    public static readonly string[] LedgerNames = { "photo", "photo heat", "captured", "pumps", "charge in", "charge out", "synthesis", "copy", "motor", "turn", "modify", "proofread" };
+    public const int LPhoto = 0, LPhotoHeat = 1, LCapture = 2, LPump = 3, LChargeIn = 4, LChargeOut = 5, LSynth = 6, LCopy = 7, LMotor = 8, LTurn = 9, LModify = 10, LProof = 11, LPrey = 12, LHarvest = 13, LedgerN = 14;
+    public static readonly string[] LedgerNames = { "photo", "photo heat", "captured", "pumps", "charge in", "charge out", "synthesis", "copy", "motor", "turn", "modify", "proofread", "prey split", "harvest" };
 
     // Derived (not saved: functions of the genome and the slots).
     internal GeneTable Table;
     internal ulong TableGenome, TableTypes;
     internal Chem2 C;
+    // Excitation transfers between its chains (ChemModel.TransModify): by slot index, rebuilt when the slots change;
+    // e^{−βΔG} of their window faces at the temperature level LinkLevel.
+    public struct LinkRef { public int E, T; public ModLink L; }
+    internal LinkRef[] Links;
+    internal ulong LinkKey;
+    internal int LinkLevel = -1;
+    internal double[] LinkK;
+    public long TransMods;   // sites excited by another chain (observation, not saved)
 
     public int Copies(ProteinType t)
     {

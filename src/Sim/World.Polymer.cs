@@ -302,15 +302,25 @@ public sealed partial class World
     // A caught photon of energy `photon` (the absorbing pigment's gap) excites one molecule of ground species g
     // (g → g*): the excitation is the molecule's gap, the rest of the photon warms the body. The photon is
     // the ledger's `photo` input. False (nothing done) if the body holds no g or the photon is too small.
-    public bool PhotoCharge(Agent a, int g, int photon)
+    public bool PhotoCharge(Agent a, int g, int photon) => PhotoCharge(a, g, photon, out _);
+
+    // charged: the amount of g excited — a whole molecule, or (law Life2PhotoShare 1) what the body holds if that is
+    // less: the photon's energy goes into that share of a molecule (the body's quantities are means over its copies),
+    // the rest warms the body.
+    public bool PhotoCharge(Agent a, int g, int photon, out double charged)
     {
+        charged = 0;
         int up = Chem.PhotoUp[g];
-        if (up < 0 || Chem.Gap[up] > photon || Have(a, g) < 1L << Qty.Bits) return false;
-        Shift(a, g, up, -1, 1);
+        long have = Have(a, g);
+        if (up < 0 || Chem.Gap[up] > photon || have <= 0 || (have < 1L << Qty.Bits && P.Life2PhotoShare == 0)) return false;
+        var m = Qty.FromRaw(Math.Min(have, 1L << Qty.Bits));
+        Shift(a, g, up, -1, m);
         Flows[FPhoto] += photon;
-        WarmBy(a, photon - Chem.Gap[up]);
-        a.GainPhoto += Chem.Gap[up]; a.TickPhoto += Chem.Gap[up];
+        double gain = Chem.Gap[up] * m.D;
+        WarmBy(a, photon - gain);
+        a.GainPhoto += (float)gain; a.TickPhoto += (float)gain;
         a.NPhoto++;
+        charged = m.D;
         return true;
     }
 
@@ -380,6 +390,16 @@ public sealed partial class World
 
     [ThreadStatic] static System.Collections.Generic.List<Agent> touched;
     public long DigestKills;   // bodies killed by contact hydrolysis (observation; not saved)
+    [ThreadStatic] public static long DigestCharged;   // coupled splits on this thread (observation)
+
+    // The rate per tick at which one molecule of s splits at tC °C when a catalyst takes the share `cat` (at most
+    // P.CatalysisMax) of its activation energy — the Arrhenius law of spontaneous decay (DecayLogA, DecayEa, DecayBondEa
+    // with the molecule's bond against the mean), the barrier lowered as model 1's proteins lower a face's barrier in rock.
+    public double CatalysedSplitRate(int s, float tC, double cat)
+    {
+        double ea = (P.DecayEa + P.DecayBondEa * Chem.Bond[s] / Decay.MeanBond) * (1 - Math.Clamp(cat, 0, P.CatalysisMax));
+        return DetMath.Exp(P.DecayLogA * 2.302585092994046 - ea / Math.Max(1.0, tC + 273.15));
+    }
 
     // Contact hydrolysis: an outward catalytic site of body `a` splits molecules of kind s (a ground compound whose
     // split runs downhill) held by the bodies it touches (on its floor in its cell). Each touched body has `k` × (its
@@ -388,9 +408,18 @@ public sealed partial class World
     // floor, its energy of splitting is heat in the cell (booked as body decay). A body left with fewer than
     // P.MinBody units is killed (World.Die; the killer's NKills). No cost to `a` (the reaction runs downhill; the
     // pocket only speeds it). Returns the splits done.
-    public int Digest(Agent a, int cell, int s, double k)
+    public int Digest(Agent a, int cell, int s, double k) => Digest(a, cell, s, k, false, false);
+
+    // perMolecule: k is the expected splits per molecule of s (not per molecule per room); uptake: the parts go into `a`
+    // (its membrane is pressed on the breach: the products are taken in where they are made) instead of onto the floor.
+    // carrier ≥ 0: the split is coupled (with chance couple) to the charging of a ground carrier of `a` (carrier → its
+    // excited state, the gap from the split's energy, the rest heat) — the catalysing chain holds the carrier inside
+    // next to its outer pocket, as a split coupled inside the cell.
+    public int Digest(Agent a, int cell, int s, double k, bool perMolecule, bool uptake, int carrier = -1, double couple = 0)
     {
         if (!(k > 0) || Chem.SplitA[s] < 0 || Chem.SplitEnergy(s) <= 0) return 0;
+        int up = carrier >= 0 ? Chem.PhotoUp[carrier] : -1;
+        if (up < 0 || Chem.Gap[up] > Chem.SplitEnergy(s)) carrier = -1;
         var list = touched ??= new System.Collections.Generic.List<Agent>();
         list.Clear();
         for (var o = Head[cell]; o != null; o = o.NextInCell) if (o != a && !o.Dead && o.Z == a.Z && Have(o, s) > 0) list.Add(o);
@@ -399,7 +428,7 @@ public sealed partial class World
         int done = 0;
         foreach (var o in list)
         {
-            double room = (double)P.InvPerCell * Math.Max(1, o.Cells);
+            double room = perMolecule ? 1 : (double)P.InvPerCell * Math.Max(1, o.Cells);
             double lambda = k * Have(o, s) / (double)Qty.One / room;
             int n = (int)Math.Floor(lambda);
             if (Rng.NextDouble() < lambda - n) n++;
@@ -410,9 +439,25 @@ public sealed partial class World
                 var q = Qty.FromRaw(m);
                 TakeRaw(o, s, m);
                 o.Mass -= q.F * Chem.Mass[s]; o.Volume -= q.F * Chem.BodyVolume[s];
-                ChangeLoose(a, cell, Chem.SplitA[s], q);
-                if (Chem.SplitB[s] >= 0) ChangeLoose(a, cell, Chem.SplitB[s], q);
-                DecayHeat(a, Chem.SplitEnergy(s) * q.D);
+                int pa = Chem.SplitA[s], pb = Chem.SplitB[s];
+                if (uptake)
+                {
+                    PutRaw(a, pa, m); a.Mass += q.F * Chem.Mass[pa]; a.Volume += q.F * Chem.BodyVolume[pa];
+                    if (pb >= 0) { PutRaw(a, pb, m); a.Mass += q.F * Chem.Mass[pb]; a.Volume += q.F * Chem.BodyVolume[pb]; }
+                }
+                else
+                {
+                    ChangeLoose(a, cell, pa, q);
+                    if (pb >= 0) ChangeLoose(a, cell, pb, q);
+                }
+                double heat = Chem.SplitEnergy(s) * q.D;
+                if (carrier >= 0 && Have(a, carrier) >= m && Rng.NextDouble() < couple)
+                {
+                    Shift(a, carrier, up, -1, q);   // the split's energy charges a carrier (its gap), the rest is heat
+                    heat -= Chem.Gap[up] * q.D;
+                    DigestCharged++;
+                }
+                DecayHeat(a, heat);
                 done++;
                 if (BodyUnits(o) < P.MinBody)
                 {
@@ -424,6 +469,24 @@ public sealed partial class World
             }
         }
         return done;
+    }
+
+    // Excitation harvest at the membrane: an amount m (at most what lies there) of excited kind s on the body's floor
+    // gives its excitation to the same amount of the body's ground carrier g (g → g*, needs Gap[s] ≥ the carrier's gap):
+    // s* stays on the floor relaxed to s, the difference of the gaps warms the body. No flow (stock to stock and held
+    // heat); atoms do not move. Returns the amount transferred.
+    public Qty Harvest(Agent a, int cell, int s, int g, Qty m)
+    {
+        int up = Chem.PhotoUp[g];
+        if (m.Raw <= 0 || Chem.Gap[s] <= 0 || up < 0 || Chem.Gap[up] > Chem.Gap[s]) return Qty.Zero;
+        m = Qty.Min(m, Qty.Of(LooseAmount(a, cell, s)));
+        m = Qty.Min(m, Qty.FromRaw(Have(a, g)));
+        if (m.Raw <= 0) return Qty.Zero;
+        ChangeLoose(a, cell, s, -m);
+        ChangeLoose(a, cell, Chemistry.Ground(s), m);
+        Shift(a, g, up, -1, m);
+        WarmBy(a, (Chem.Gap[s] - Chem.Gap[up]) * m.D);
+        return m;
     }
 
     // ---- force ----
