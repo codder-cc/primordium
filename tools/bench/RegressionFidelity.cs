@@ -21,6 +21,7 @@ public sealed partial class World
 
     static void FidelityProbes()
     {
+        using var old = OldDefaults();   // the energy arithmetic below is for energy as a number (MatterEnergy 0); organs set per probe
         // ---- genes ----
         byte g1 = (byte)(Enzyme.Motor | 20 << 2);
         foreach (int organs in new[] { 0, 1 })
