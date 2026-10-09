@@ -20,7 +20,7 @@ Every world is grown from a seed: its own artificial elements, its own molecules
 ## Highlights
 
 - 🧪 **Procedural chemistry.** Four artificial elements per world, 32 molecular species, with masses, affinity, valence and packing. Every reaction conserves atoms exactly; energy is a strict ledger, audited every run.
-- 🪨 **Physical geology.** A 256 × 160 cylindrical planet up to 192 blocks deep. Rock has composition and lattice order. Load and Mohr–Coulomb strength decide what holds, so undermining causes cave-ins, rubble flows as a granular mass and buried remains change under pressure and heat.
+- 🪨 **Physical geology.** A 256 × 160 cylindrical planet up to 192 blocks deep by default (the size is a setting of the world). Rock has composition and lattice order. Load and Mohr–Coulomb strength decide what holds, so undermining causes cave-ins, rubble flows as a granular mass and buried remains change under pressure and heat.
 - 🧬 **Evolving genomes.** A stack-machine genome with about 60 instructions: senses, enzymes, membranes, motors, mining, building, mating, attacks, colonies. Mutation inserts, deletes and duplicates code.
 - 🌦 **Living climate and sky.** Seasons, day length by latitude, Milankovitch-style cycles (obliquity, precession, eccentricity), ice ages, eclipses, solar flares, volcanoes, cave microclimates.
 - 📈 **Open-endedness metrics.** Bedau-style neutral shadow, novelty, complexity, ecology, tempo and phylogeny tracks, with an honest "progressing / stagnating / regressing" hint.
@@ -93,7 +93,9 @@ Every window and the main tools are also on the **sidebar** at the left edge: ic
 The simulation core (`src/Sim`) does not depend on Godot. `tools/bench` runs it from the command line for tests and experiments:
 
 ```sh
-dotnet run -c Release --project tools/bench -- --self-test                 # conservation, determinism, save/load, laws
+dotnet run -c Release --project tools/bench -- --self-test                 # conservation, determinism, save/load, laws (~1 min)
+dotnet run -c Release --project tools/bench -- --self-test-one RubbleRegression   # one part of it, timed
+dotnet run -c Release --project tools/bench -- --seed 1 --size 64x64x64 --ticks 6000   # a small world (WxHxL; default 256x160x192)
 dotnet run -c Release --project tools/bench -- --seed 1 --ticks 10000 --every 1000 --audit
 dotnet run -c Release --project tools/bench -- --list-params               # all 210 world laws
 dotnet run -c Release --project tools/bench -- --batch --seeds 1-16 --reps 3 --ticks 6000 --out runs/base
@@ -113,6 +115,10 @@ dotnet run -c Release --project tools/bench -- --seed 4 --audit --paste-region v
 ```
 
 `--batch` runs as many processes as there are performance cores by default (macOS: `hw.perflevel0.physicalcpu`), each world single-threaded (`--threads 1`, i.e. `DOTNET_PROCESSOR_COUNT=1`; same trajectory); every row of `runs.csv` carries the `machine` and the `code_version` (git commit). The evolution metrics also cover depth (`roofed_share`, `body_depth_*`, `mine_depth`), spatial heterogeneity over 32×32 regions (`pop_moran`, `diet_moran`, `diet_beta_rel`) and oscillation of diet shares against shuffled surrogates (`osc_*`, `hunt_*`; sample with `--every 100`–`250`).
+
+**Two-stage batches.** `--size WxHxL` works for `--batch` and single runs. Screen many variants cheaply on small worlds (`--size 64x64x64`: ~1/30 of the voxels, a 6000-tick run in seconds; first bodies, volcanoes and strikes come in proportion to the area, so per-cell numbers are comparable, totals are not), then confirm the few that survive on full worlds (no `--size`) before deciding. Keep the height at 160 (`--size 64x160x96`) if latitude matters.
+
+Tests build what they need: small worlds and scenarios (`tools/bench/Scenario.cs`: a flat floor, a cave, a lake of a given depth, a cliff, strata, two bodies side by side) instead of a whole planet; only what needs a planet (old save formats, the long worlds, determinism of parallel tiles) runs on one.
 
 Decide on laws with batches, not single runs: `--compare` reports medians with bootstrap intervals, Mann–Whitney, a sign test across seeds and Fisher's test for extinctions and booms. Add `--lang ru` for Russian output. The full flag reference is in [README.ru.md](README.ru.md) and [docs/SIMULATION.md](docs/SIMULATION.md).
 
