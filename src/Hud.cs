@@ -268,8 +268,11 @@ public partial class Hud : Control
         var m = GetViewport().GetMousePosition();
         string l1 = Loc.T($"#{a.Id} · {Looks.ShapeNames[a.Shape]} · lineage #{a.Lineage} · gen {a.Gen}", $"#{a.Id} · {Looks.ShapeNames[a.Shape]} · линия #{a.Lineage} · поколение {a.Gen}")
                     + (a.Cells > 1 ? Loc.T($" · on {a.Cells} cells", $" · на {a.Cells} клетках") : "");
-        string l2 = Loc.T($"{DietName(a)} · energy {Math.Max(0, a.Energy):F0} (comfortable store {a.Store:F0}) · age {a.Age:N0}",
-                          $"{DietName(a)} · энергия {Math.Max(0, a.Energy):F0} (удобный запас {a.Store:F0}) · возраст {a.Age:N0}");
+        string l2 = World.MatterLaw
+            ? Loc.T($"{DietName(a)} · charge {w.Held(a):F0} of {w.Capacity(a):F0} · age {a.Age:N0}",
+                    $"{DietName(a)} · заряд {w.Held(a):F0} из {w.Capacity(a):F0} · возраст {a.Age:N0}")
+            : Loc.T($"{DietName(a)} · energy {Math.Max(0, a.Energy):F0} (comfortable store {a.Store:F0}) · age {a.Age:N0}",
+                    $"{DietName(a)} · энергия {Math.Max(0, a.Energy):F0} (удобный запас {a.Store:F0}) · возраст {a.Age:N0}");
         int cell = a.Y * w.W + a.X;
         float fill = Main.Frame.Hover == a ? Main.Frame.HoverFloorFill : 0;
         string l3 = Loc.T($"cell {w.Temp[cell]:+0;-0} °C{CaveBrief(w, a)}, body {a.Tb:+0;-0} °C · neighbors {w.Count[cell] - 1}, floor {fill:P0} full",
@@ -765,11 +768,21 @@ public partial class Hud : Control
         float tx = x + 76;
         T(tx, y + 14, $"#{a.Id}" + (a.Dead ? Loc.T($" · died ({Causes[a.Cause]})", $" · погиб ({Causes[a.Cause]})") : ""), a.Dead ? new Color(1, 0.5f, 0.45f) : Fg, 14, bold);
         T(tx, y + 31, Loc.T($"lineage #{a.Lineage} · gen {a.Gen} · age {a.Age:N0}", $"линия #{a.Lineage} · поколение {a.Gen} · возраст {a.Age:N0}"), Dim, 12);
-        float cap = a.Store, e = (float)Math.Max(0, a.Energy);
+        bool matter = World.MatterLaw;   // P.MatterEnergy 1: the energy is the charge of its molecules (World.Charge)
+        float cap = matter ? (float)w.Capacity(a) : a.Store, e = matter ? (float)w.Held(a) : (float)Math.Max(0, a.Energy);
         R(new Rect2(tx, y + 38, cw - 76, 7), new Color(1, 1, 1, 0.08f));
-        R(new Rect2(tx, y + 38, (cw - 76) * Math.Clamp(e / cap, 0, 1), 7), new Color(0.4f, 0.9f, 0.5f));
-        T(tx, y + 59, Loc.T($"energy {e:F1} (comfortable store {cap:F0}, beyond it leaks faster) · {a.LastCycles} cycles/tick",
-                            $"энергия {e:F1} (удобный запас {cap:F0}, сверх — утекает быстрее) · {a.LastCycles} тактов/тик"), Dim, 12);
+        R(new Rect2(tx, y + 38, (cw - 76) * Math.Clamp(e / Math.Max(1e-3f, cap), 0, 1), 7), new Color(0.4f, 0.9f, 0.5f));
+        if (matter)
+        {
+            int excited = 0;
+            foreach (int s in ch.Excited) excited += a.Inv[s];
+            double fuel = w.FuelCharge(a);
+            T(tx, y + 59, Loc.T($"charge {e:F1} of {cap:F0} ({excited} excited molecules)" + (fuel > 0.05 ? $" · fuel {fuel:F1}" : "") + (a.Energy > 0.05 ? $" · old store {a.Energy:F1}" : "") + (a.Due > 0 ? $" · owes {a.Due:F2}" : "") + $" · {a.LastCycles} cycles/tick",
+                                $"заряд {e:F1} из {cap:F0} (возбуждённых молекул {excited})" + (fuel > 0.05 ? $" · топливо {fuel:F1}" : "") + (a.Energy > 0.05 ? $" · прежний запас {a.Energy:F1}" : "") + (a.Due > 0 ? $" · долг {a.Due:F2}" : "") + $" · {a.LastCycles} тактов/тик"), Dim, 12);
+        }
+        else
+            T(tx, y + 59, Loc.T($"energy {e:F1} (comfortable store {cap:F0}, beyond it leaks faster) · {a.LastCycles} cycles/tick",
+                                $"энергия {e:F1} (удобный запас {cap:F0}, сверх — утекает быстрее) · {a.LastCycles} тактов/тик"), Dim, 12);
         y += 74;
         // The player's creatures: planted from a design, or descended from one.
         string design = Main.Sim.DesignedLineages.TryGetValue(a.Lineage, out var dn) ? DesignName(dn) : null;
@@ -805,7 +818,7 @@ public partial class Hud : Control
         y += 18;
 
         // The whole life: what it lived on (the lines above only cover the last ~100 ticks).
-        float acts = Math.Max(0, a.LifeStart + a.GainChem + a.LifeGot - a.LifeKids - a.LifeUpkeep - a.LifeHarm - a.LifeSpill - a.LifeUphill - a.LifeMineCost - (float)Math.Max(0, a.Energy));
+        float acts = Math.Max(0, a.LifeStart + a.GainChem + a.LifeGot - a.LifeKids - a.LifeUpkeep - a.LifeHarm - a.LifeSpill - a.LifeUphill - a.LifeMineCost - (float)(World.MatterLaw ? w.Held(a) : Math.Max(0, a.Energy)));
         int meals = a.NBind + a.NSplit;
         string when = a.LastMeal < 0 ? Loc.T("no profitable reactions yet", "реакций с выгодой не было")
             : Loc.T($"a reaction every {a.Age / Math.Max(1, meals):N0} t. on average, the last one ", $"реакция в среднем раз в {a.Age / Math.Max(1, meals):N0} т., последняя ")

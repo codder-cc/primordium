@@ -176,8 +176,9 @@ public sealed partial class World
                 a.Mass += e.Matter.F * Chem.Mass[e.Material];
                 a.Volume += e.Matter.F * Chem.Volume[e.Material];
             }
-            a.Energy = energy;
-            a.LifeStart = (float)energy;
+            energy = StartEnergy(a, energy, o.Energy == EnergySource.Import);
+            if (o.Energy == EnergySource.Import) { HandEnergy += energy; result.EnergyImported += energy; Flows[FDesign] += energy; }
+            else result.EnergyLocal += energy;
             a.Hue = ((b.Hue % 1f) + 1f) % 1f; a.Sat = Math.Clamp(b.Sat, 0, 1); a.Val = Math.Clamp(b.Val, 0, 1);
             a.Sx = b.Sx; a.Sy = b.Sy; a.Sz = b.Sz;
             a.Shape = ((b.Shape % Looks.ShapeCount) + Looks.ShapeCount) % Looks.ShapeCount;
@@ -275,31 +276,29 @@ public sealed partial class World
             }
         }
 
-        // Energy: local reactions worked out on a copy of the loose matter left after the matter.
-        var burn = new List<(int c, int s, Qty amount)>();
+        // Energy: local reactions worked out on a copy of the loose matter left after the matter. With
+        // P.MatterEnergy 1 the template's store becomes charge (World.Charge), as much as the body's ground
+        // molecules can take (its own excited molecules already carry what it had); from the place, the
+        // energy before capture.
+        var burn = new List<(int c, Chemistry.Reaction r, Qty m)>();
+        if (MatterLaw)
+        {
+            var whole = new int[Chemistry.S];
+            var frac = new Qty[Chemistry.S];
+            for (int s = 0; s < Chemistry.S; s++) { whole[s] = (int)(need[s].Raw >> Qty.Bits); frac[s] = Qty.FromRaw(need[s].Raw & ((1L << Qty.Bits) - 1)); }
+            double room = 0;
+            for (int g = 0; g < Chemistry.S; g += 2) if (Chem.PhotoUp[g] >= 0) room += (whole[g] + frac[g].D) * Chem.Gap[Chem.PhotoUp[g]];
+            energyNeed = Math.Min(energyNeed, room);
+        }
+        double release = MatterLaw && o.Energy == EnergySource.Local ? CaptureNeed(energyNeed) : energyNeed;
         if (o.Energy == EnergySource.Import) energy = energyNeed;
         else if (energyNeed > 0)
         {
             var left = new Qty[sources.Count, Chemistry.S];
             for (int k = 0; k < sources.Count; k++)
                 for (int s = 0; s < Chemistry.S; s++) left[k, s] = C[s][sources[k]] - looseTake[k, s] + (k == 0 ? leftover[s] : Qty.Zero);
-            for (int step = 0; step < 4 * Chemistry.S * sources.Count && energy < energyNeed; step++)
-            {
-                int bk = -1, bs = -1;
-                for (int k = 0; k < sources.Count; k++)
-                    for (int s = 0; s < Chemistry.S; s++)
-                        if (Chem.SplitExo[s] && left[k, s].D >= 0.1 && (bs < 0 || Chem.SplitEnergy(s) > Chem.SplitEnergy(bs))) { bk = k; bs = s; }
-                if (bs < 0) break;
-                Qty want = Qty.Of((energyNeed - energy) / Chem.SplitEnergy(bs));
-                if (want.Raw <= 0) want = Qty.FromRaw(1);
-                Qty take = left[bk, bs].Raw < want.Raw ? left[bk, bs] : want;
-                left[bk, bs] -= take;
-                left[bk, Chem.SplitA[bs]] += take;
-                if (Chem.SplitB[bs] >= 0) left[bk, Chem.SplitB[bs]] += take;
-                energy += take.D * Chem.SplitEnergy(bs);
-                burn.Add((sources[bk], bs, take));
-            }
-            if (energy < energyNeed * 0.999) { why = Loc.T($"too little energy from local reactions: {energy:0.#} of {energyNeed:0.#}", $"мало энергии от местных реакций: {energy:0.#} из {energyNeed:0.#}"); return false; }
+            energy = PlanLocalEnergy(sources, left, release, burn);
+            if (energy < release * 0.999) { why = Loc.T($"too little energy from local reactions: {energy:0.#} of {release:0.#}", $"мало энергии от местных реакций: {energy:0.#} из {release:0.#}"); return false; }
         }
 
         // Take it all.
@@ -330,14 +329,7 @@ public sealed partial class World
                 if (leftover[s].Raw > 0) C[s][cell] += leftover[s];
             }
         }
-        foreach (var (c, s, amount) in burn)
-        {
-            C[s][c] -= amount;
-            C[Chem.SplitA[s]][c] += amount;
-            if (Chem.SplitB[s] >= 0) C[Chem.SplitB[s]][c] += amount;
-        }
-        if (o.Energy == EnergySource.Import) { HandEnergy += energy; result.EnergyImported += energy; Flows[FDesign] += energy; }
-        else result.EnergyLocal += energy;
+        ApplyLocalEnergy(sources, burn);
         return true;
     }
 }

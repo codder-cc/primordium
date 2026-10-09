@@ -399,6 +399,12 @@ public sealed partial class World
             var e = a.Enz[k];
             if (buried == null) C[e.Material][cell] += e.Matter; else buried[e.Material] += e.Matter;
         }
+        if (PredProbe != null && buried == null)   // observation: the remains on open ground (World.Predation)
+        {
+            long n = 0; double e = 0, x = 0;
+            for (int s = 0; s < Chemistry.S; s++) { double k = a.Inv[s] + a.Pend[s].D; n += a.Inv[s]; e += k * Chem.E[s]; x += k * Chem.Gap[s]; }
+            PredProbe.Death(cell, n, e, x, Tick, Temp[cell], Water[cell] + Rain[cell]);
+        }
         double heat = Math.Max(0, a.Energy) + a.HeatHeld;
         heatIn[cell] += (float)heat;
         var flows = Flows;

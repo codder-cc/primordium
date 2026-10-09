@@ -166,6 +166,7 @@ public sealed partial class World
             // (the caller checked they hold it); a downhill one warms the body and charges it.
             if (de <= 0) { Relax(a, -de, false, false); a.LifeUphill -= de; return; }
             ReleaseGain(a, de);
+            if (PredProbe != null) PredationProbe.Add(ref PredProbe.Captured, de * (1 - P.CaptureHeat));   // observation
             a.GainChem += de * (1 - P.CaptureHeat);
             a.TickChem += de;
             a.LastMeal = a.Age;
@@ -427,7 +428,7 @@ public sealed partial class World
         AddMol(a, s);
         EpMol(EnergyEconomyProbe.IntakeMol, s);
         FoodProbe?.Env(a);
-        PredProbe?.EnvGain(Chem.E[s], cell);
+        PredProbe?.EnvGain(Chem.E[s], cell, Chem.Gap[s]);
         a.NIntake++;
         Note(EvKind.Intake);
         Act(a, ActEat, -1);
@@ -470,7 +471,7 @@ public sealed partial class World
         a.GainMine += Chem.E[s];
         a.NMines++;
         FoodProbe?.Env(a);
-        PredProbe?.EnvGain(Chem.E[s]);
+        PredProbe?.EnvGain(Chem.E[s], -1, Chem.Gap[s]);
         a.NMinedTier[0]++;
         var ctx = cur;
         if (ctx != null) ctx.Mined[0]++;
@@ -803,7 +804,7 @@ public sealed partial class World
         a.GainMine += Chem.E[s];
         a.NMines++;
         FoodProbe?.Env(a);
-        PredProbe?.EnvGain(Chem.E[s]);
+        PredProbe?.EnvGain(Chem.E[s], -1, Chem.Gap[s]);
         a.NMinedTier[tier]++;
         var ctx = cur;
         if (ctx != null) { ctx.Mined[tier]++; if (cat >= 0.5f) ctx.MinedCat[tier]++; }

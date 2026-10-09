@@ -22,6 +22,9 @@ public sealed class PredationProbe
     public double TakeWork, TakenE;
     public long EnvMols;
     public double EnvE, Photo, Store;
+    // Excitation (with P.MatterEnergy 1: charge, what a body can spend) brought in: by molecules from the
+    // environment, torn out, pulled; and captured from reactions in bodies (World.Charge).
+    public double EnvX, TornX, TakenX, Captured;
     public long Injects, InjectsForeign, InjectsDone, Inherited, Spread;
     public readonly long[] BinAttacks = new long[Bins], BinTorn = new long[Bins];
     public readonly double[] BinWork = new double[Bins], BinCohesion = new double[Bins], BinMass = new double[Bins];
@@ -46,31 +49,51 @@ public sealed class PredationProbe
         Takes = Taken = TakenKin = TakenLineage = 0;
         TakeWork = TakenE = 0;
         EnvMols = 0; EnvE = Photo = Store = 0;
+        EnvX = TornX = TakenX = Captured = 0;
         Injects = InjectsForeign = InjectsDone = Inherited = Spread = 0;
-        Scavenged = 0; ScavengedE = 0;
+        Scavenged = 0; ScavengedE = ScavengedX = 0;
+        Deaths = 0; DeathE = DeathX = 0;
         Array.Clear(BinAttacks); Array.Clear(BinTorn); Array.Clear(BinWork); Array.Clear(BinCohesion); Array.Clear(BinMass);
     }
 
-    // Remains of killed bodies still lying in a cell (molecules): intake there is counted as scavenging
-    // (an upper bound: whatever molecule is taken in there, as long as remains are left).
+    // Remains of dead bodies (killed or not) still lying in a cell (molecules): intake there is counted as
+    // scavenging (an upper bound: whatever molecule is taken in there, as long as remains are left).
     public readonly System.Collections.Concurrent.ConcurrentDictionary<int, long[]> Carcass = new();
     public long Scavenged;
-    public double ScavengedE;
+    public double ScavengedE, ScavengedX;   // bond energy and excitation (the charge, with P.MatterEnergy 1) taken back
 
-    public void EnvGain(int e, int cell = -1)
+    // Every death on open ground: what its remains hold (molecules, bond energy, excitation), and where, for
+    // the remains' lifetime (Deceased: drained between ticks by the report).
+    public long Deaths;
+    public double DeathE, DeathX;
+    public readonly System.Collections.Concurrent.ConcurrentQueue<(int cell, long tick, float temp, float wet)> Deceased = new();
+
+    public void Death(int cell, long n, double e, double x, long tick, float temp, float wet)
+    {
+        Interlocked.Increment(ref Deaths);
+        Add(ref DeathE, e);
+        Add(ref DeathX, x);
+        Interlocked.Add(ref Carcass.GetOrAdd(cell, _ => new long[1])[0], n);
+        Deceased.Enqueue((cell, tick, temp, wet));
+    }
+
+    public void EnvGain(int e, int cell = -1, int x = 0)
     {
         Interlocked.Increment(ref EnvMols);
         Add(ref EnvE, e);
+        if (x > 0) Add(ref EnvX, x);
         if (cell < 0 || Carcass.IsEmpty || !Carcass.TryGetValue(cell, out var left)) return;
         if (Interlocked.Decrement(ref left[0]) < 0) { Interlocked.Increment(ref left[0]); return; }
         Interlocked.Increment(ref Scavenged);
         Add(ref ScavengedE, e);
+        if (x > 0) Add(ref ScavengedX, x);
     }
 
     public void Tear(Agent a, Agent t, int s, Chemistry chem)
     {
         Interlocked.Increment(ref Torn);
         Add(ref TornE, chem.E[s]);
+        if (chem.Gap[s] > 0) Add(ref TornX, chem.Gap[s]);
         if (chem.SplitExo[s]) Add(ref TornSplit, chem.SplitEnergy(s));
         if (a.Lineage == t.Lineage) Interlocked.Increment(ref TornLineage);
         if (Kin(a, t)) Interlocked.Increment(ref TornKin);
@@ -99,8 +122,7 @@ public sealed class PredationProbe
         double e = 0;
         for (int s = 0; s < Chemistry.S; s++) { long k = t.Inv[s] + (long)t.Pend[s].F; n += k; e += k * chem.E[s]; }
         Interlocked.Add(ref Remains, n);
-        Add(ref RemainsE, e);
-        Interlocked.Add(ref Carcass.GetOrAdd(cell, _ => new long[1])[0], n);
+        Add(ref RemainsE, e);   // (its molecules join the cell's remains in Death, as every death's do)
     }
 
     public void Take(Agent a, Agent t, int s, float work, bool got, Chemistry chem)
@@ -110,6 +132,7 @@ public sealed class PredationProbe
         if (!got) return;
         Interlocked.Increment(ref Taken);
         Add(ref TakenE, chem.E[s]);
+        if (chem.Gap[s] > 0) Add(ref TakenX, chem.Gap[s]);
         if (a.Lineage == t.Lineage) Interlocked.Increment(ref TakenLineage);
         if (Kin(a, t)) Interlocked.Increment(ref TakenKin);
     }
@@ -127,6 +150,14 @@ public sealed class PredationProbe
 public sealed partial class World
 {
     public PredationProbe PredProbe;   // observation only (see PredationProbe); null = off
+
+    // The excitation lying loose on a cell's surface, Σ C·Gap (observation: the remains' charge, RemainsLife).
+    public double LooseExcitation(int cell)
+    {
+        double x = 0;
+        foreach (int s in Chem.Excited) x += C[s][cell].D * Chem.Gap[s];
+        return x;
+    }
 
     // ---- parasites: following injected code (observation only; saved with the chronicle) ----
 

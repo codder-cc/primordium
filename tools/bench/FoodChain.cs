@@ -24,7 +24,7 @@ public sealed partial class World
         string Arg(string name, string def) { int i = Array.IndexOf(args, name); return i >= 0 && i + 1 < args.Length ? args[i + 1] : def; }
         var inv = System.Globalization.CultureInfo.InvariantCulture;
         int ticks = int.Parse(Arg("--ticks", "6000")), every = int.Parse(Arg("--every", "2000")), top = int.Parse(Arg("--top", "6"));
-        int pop = int.Parse(Arg("--pop", P.InitialPop.ToString()));
+        int pop = int.Parse(Arg("--pop", "-1"));   // < 0: P.InitialPop by area
         double edge = double.Parse(Arg("--edge", "0.05"), inv), minShare = double.Parse(Arg("--min-share", "0.005"), inv);
         bool abio = Array.IndexOf(args, "--noabio") < 0, byGenome = Arg("--by", "lineage") == "genome";
         string load = Arg("--load", null);
@@ -35,7 +35,7 @@ public sealed partial class World
                                 "сид    тик     тел  линий    хищников   доля_добычи УТ_сред УТ_макс цепь  своя_линия убийств хеш"));
         foreach (int seed0 in seeds)
         {
-            var w = load != null ? Load(load) : new World(seed0, pop, abio);
+            var w = load != null ? Load(load) : new World(Batch.Settings(args, seed0, pop, abio, 0));   // --size WxHxL: a small world
             int seed = w.Seed;
             var probe = w.FoodProbe = new FoodWebProbe { ByGenome = byGenome };
             for (int t = 1; t <= ticks; t++)

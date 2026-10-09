@@ -353,13 +353,13 @@ if (best != null)
     var live = w.Agents.Where(a => !a.Dead).ToList();
     if (live.Count > 0)
         Console.WriteLine($"extremes: molecules max {live.Max(a => a.InvTotal)} (p99 {live.Select(a => a.InvTotal).OrderBy(v => v).ElementAt(live.Count * 99 / 100)}), " +
-            $"energy max {live.Max(a => a.Energy):F0} (store p50 {live.Select(a => a.Store).OrderBy(v => v).ElementAt(live.Count / 2):F0}), " +
+            $"energy max {live.Max(a => w.Held(a)):F0} ({(World.MatterLaw ? "charge capacity" : "store")} p50 {live.Select(a => World.MatterLaw ? w.Capacity(a) : a.Store).OrderBy(v => v).ElementAt(live.Count / 2):F0}), " +
             $"protein kinds max {live.Max(a => a.EnzN)}, protein amount max {live.Max(a => a.EnzymeTotal):F1}, links max {live.Max(a => a.Links.Count)}, genome max {live.Max(a => a.G.Length)}, cells max {live.Max(a => a.Cells)}");
 }
 foreach (var a in w.Agents.Where(a => !a.Dead).OrderByDescending(a => a.Age).Take(5))
 {
     var parts = new System.Collections.Generic.List<string>();
     for (int i = 0; i < a.G.Length;) { parts.Add(Genome.DisAt(a.G, i, out int len)); i += len; }
-    Console.WriteLine($"old #{a.Id} age {a.Age} kids {a.NChildren} E {a.Energy:F0}/{a.Store:F0} mass {a.Mass:F0} enz {a.EnzN} | start {a.LifeStart:F0} chem +{a.GainChem:F0} got +{a.LifeGot:F0} photo +{a.GainPhoto:F0} mine {a.GainMine:F0} minecost {a.LifeMineCost:F0} tiers {string.Join("/", a.NMinedTier.Take(5))} " +
+    Console.WriteLine($"old #{a.Id} age {a.Age} kids {a.NChildren} E {w.Held(a):F0}/{(World.MatterLaw ? w.Capacity(a) : a.Store):F0} mass {a.Mass:F0} enz {a.EnzN} | start {a.LifeStart:F0} chem +{a.GainChem:F0} got +{a.LifeGot:F0} photo +{a.GainPhoto:F0} mine {a.GainMine:F0} minecost {a.LifeMineCost:F0} tiers {string.Join("/", a.NMinedTier.Take(5))} " +
         $"| upkeep {a.LifeUpkeep:F0} kids {a.LifeKids:F0} harm {a.LifeHarm:F0} hold {a.LifeSpill:F0} uphill {a.LifeUphill:F0} | bind {a.NBind} split {a.NSplit} intake {a.NIntake} take {a.NTakes} moves {a.NMoves} | " + string.Join(" ", parts));
 }

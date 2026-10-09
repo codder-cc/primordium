@@ -25,6 +25,7 @@ public partial class CreatorWindow : UiWindow
     readonly List<int> errorLines = new();
     VBoxContainer bodyRows;
     SpinBox energy, count;
+    Label energyLabel;
     OptionButton matter, energySrc, shape;
     CheckBox customLooks;
     HSlider hue, sat, val;
@@ -128,7 +129,8 @@ public partial class CreatorWindow : UiWindow
 
         energy = UiKit.Spin(0, 1000, 1, 30, 90);
         energy.ValueChanged += v => { if (!loading) { current.Energy = (float)v; Touch(); } };
-        col.AddChild(UiKit.Row(8, UiKit.Text(Loc.T("Energy at planting", "Энергия при посадке"), 13, UiKit.Dim), energy));
+        energyLabel = UiKit.Text(EnergyCaption(), 13, UiKit.Dim);
+        col.AddChild(UiKit.Row(8, energyLabel, energy));
         col.AddChild(new HSeparator());
 
         matter = UiKit.Options(Loc.T("from local matter", "из местного вещества"), Loc.T("bring from outside", "принести извне"));
@@ -422,6 +424,8 @@ public partial class CreatorWindow : UiWindow
         bodyTotal.AddThemeColorOverride("font_color", total < P.MinBody ? UiKit.Bad : UiKit.Dim);
     }
 
+    static string EnergyCaption() => World.MatterLaw ? Loc.T("Charge at planting", "Заряд при посадке") : Loc.T("Energy at planting", "Энергия при посадке");
+
     void Explain()
     {
         string m = matter.Selected == 0
@@ -559,12 +563,30 @@ public partial class CreatorWindow : UiWindow
             all &= ok;
             parts.Add($"{(s == CreatureDesign.AnyMolecule ? "any" : ch.Name[s])} {have:0}/{n}{(ok ? "" : Loc.T(" (short)", " — мало"))}");
         }
-        float e = 0;
-        for (int s = 0; s < Chemistry.S; s++) if (ch.SplitExo[s]) e += Loose(s) * ch.SplitEnergy(s);
-        bool eok = e >= current.Energy;
+        energyLabel.Text = EnergyCaption();
+        // Downhill reactions of the loose matter there (splits, and binds in the chemistry from bonds), as planting uses them.
+        double e = w.LocalEnergyAround(cell), want = current.Energy;
+        string chargeNote = "";
+        if (World.MatterLaw)
+        {
+            // P.MatterEnergy 1: the energy is the charge the body starts with (World.Charge): its excited molecules
+            // hold some, its ground molecules take the rest, and local reactions must release it before capture.
+            double held = 0, room = 0;
+            bool any = false;
+            foreach (var (s, n) in body)
+            {
+                if (s == CreatureDesign.AnyMolecule) any = true;
+                else if (ch.Gap[s] > 0) held += n * ch.Gap[s];
+                else if (ch.PhotoUp[s] >= 0) room += n * ch.Gap[ch.PhotoUp[s]];
+            }
+            want = Math.Max(0, current.Energy - held) / Math.Max(1e-6, 1 - P.CaptureHeat);
+            chargeNote = Loc.T($" Charge: its excited molecules hold {held:0}, its ground ones take up to {room:0} more" + (any ? " (and what 'any' brings)" : "") + $"; from the place that needs {want:0} of reaction energy (CaptureHeat {P.CaptureHeat:P0} warms it).",
+                               $" Заряд: возбуждённые молекулы держат {held:0}, основные примут ещё до {room:0}" + (any ? " (и что даст «any»)" : "") + $"; на месте это {want:0} энергии реакций (CaptureHeat {P.CaptureHeat:P0} греет тело).");
+        }
+        bool eok = e >= want;
         string found = parts.Count > 0 ? string.Join(" · ", parts) : "—";
-        string place = Loc.T($"At the cursor ({cell % w.W}, {cell / w.W}), loose matter of the cell and its neighbours: {found}. Energy from local splits ≈ {e:0} of {current.Energy:0}.",
-                             $"У курсора ({cell % w.W}, {cell / w.W}), рыхлое вещество клетки и соседей: {found}. Энергия местных распадов ≈ {e:0} из {current.Energy:0}.");
+        string place = Loc.T($"At the cursor ({cell % w.W}, {cell / w.W}), loose matter of the cell and its neighbours: {found}. Energy from local reactions ≈ {e:0} of {want:0}.",
+                             $"У курсора ({cell % w.W}, {cell / w.W}), рыхлое вещество клетки и соседей: {found}. Энергия местных реакций ≈ {e:0} из {want:0}.") + chargeNote;
         if (matter.Selected == 0 && !all) place += Loc.T(" The soft top block may add its own; otherwise use 'bring from outside'.", " Мягкий верхний блок может добавить своё; иначе — «принести извне».");
         availability.Text = place;
         availability.AddThemeColorOverride("font_color", (matter.Selected == 1 || all) && (energySrc.Selected == 1 || eok) ? UiKit.Dim : new Color(1f, 0.7f, 0.5f));

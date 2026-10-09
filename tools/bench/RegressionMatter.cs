@@ -20,6 +20,10 @@ public sealed partial class World
             P.ChemEnergyModel = chem;
             MatterLawProbes();       // and the chemistry from bonds, the default
             MatterWorldProbe();
+            P.ChemEnergyModel = 0;
+            MatterDesignProbe();
+            P.ChemEnergyModel = chem;
+            MatterDesignProbe();
         }
         finally { P.MatterEnergy = law; P.ChemEnergyModel = chem; }
     }
@@ -108,7 +112,8 @@ public sealed partial class World
             $"law 1 exothermic bind: {done} binds of {bde}: charge +{charged:R}, held heat +{held:R}");
         w.EnergyBalanced(before, "law 1 exothermic bind");
         // An uphill bind: carriers pay the product's bonds, no heat beyond the grid's overshoot.
-        if (TryGroundBind(ch, de => de < 0, out var up))
+        bool uphill = TryGroundBind(ch, de => de < 0, out var up), fuel = ch.Fuel.Length > 0;   // the chemistry from bonds may have neither
+        if (uphill)
         {
             var (ux, uy, _, ude) = up;
             var builder = w.ChargedAgent(c + 3, g, 4, 20);
@@ -152,7 +157,7 @@ public sealed partial class World
         Require(two.Inv[weak] + two.Pend[weak].D == wk && two.Inv[strong] + two.Pend[strong].D < 3, "law 1 pay order: the protein's carrier is not spent first");
 
         // Fuel: a ground compound with an exothermic split burns by itself only with a protein for it.
-        if (ch.Fuel.Length > 0)
+        if (fuel)
         {
             int f = ch.Fuel.OrderByDescending(s => ch.SplitEnergy(s)).First();
             var burner = w.TestAgent(c + 6, 2, f, 6);
@@ -261,7 +266,7 @@ public sealed partial class World
         var founder = w.Agents[^1];
         Require(founder.Energy == 0 && w.ChargeRaw(founder) > 0, $"law 1 abiogenesis: founder with store {founder.Energy} and charge {w.Charge(founder)}");
         w.EnergyBalanced(before, "law 1 abiogenesis", FAbio);
-        Console.WriteLine($"PASS matter energy law (chemistry model {ch.Model}): paying by relaxation, starving without debt flows, exothermic and uphill binds, capture saturation and order, pay order, fuel only with its protein, share, links, division, mating, attack carrying charge, death keeping it in the remains, legacy remainder first, living to starvation, abiogenesis; atoms exact");
+        Console.WriteLine($"PASS matter energy law (chemistry model {ch.Model}): paying by relaxation, starving without debt flows, exothermic{(uphill ? " and uphill" : "")} binds, capture saturation and order, pay order, {(fuel ? "fuel only with its protein" : "(no fuel in this chemistry)")}, share, links, division, mating, attack carrying charge, death keeping it in the remains, legacy remainder first, living to starvation, abiogenesis; atoms exact");
     }
 
     // A small living world under the law: the ledger closes, atoms are exact, nobody owes anything between
@@ -289,6 +294,63 @@ public sealed partial class World
         for (int t = 0; t < 200; t++) { a.Step(); b.Step(); }
         Require(a.DeepHash() == b.DeepHash() && a.StateHash() == b.StateHash(), "law 1 save/load: the continuation diverged");
         Console.WriteLine($"PASS matter energy world (law 1, 96×96×64, seed 4): {a.Agents.Count} bodies after 600 ticks, {note}, nobody owes between ticks; save format {SaveVersion} with a debt loads into the same continuation");
+    }
+
+    // Planting under the law: a design's energy is its starting charge (brought in: excitation, booked as
+    // the design input; from the place: downhill reactions there, splits and binds, captured), a body that
+    // cannot hold it is refused, a population template's store becomes charge. The examples then live.
+    static void MatterDesignProbe()
+    {
+        var w = new World(TinySettings(5, 0, false, false, SmallSide, SmallSide, SmallLevels));
+        var ch = w.Chem;
+        int Find(Func<int, bool> ok)
+        {
+            for (int k = 0; k < w.N; k++) { int c = (int)((k * 2654435761L + 12345) % w.N); if (ok(c)) return c; }
+            throw new Exception("no cell for the design probe");
+        }
+        bool Mild(int c) => MathF.Abs(w.Temp[c] - 15) < 8;
+        int land = Find(c => Mild(c) && !w.Submerged(c) && w.Count[c] == 0);
+        int lake;
+        try { lake = Find(c => w.Water[c] > 2 && w.Count[c] == 0); } catch (Exception) { lake = land; }
+        var import = new SpawnOptions { Matter = MatterSource.Import, Energy = EnergySource.Import, Count = 3, Radius = 2 };
+        var start = w.EnergyStart();
+        var planted = new System.Collections.Generic.List<(CreatureDesign d, SpawnResult r)>();
+        foreach (var d in CreatureExamples.All)
+        {
+            int at = d.Name == CreatureExamples.Swimmer.Name ? lake : land;
+            var r = w.SpawnDesign(d, at % w.W, at / w.W, import);
+            Require(r.Made == 3, $"law 1 design {d.Name}: {r}");
+            foreach (var a in r.Agents)
+                Require(a.Energy == 0 && w.Charge(a) > d.Energy - 1e-6, $"law 1 design {d.Name}: charge {w.Charge(a):R} for {d.Energy}");   // more if its own molecules are excited
+            planted.Add((d, r));
+        }
+        w.EnergyBalanced(start, "law 1 designs brought in", FDesign);
+        // Too much charge for the body: refused, nothing taken.
+        var greedy = new CreatureDesign { Name = "жадный", Genome = "label 0\nyield\njmp 0\nnop\nnop\nnop\nnop\nnop", Body = new() { ["0"] = 4 }, Energy = 1000 };
+        ulong hash = w.StateHash();
+        var no = w.SpawnDesign(greedy, land % w.W, land / w.W, import);
+        Require(no.Made == 0 && no.Error != null && w.StateHash() == hash, $"law 1 design: a body too small for its charge was planted ({no})");
+        // From the place: the cell's downhill reactions charge it.
+        int spot = Find(c => Mild(c) && !w.Submerged(c) && w.Count[c] == 0 && c != land);
+        for (int s = 0; s < Chemistry.S; s++) w.C[s][spot] += 4;
+        var local = new CreatureDesign { Name = "местный", Genome = "label 0\npush 0\nphoto\nyield\njmp 0\nnop\nnop\nnop", Body = new() { ["0"] = 10 }, Energy = 6 };
+        var before = w.AuditEnergy();
+        var ok = w.SpawnDesign(local, spot % w.W, spot / w.W, new SpawnOptions { Radius = 0, Matter = MatterSource.Import });
+        Require(ok.Made == 1 && Math.Abs(w.Charge(ok.Agents[0]) - 6) < 1e-3 && ok.EnergyLocal > 6, $"law 1 local design: {ok}, charge {(ok.Made > 0 ? w.Charge(ok.Agents[0]) : 0):0.###}");
+        w.EnergyBalanced(before, "law 1 design charged by local reactions");
+        // A population copied and pasted: molecules (with their charge) and fractions exact.
+        var donors = planted[0].r.Agents.ToList();
+        var t = w.CopyPopulation(donors, "листья", "probe");
+        before = w.AuditEnergy();
+        var pasted = w.PastePopulation(t, land % w.W + 6, land / w.W, new PasteOptions { Matter = MatterSource.Import, Energy = EnergySource.Import });
+        Require(pasted.Made == donors.Count && pasted.Agents.Select(w.ChargeRaw).SequenceEqual(donors.Select(w.ChargeRaw)), $"law 1 population: {pasted.Made} of {donors.Count}, charges differ");
+        w.EnergyBalanced(before, "law 1 population pasted", FDesign);
+        // The examples live.
+        var living = w.AuditEnergy();
+        for (int k = 0; k < 600; k++) w.Step();
+        string note = EnergyWorldCheck(w, living, "law 1 designs living");
+        var lives = planted.Select(p => $"{CreatureExamples.NameEn(p.d.Name)} {p.r.Agents.Count(a => !a.Dead)}/3 (lineage {w.Agents.Count(a => !a.Dead && a.Lineage == p.r.Lineage)}; deaths by cause {string.Join("", p.r.Agents.Where(a => a.Dead).Select(a => a.Cause))}, ages {string.Join("/", p.r.Agents.Select(a => a.Age))})").ToList();
+        Console.WriteLine($"PASS matter energy designs (chemistry model {ch.Model}): charge brought in and from local reactions, a body too small refused, population pasted with its charge; after 600 ticks {string.Join(", ", lives)}; {note}");
     }
 
     static (int a, int b, int p, int de) FindGroundBind(Chemistry ch, Func<int, bool> want) =>

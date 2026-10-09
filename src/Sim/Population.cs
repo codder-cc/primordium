@@ -312,7 +312,7 @@ public static class PopulationLibrary
 public sealed class PasteOptions
 {
     public MatterSource Matter { get; set; } = MatterSource.Local;   // Local: each body from its own cell, 4 neighbours, soft top block
-    public EnergySource Energy { get; set; } = EnergySource.Local;   // Local: exothermic splits of loose matter there
+    public EnergySource Energy { get; set; } = EnergySource.Local;   // Local: downhill reactions of loose matter there (World.PlanLocalEnergy)
     public bool KeepRelations { get; set; } = true;   // bodies of one source lineage share a new lineage, parents stay parents
     public bool RemapGenes { get; set; } = true;      // in another chemistry: protein genes point at the mapped species
 }

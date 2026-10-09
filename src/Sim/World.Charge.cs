@@ -287,6 +287,7 @@ public sealed partial class World
             if (de != bond) Flows[FScale] += de - bond;   // P.EnergyK ≠ 1 (see World.Energy)
             double before = Charge(a);
             ReleaseGain(a, de);
+            if (PredProbe != null) PredationProbe.Add(ref PredProbe.Captured, de * (1 - P.CaptureHeat));   // observation
             double gained = Charge(a) - before;
             got += gained;
             if (gained <= 0) break;   // no room for charge: what burns now is only heat

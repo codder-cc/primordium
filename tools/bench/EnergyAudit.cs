@@ -189,9 +189,9 @@ public sealed partial class World
             pop++;
             double e = 0, rr = 0;
             for (int s = 0; s < Chemistry.S; s++) { e += (double)a.Inv[s] * Chem.E[s]; rr += a.Inv[s] * r[s]; }
-            store += a.Energy; held += a.HeatHeld; me += e; mr += rr; mol += a.InvTotal; mass += a.Mass;
+            store += Held(a); held += a.HeatHeld; me += e; mr += rr; mol += a.InvTotal; mass += a.Mass;   // store, law 1: the charge (also in E and R of its molecules)
             double n = a.InvTotal;
-            double carried = P.TornStore * Math.Max(0, a.Energy) / n;   // one torn molecule's share (CarryStore)
+            double carried = MatterLaw ? 0 : P.TornStore * Math.Max(0, a.Energy) / n;   // one torn molecule's share (CarryStore); law 1: its excitation is in its R
             perE.Add(e / n); perR.Add(rr / n); perStore.Add(carried); tear.Add(TearCost(a));
             int cell = a.Y * W + a.X;
             if (a.Z >= 3 && OnFloor(a) && BlockCounts(cell * Z + a.Z - 1, counts))
@@ -356,7 +356,7 @@ public sealed partial class World
     {
         string Arg(string name, string def) { int i = Array.IndexOf(args, name); return i >= 0 && i + 1 < args.Length ? args[i + 1] : def; }
         int ticks = int.Parse(Arg("--ticks", "6000")), every = int.Parse(Arg("--every", "2000")), series = int.Parse(Arg("--series", "500"));
-        int pop = int.Parse(Arg("--pop", P.InitialPop.ToString())), noAbioAt = int.Parse(Arg("--noabio-at", "-1"));
+        int pop = int.Parse(Arg("--pop", "-1")), noAbioAt = int.Parse(Arg("--noabio-at", "-1"));
         bool abio = Array.IndexOf(args, "--noabio") < 0, probeOn = Array.IndexOf(args, "--no-probe") < 0;
         string load = Arg("--load", null);
         var seeds = load != null ? new List<int> { 0 } : Batch.ParseSeeds(Arg("--seeds", "1-6"));
@@ -366,7 +366,7 @@ public sealed partial class World
         for (int k = 0; k < 4; k++) pooledCols[k] = new List<double>();
         foreach (int seed0 in seeds)
         {
-            var w = load != null ? Load(load) : new World(seed0, pop, abio);
+            var w = load != null ? Load(load) : new World(Batch.Settings(args, seed0, pop, abio, 0));   // --size WxHxL: a small world
             if (load != null) foreach (var line in ParamHook.Apply(ParamHook.Parse(args))) Console.WriteLine("set after load " + line);
             var r = EnergyEconomyProbe.Downhill(w.Chem);
             Console.WriteLine($"=== seed {w.Seed} tick {w.Tick} pop {w.Agents.Count} ===");

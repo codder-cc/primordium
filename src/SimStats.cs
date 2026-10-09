@@ -69,7 +69,7 @@ public sealed class SimStats
                 int cell = a.Y * w.W + a.X;
                 c.Pop++;
                 c.AvgLen += a.G.Length;
-                c.AvgEnergy += (float)a.Energy;
+                c.AvgEnergy += (float)w.Held(a);
                 c.AvgAge += a.Age;
                 c.AvgCycles += a.LastCycles;
                 c.AvgTb += a.Tb;
@@ -101,7 +101,7 @@ public sealed class SimStats
                 }
 
                 v[0] = a.Age; v[1] = a.NChildren; v[2] = a.Gen; v[3] = a.Mass; v[4] = a.Cells + a.Mass * 1e-4f;
-                v[5] = (float)a.Energy; v[6] = enzTotal; v[7] = protShare; v[8] = a.G.Length; v[9] = a.NKills;
+                v[5] = (float)w.Held(a); v[6] = enzTotal; v[7] = protShare; v[8] = a.G.Length; v[9] = a.NKills;
                 v[10] = a.NAttacks; v[11] = a.NInjects; v[12] = a.NMates; v[13] = w.Count[cell]; v[14] = a.Tb; v[15] = -a.Tb;
                 for (int r = 0; r < R; r++)
                     if (v[r] > p.Best[r]) { p.Best[r] = v[r]; p.BestA[r] = a; }
@@ -161,7 +161,7 @@ public sealed class SimStats
                 2 => Loc.Both($"generation {a.Gen}", $"поколение {a.Gen}"),
                 3 => Loc.Both($"mass {a.Mass:0} · {a.Cells} cells", $"масса {a.Mass:0} · {a.Cells} кл."),
                 4 => Loc.Both($"{a.Cells} cells · mass {a.Mass:0}", $"{a.Cells} клеток · масса {a.Mass:0}"),
-                5 => Loc.Both($"energy {a.Energy:0}", $"энергия {a.Energy:0}"),
+                5 => Loc.Both($"energy {w.Held(a):0}", $"энергия {w.Held(a):0}"),
                 6 => Loc.Both($"proteins {a.EnzymeTotal:0.0}", $"белков {a.EnzymeTotal:0.0}"),
                 7 => Loc.Both($"conserved {best[r]:P0}", $"закреплено {best[r]:P0}"),
                 8 => Loc.Both($"{a.G.Length} bytes", $"{a.G.Length} байт"),

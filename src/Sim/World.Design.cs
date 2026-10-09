@@ -122,30 +122,23 @@ public sealed partial class World
         for (int s = 0; s < Chemistry.S; s++) volume += counts[s] * Chem.BodyVolume[s];
         if (!Fits(cell, level, volume)) { why = Loc.T("no room on this floor for such a body", "на этом полу нет места для такого тела"); return null; }
 
-        // 2. Energy: local reactions are worked out on a copy of the loose matter left after step 1.
-        float energy = 0;
-        var burn = new List<(int c, int s, float amount)>();
-        if (o.Energy == EnergySource.Import) energy = d.Energy;
-        else if (d.Energy > 0)
+        // 2. Energy: local reactions are worked out on a copy of the loose matter left after step 1. With
+        // P.MatterEnergy 1 the design's energy is the charge it starts with (World.Charge): it must fit in
+        // the excited states of the ground molecules it is made of, and from the place it takes the
+        // reactions' energy before capture (CaptureHeat of it warms the new body).
+        double energy = 0;
+        var burn = new List<(int c, Chemistry.Reaction r, Qty m)>();
+        double add = d.Energy;
+        if (MatterLaw && (add = ChargeToAdd(counts, d.Energy, out why)) < 0) return null;
+        double need = MatterLaw && o.Energy == EnergySource.Local ? CaptureNeed(add) : add;
+        if (o.Energy == EnergySource.Import) energy = add;
+        else if (add > 0)
         {
-            var left = new float[sources.Count, Chemistry.S];
+            var left = new Qty[sources.Count, Chemistry.S];
             for (int k = 0; k < sources.Count; k++)
-                for (int s = 0; s < Chemistry.S; s++) left[k, s] = (float)(C[s][sources[k]] - looseTake[k, s]);
-            for (int step = 0; step < 4 * Chemistry.S * sources.Count && energy < d.Energy; step++)
-            {
-                int bk = -1, bs = -1;
-                for (int k = 0; k < sources.Count; k++)
-                    for (int s = 0; s < Chemistry.S; s++)
-                        if (Chem.SplitExo[s] && left[k, s] >= 0.1f && (bs < 0 || Chem.SplitEnergy(s) > Chem.SplitEnergy(bs))) { bk = k; bs = s; }
-                if (bs < 0) break;
-                float take = Math.Min(left[bk, bs], (d.Energy - energy) / Chem.SplitEnergy(bs));
-                left[bk, bs] -= take;
-                left[bk, Chem.SplitA[bs]] += take;
-                if (Chem.SplitB[bs] >= 0) left[bk, Chem.SplitB[bs]] += take;
-                energy += take * Chem.SplitEnergy(bs);
-                burn.Add((sources[bk], bs, take));
-            }
-            if (energy < d.Energy * 0.999f) { why = Loc.T($"local reactions give {energy:0.#} of {d.Energy:0.#} energy", $"местные реакции дают {energy:0.#} энергии из {d.Energy:0.#}"); return null; }
+                for (int s = 0; s < Chemistry.S; s++) left[k, s] = C[s][sources[k]] - looseTake[k, s];
+            energy = PlanLocalEnergy(sources, left, need, burn);
+            if (energy < need * 0.999) { why = Loc.T($"local reactions give {energy:0.#} of {need:0.#} energy", $"местные реакции дают {energy:0.#} энергии из {need:0.#}"); return null; }
         }
 
         // 3. Take it all.
@@ -165,22 +158,14 @@ public sealed partial class World
             for (int s = 0; s < Chemistry.S; s++)
                 for (int j = 0; j < blockTake[s]; j++) TakeVoxelSpecies(top, s);
         }
-        foreach (var (c, s, amount) in burn)
-        {
-            C[s][c] -= amount;
-            C[Chem.SplitA[s]][c] += amount;
-            if (Chem.SplitB[s] >= 0) C[Chem.SplitB[s]][c] += amount;
-        }
-        if (o.Energy == EnergySource.Import) { HandEnergy += energy; result.EnergyImported += energy; }
-        else result.EnergyLocal += energy;
+        ApplyLocalEnergy(sources, burn);
 
         // 4. The body.
         long id = NewId();
         if (lineage <= 0) lineage = id;
         var a = new Agent(id, lineage, 0, (byte[])genome.Clone(), null, d.Life().Id) { Tb = Temp[cell], Z = Height[cell], Designed = true };
         for (int s = 0; s < Chemistry.S; s++) for (int j = 0; j < counts[s]; j++) AddMol(a, s);
-        a.Energy = a.LifeStart = energy;
-        // The ledger (World.Energy): what came from outside is an input; local matter and local splits
+        // The ledger (World.Energy): what came from outside is an input; local matter and local reactions
         // only moved energy between reservoirs (loose/rock bonds → body bonds and body energy).
         if (o.Matter == MatterSource.Import)
         {
@@ -188,7 +173,9 @@ public sealed partial class World
             for (int s = 0; s < Chemistry.S; s++) bonds += (double)counts[s] * Chem.E[s];
             Flows[FDesign] += bonds;
         }
-        if (o.Energy == EnergySource.Import) Flows[FDesign] += a.Energy;
+        energy = StartEnergy(a, energy, o.Energy == EnergySource.Import);
+        if (o.Energy == EnergySource.Import) { HandEnergy += energy; result.EnergyImported += energy; Flows[FDesign] += energy; }
+        else result.EnergyLocal += energy;
         Looks.Apply(a);
         if (d.Hue is float hue) a.Hue = ((hue % 1f) + 1f) % 1f;
         if (d.Sat is float sat) a.Sat = Math.Clamp(sat, 0, 1);
@@ -200,6 +187,112 @@ public sealed partial class World
         EvoRegister(a);   // a founder: a root of the family tree
         DesignSpawns++;
         return a;
+    }
+
+    // The downhill reactions of the loose matter at `sources` (what is left there after the body's matter is
+    // taken: `left`, per source and species, changed in place), the most energetic first over all of them,
+    // until `need` is released: exothermic splits, and in the chemistry from bonds (Chemistry.Model 1, where
+    // splits seldom release energy) binds too — the reactions abiogenesis uses (LocalReactions). Every partner
+    // at least 0.1 molecule; each moves exactly the same Qty. `burn` lists them for ApplyLocalEnergy.
+    double PlanLocalEnergy(List<int> sources, Qty[,] left, double need, List<(int c, Chemistry.Reaction r, Qty m)> burn)
+    {
+        double energy = 0;
+        long min = Qty.Of(0.1).Raw;
+        bool binds = Chem.Model != 0;
+        var down = Chem.Downhill;
+        for (int step = 0; step < 4 * Chemistry.S * sources.Count && energy < need; step++)
+        {
+            int bk = -1;
+            Chemistry.Reaction best = default;
+            for (int k = 0; k < sources.Count; k++)
+                foreach (var r in down)   // the most energetic first
+                {
+                    if (bk >= 0 && r.Energy <= best.Energy) break;
+                    if (r.B >= 0 && !binds) continue;
+                    bool can = r.B < 0 ? left[k, r.A].Raw >= min : r.A == r.B ? left[k, r.A].Raw >= 2 * min : left[k, r.A].Raw >= min && left[k, r.B].Raw >= min;
+                    if (can) { bk = k; best = r; break; }
+                }
+            if (bk < 0) break;
+            long have = best.B < 0 ? left[bk, best.A].Raw : best.A == best.B ? left[bk, best.A].Raw / 2 : Math.Min(left[bk, best.A].Raw, left[bk, best.B].Raw);
+            Qty take = Qty.Min(Qty.FromRaw(have), Qty.Of((need - energy) / best.Energy));
+            if (take.Raw <= 0) take = Qty.FromRaw(1);
+            React(left, bk, best, take);
+            energy += take.D * best.Energy;
+            burn.Add((sources[bk], best, take));
+        }
+        return energy;
+    }
+
+    // For the designer (read only): the energy the downhill reactions of the loose matter in a cell and its four
+    // neighbours could release (PlanLocalEnergy on a copy).
+    public double LocalEnergyAround(int cell)
+    {
+        var sources = new List<int> { cell };
+        for (int k = 0; k < 4; k++) { int n = nb[cell * 4 + k]; if (!sources.Contains(n)) sources.Add(n); }
+        var left = new Qty[sources.Count, Chemistry.S];
+        for (int k = 0; k < sources.Count; k++) for (int s = 0; s < Chemistry.S; s++) left[k, s] = C[s][sources[k]];
+        return PlanLocalEnergy(sources, left, 1e9, new List<(int, Chemistry.Reaction, Qty)>());
+    }
+
+    void React(Qty[,] pool, int k, Chemistry.Reaction r, Qty m)
+    {
+        pool[k, r.A] -= m;
+        if (r.B < 0)
+        {
+            pool[k, Chem.SplitA[r.A]] += m;
+            if (Chem.SplitB[r.A] >= 0) pool[k, Chem.SplitB[r.A]] += m;
+        }
+        else { pool[k, r.B] -= m; pool[k, r.P] += m; }
+    }
+
+    // The planned local reactions happen in the loose matter of their cells (the products stay there).
+    void ApplyLocalEnergy(List<int> sources, List<(int c, Chemistry.Reaction r, Qty m)> burn)
+    {
+        foreach (var (c, r, m) in burn)
+        {
+            C[r.A][c] -= m;
+            if (r.B < 0)
+            {
+                C[Chem.SplitA[r.A]][c] += m;
+                if (Chem.SplitB[r.A] >= 0) C[Chem.SplitB[r.A]][c] += m;
+            }
+            else { C[r.B][c] -= m; C[r.P][c] += m; }
+        }
+    }
+
+    // Law 1: a design's energy is the charge its body starts with. The excited molecules it is made of
+    // already carry some; the rest must fit in the excited states of its ground molecules (Σ n_g·Gap).
+    // Returns the charge to add, or −1 (and why) if the body cannot hold it.
+    double ChargeToAdd(int[] counts, double charge, out string why)
+    {
+        why = null;
+        double held = 0, room = 0;
+        for (int s = 0; s < Chemistry.S; s++)
+        {
+            if (Chem.Gap[s] > 0) held += (double)counts[s] * Chem.Gap[s];
+            else if (Chem.PhotoUp[s] >= 0) room += (double)counts[s] * Chem.Gap[Chem.PhotoUp[s]];
+        }
+        double add = Math.Max(0, charge - held);
+        if (add <= room + 1e-9) return add;
+        why = Loc.T($"the body cannot hold {charge:0.#} of charge: its molecules hold {held:0.#} excited and take at most {room:0.#} more (add molecules, or excited ones)",
+                    $"тело не удержит заряд {charge:0.#}: его молекулы держат возбуждёнными {held:0.#} и примут не больше {room:0.#} (добавьте молекул или возбуждённых)");
+        return -1;
+    }
+
+    // Law 1: the energy local reactions must release for `charge` to be captured (CaptureHeat of it warms the body).
+    static double CaptureNeed(double charge) => 1 - P.CaptureHeat > 0 ? charge / (1 - P.CaptureHeat) : double.PositiveInfinity;
+
+    // The energy a planted body starts with. Law 0: its store. Law 1 (World.Charge): its charge — brought in,
+    // the excitation of its ground molecules; from the place, the reactions' energy captured like any
+    // reaction's in a body. Returns what to book: brought in (law 1: the excitation actually made, on the
+    // 2⁻³² grid) or released by the local reactions.
+    double StartEnergy(Agent a, double energy, bool imported)
+    {
+        if (!MatterLaw) { a.Energy = energy; a.LifeStart = (float)energy; return energy; }
+        if (imported) energy = Excite(a, energy);
+        else ReleaseGain(a, energy);
+        a.LifeStart = (float)Held(a);
+        return energy;
     }
 
     // What "any" molecules brought from outside are: the kind the ground here is made of, else the

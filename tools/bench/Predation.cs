@@ -34,7 +34,7 @@ public sealed partial class World
     {
         string Arg(string name, string def) { int i = Array.IndexOf(args, name); return i >= 0 && i + 1 < args.Length ? args[i + 1] : def; }
         int ticks = int.Parse(Arg("--ticks", "6000")), every = int.Parse(Arg("--every", "2000")), sample = int.Parse(Arg("--sample", "100"));
-        int pop = int.Parse(Arg("--pop", P.InitialPop.ToString()));
+        int pop = int.Parse(Arg("--pop", "-1"));   // < 0: P.InitialPop by area
         bool abio = Array.IndexOf(args, "--noabio") < 0;
         string load = Arg("--load", null);
         var seeds = load != null ? new List<int> { 0 } : Batch.ParseSeeds(Arg("--seeds", "1-2"));
@@ -42,7 +42,7 @@ public sealed partial class World
                                 $"аудит хищничества: {(load ?? "сиды " + string.Join(",", seeds))}, {ticks} тиков, окна по {every}, BodyHold {P.BodyHold}"));
         foreach (int seed0 in seeds)
         {
-            var w = load != null ? Load(load) : new World(seed0, pop, abio);
+            var w = load != null ? Load(load) : new World(Batch.Settings(args, seed0, pop, abio, 0));   // --size WxHxL: a small world
             if (load != null) foreach (var line in ParamHook.Apply(ParamHook.Parse(args))) Console.WriteLine("set after load " + line);   // a save brings its own laws
             var probe = w.PredProbe = new PredationProbe();
             {
@@ -53,9 +53,11 @@ public sealed partial class World
             }
             var crowd = w.CrowdSnapshot();
             var series = new List<(int tick, int pop, int hunters)>();
+            var remains = new RemainsLife();
             for (int t = 1; t <= ticks; t++)
             {
                 w.Step();
+                if (t % RemainsLife.Every == 0) remains.Update(w);
                 if (t % sample == 0)
                 {
                     int n = 0, h = 0;
@@ -65,6 +67,7 @@ public sealed partial class World
                 if (t % every != 0 && t != ticks) continue;
                 Console.WriteLine($"seed {w.Seed} tick {w.Tick} pop {w.Agents.Count} hash {w.StateHash():x16}");
                 foreach (var line in probe.Report()) Console.WriteLine("  " + line);
+                foreach (var line in remains.Report()) Console.WriteLine("  " + line);
                 foreach (var line in CrowdReport(w, crowd, w.Agents)) Console.WriteLine("  " + line);
                 probe.Clear();
                 crowd = w.CrowdSnapshot();
@@ -131,6 +134,64 @@ public sealed partial class World
     }
 }
 
+// How long the excitation the dead leave on open ground lasts (observation, between ticks): the loose
+// excitation Σ C·Gap of a death's cell is followed for Horizon ticks after the death (up to Max deaths at once);
+// its decay rate k = −ln(x/x0)/age at the last look, and τ = 1/median k, by the cell's temperature and wetness
+// (water + rain) at the death. Whatever takes the excitation away counts: relaxation and decay on the ground,
+// bodies taking it in, leaching; whatever adds to it (other deaths, vents) slows it. The expectation from the
+// decay law alone is EnvEvery/(LooseDecayK·TempFactor(T)), whatever the wetness.
+public sealed class RemainsLife
+{
+    public const int Every = 25, Horizon = 3000, Max = 4000;
+    static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
+    readonly List<(int cell, long t0, float temp, float wet, double x0)> live = new();
+    readonly List<(float temp, float wet, double k)> rates = new();
+
+    public void Update(World w)
+    {
+        var p = w.PredProbe;
+        while (p.Deceased.TryDequeue(out var d))
+        {
+            double x0 = w.LooseExcitation(d.cell);
+            if (live.Count < Max && x0 > 0) live.Add((d.cell, d.tick, d.temp, d.wet, x0));
+        }
+        for (int i = live.Count - 1; i >= 0; i--)
+        {
+            var r = live[i];
+            long age = w.Tick - r.t0;
+            if (age <= 0) continue;
+            double x = w.LooseExcitation(r.cell), k = x <= 0 ? 10.0 / age : Math.Max(0, -Math.Log(x / r.x0) / age);
+            if (age >= Horizon) { rates.Add((r.temp, r.wet, k)); live.RemoveAt(i); }
+            else current[(r.cell, r.t0)] = (r.temp, r.wet, k);
+        }
+    }
+    readonly Dictionary<(int, long), (float temp, float wet, double k)> current = new();
+
+    public IEnumerable<string> Report()
+    {
+        var all = rates.Concat(current.Values).ToList();
+        if (all.Count == 0) yield break;
+        string Tau(IEnumerable<double> ks)
+        {
+            var v = ks.OrderBy(k => k).ToList();
+            if (v.Count == 0) return "-";
+            double m = v[v.Count / 2];
+            return m > 0 ? (1 / m).ToString("F0", Inv) : "∞";
+        }
+        var tb = new (string name, float lo, float hi)[] { ("<5 °C", -99, 5), ("5–15", 5, 15), ("15–25", 15, 25), ("≥25", 25, 99) };
+        var parts = new List<string>();
+        foreach (var (name, lo, hi) in tb)
+        {
+            var bin = all.Where(r => r.temp >= lo && r.temp < hi).ToList();
+            if (bin.Count == 0) continue;
+            float mid = Math.Clamp((lo + hi) / 2, -5, 30);
+            double expect = P.EnvEvery / (P.LooseDecayK * World.TempFactor(mid));
+            parts.Add(string.Create(Inv, $"{name}: τ {Tau(bin.Select(r => r.k))} (n {bin.Count}; dry {Tau(bin.Where(r => r.wet <= 0).Select(r => r.k))}, wet {Tau(bin.Where(r => r.wet > 0).Select(r => r.k))}; decay law alone {expect:F0})"));
+        }
+        yield return Loc.T("remains' excitation on open ground, lifetime in ticks by temperature: ", "возбуждение останков на открытой земле, время жизни в тиках по температуре: ") + string.Join("; ", parts);
+    }
+}
+
 public static class PredationReportExt
 {
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
@@ -140,9 +201,15 @@ public static class PredationReportExt
         double gainE = p.EnvE + p.TornE + p.TakenE + p.Photo + p.Store;
         double Sh(double x, double of) => of > 0 ? x / of : double.NaN;
         yield return string.Create(Inv, $"attacks {p.Attacks} (no molecule {Sh(p.Missed, p.Attacks):P0}), paid {p.AttackWork:F0}, torn {p.Torn} molecules = {p.TornE:F0} bond energy ({p.TornSplit:F0} as splits), {Sh(p.TornE, p.AttackWork):F2} bond energy per energy paid, {Sh(p.AttackWork, p.Torn):F2} paid per molecule; from close kin {Sh(p.TornKin, p.Torn):P0}, own lineage {Sh(p.TornLineage, p.Torn):P0}; victims' injury {p.Injury:F0}");
-        yield return string.Create(Inv, $"kills {p.Kills} (close kin {Sh(p.KillsKin, p.Kills):P0}, own lineage {Sh(p.KillsLineage, p.Kills):P0}), remains {p.Remains} molecules = {p.RemainsE:F0}; scavenged ≤ {p.Scavenged} = {p.ScavengedE:F0}");
+        yield return string.Create(Inv, $"kills {p.Kills} (close kin {Sh(p.KillsKin, p.Kills):P0}, own lineage {Sh(p.KillsLineage, p.Kills):P0}), their remains {p.Remains} molecules = {p.RemainsE:F0}");
+        yield return string.Create(Inv, $"deaths on open ground {p.Deaths}: remains {p.DeathE:F0} bond energy, {p.DeathX:F1} of it excitation ({Sh(p.DeathX, p.Photo):P1} of the photons caught); scavenged (taken in where remains lie) ≤ {p.Scavenged} molecules = {p.ScavengedE:F0} bond energy ({Sh(p.ScavengedE, p.DeathE):P1} of the remains), {p.ScavengedX:F1} excitation ({Sh(p.ScavengedX, p.DeathX):P1})");
         yield return string.Create(Inv, $"take: tries {p.Takes}, pulled {p.Taken} = {p.TakenE:F0}, paid {p.TakeWork:F1} ({Sh(p.TakeWork, p.Taken):F2} per molecule); close kin {Sh(p.TakenKin, p.Taken):P0}, own lineage {Sh(p.TakenLineage, p.Taken):P0}");
         yield return string.Create(Inv, $"energy into bodies {gainE:F0}: photons {Sh(p.Photo, gainE):P1}, environment molecules {Sh(p.EnvE, gainE):P1} ({p.EnvMols}), from bodies {Sh(p.TornE + p.TakenE + p.Store, gainE):P2} (attack {Sh(p.TornE, gainE):P2}, take {Sh(p.TakenE, gainE):P2}, stores carried {Sh(p.Store, gainE):P2}); from other kin {Sh(p.TornE + p.TakenE + p.Store, gainE) * (1 - Sh(p.TornKin + p.TakenKin, p.Torn + p.Taken)):P2}; scavenged {Sh(p.ScavengedE, gainE):P2}");
+        if (World.MatterLaw)
+        {
+            double x = p.Photo + p.EnvX + p.TornX + p.TakenX + p.Captured;
+            yield return string.Create(Inv, $"charge into bodies (MatterEnergy 1: what they can spend) {x:F0}: photons {Sh(p.Photo, x):P1}, excited molecules taken in {Sh(p.EnvX, x):P1}, from bodies {Sh(p.TornX + p.TakenX, x):P2} (attack {Sh(p.TornX, x):P2}, take {Sh(p.TakenX, x):P2}), reactions in bodies captured {Sh(p.Captured, x):P1}; scavenged {Sh(p.ScavengedX, x):P2}; attack: {Sh(p.TornX, p.AttackWork):F2} charge torn per energy paid");
+        }
         var bins = new List<string>();
         for (int b = 0; b < PredationProbe.Bins; b++)
         {
