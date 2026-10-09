@@ -322,16 +322,16 @@ public sealed class MatterRecipe
     // The top block of a column, exactly: its molecules by kind and its lattice order.
     public static MatterRecipe SampleBlock(World w, int cell)
     {
-        int h = Math.Clamp(w.Height[cell], 0, World.Z);
+        int h = Math.Clamp(w.Height[cell], 0, w.Z);
         if (h < 3) return null;
-        int v = cell * World.Z + h - 1;
+        int v = cell * w.Z + h - 1;
         if (w.Mat[v] < 2) return null;
         var mix = new double[Chemistry.S];
         for (int s = 0; s < Chemistry.S; s++) mix[s] = w.VoxelCount(v, s);
         if (mix.Sum() <= 0) return null;
         int order = w.Order[v];
-        return FromMix(w, mix, order, false, Loc.T($"block at ({cell % World.W}, {cell / World.W}, level {h - 1})", $"блок в ({cell % World.W}, {cell / World.W}, уровень {h - 1})"),
-            $"sampled block ({cell % World.W}, {cell / World.W}, {h - 1}), tick {w.Tick}: {mix.Sum():0} molecules, order {order}");
+        return FromMix(w, mix, order, false, Loc.T($"block at ({cell % w.W}, {cell / w.W}, level {h - 1})", $"блок в ({cell % w.W}, {cell / w.W}, уровень {h - 1})"),
+            $"sampled block ({cell % w.W}, {cell / w.W}, {h - 1}), tick {w.Tick}: {mix.Sum():0} molecules, order {order}");
     }
 
     // Loose matter lying on the surface of a column (the air's gas left out unless that is all there is).
@@ -341,8 +341,8 @@ public sealed class MatterRecipe
         for (int s = 0; s < Chemistry.S; s++) if (s != w.Chem.Gas) mix[s] = Math.Floor(w.C[s][cell].F);
         if (mix.Sum() <= 0) mix[w.Chem.Gas] = Math.Floor(w.C[w.Chem.Gas][cell].F);
         if (mix.Sum() <= 0) return null;
-        return FromMix(w, mix, 0, true, Loc.T($"loose matter at ({cell % World.W}, {cell / World.W})", $"рыхлое в ({cell % World.W}, {cell / World.W})"),
-            $"sampled loose matter ({cell % World.W}, {cell / World.W}), tick {w.Tick}: {mix.Sum():0} molecules");
+        return FromMix(w, mix, 0, true, Loc.T($"loose matter at ({cell % w.W}, {cell / w.W})", $"рыхлое в ({cell % w.W}, {cell / w.W})"),
+            $"sampled loose matter ({cell % w.W}, {cell / w.W}), tick {w.Tick}: {mix.Sum():0} molecules");
     }
 
     // The molecules a body holds (its protein substrate and partial uptake left out).

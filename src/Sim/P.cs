@@ -8,8 +8,8 @@ namespace Primordium;
 // and a new world.
 public static class P
 {
-    // World structure (const): requires a new world.
-    public const int W = 256, H = 160, ZMax = 192;   // 192 levels: ground ~72 deep (World.Crust), ~100 of air above
+    // World structure (const): requires a new world. The world's size is its own (WorldSettings.Width,
+    // Height, Levels: 256×160×192 by default — ground ~72 deep (World.Crust), ~100 of air above).
     public const float BlockH = 1.0f;          // height of one soil block relative to a cell's width (the view's geometry)
 
     // Planet

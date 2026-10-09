@@ -13,8 +13,10 @@ namespace Primordium;
 // never reads it, and with it off nothing is computed.
 public sealed partial class World
 {
-    public const int RegionSide = 32, RegionsX = W / RegionSide, RegionsY = H / RegionSide, Regions = RegionsX * RegionsY;
-    public static int RegionOf(int cell) => cell / W / RegionSide * RegionsX + cell % W / RegionSide;
+    // Regions of RegionSide × RegionSide cells (width and height are multiples of it, WorldSettings).
+    public const int RegionSide = 32;
+    public readonly int RegionsX, RegionsY, Regions;
+    public int RegionOf(int cell) => cell / W / RegionSide * RegionsX + cell % W / RegionSide;
 
     public sealed class ResourceProbe
     {
@@ -22,18 +24,29 @@ public sealed partial class World
         public const int PDiffusion = 0, PEnv = 1, PBio = 2, POther = 3, Phases = 4;
         public static readonly string[] PhaseNames = { "diffusion", "env", "bio", "other" };
         // Net change of the region's surface gas / loose food per phase, raw Qty summed over ticks.
-        public readonly long[,] Gas = new long[Phases, Regions], Food = new long[Phases, Regions];
-        public readonly long[] GasIntake = new long[Regions], FoodIntake = new long[Regions];   // gross uptake by bodies (raw Qty)
-        public readonly long[] CaveGasIntake = new long[Regions];                              // ... of it drawn from under a roof
-        public readonly long[] Rain = new long[Regions];                                       // gas adsorbed by rain (raw Qty)
-        public readonly long[] Leach = new long[Regions];                                      // loose food soaked into the ground (World.Leach, raw Qty)
-        public readonly double[] Pop = new double[Regions];                                    // body-ticks
+        public readonly long[,] Gas, Food;
+        public readonly long[] GasIntake, FoodIntake;   // gross uptake by bodies (raw Qty)
+        public readonly long[] CaveGasIntake;           // ... of it drawn from under a roof
+        public readonly long[] Rain;                    // gas adsorbed by rain (raw Qty)
+        public readonly long[] Leach;                   // loose food soaked into the ground (World.Leach, raw Qty)
+        public readonly double[] Pop;                   // body-ticks
         public readonly long[,] Species = new long[Phases, Chemistry.S];                       // net change per phase of each loose species, planet-wide
         public readonly long[] SpeciesIntake = new long[Chemistry.S], SpeciesExpel = new long[Chemistry.S];   // gross uptake / expel by species (surface and caves)
         public double DiffusionGross;                                                         // Σ|Δ| of the gas per cell by diffusion / 2 (raw Qty)
         public long Ticks;
-        internal readonly long[] gasMark = new long[Regions], foodMark = new long[Regions], speciesMark = new long[Chemistry.S];
+        internal readonly long[] gasMark, foodMark, speciesMark = new long[Chemistry.S];
         internal bool marked;
+        public readonly int Regions;
+
+        // For a world of `regions` regions (World.Regions).
+        public ResourceProbe(int regions)
+        {
+            Regions = regions;
+            Gas = new long[Phases, regions]; Food = new long[Phases, regions];
+            GasIntake = new long[regions]; FoodIntake = new long[regions]; CaveGasIntake = new long[regions];
+            Rain = new long[regions]; Leach = new long[regions]; Pop = new double[regions];
+            gasMark = new long[regions]; foodMark = new long[regions];
+        }
     }
     public ResourceProbe ResProbe;
 
@@ -61,7 +74,8 @@ public sealed partial class World
         }
     }
 
-    readonly long[] resGas = new long[Regions], resFood = new long[Regions], resSpecies = new long[Chemistry.S];
+    readonly long[] resGas, resFood;
+    readonly long[] resSpecies = new long[Chemistry.S];
 
     // Books the change of the pools since the last mark under `phase` (the first mark of a tick only sets it).
     void ResMark(int phase)

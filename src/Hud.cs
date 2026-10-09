@@ -270,7 +270,7 @@ public partial class Hud : Control
                     + (a.Cells > 1 ? Loc.T($" · on {a.Cells} cells", $" · на {a.Cells} клетках") : "");
         string l2 = Loc.T($"{DietName(a)} · energy {Math.Max(0, a.Energy):F0} (comfortable store {a.Store:F0}) · age {a.Age:N0}",
                           $"{DietName(a)} · энергия {Math.Max(0, a.Energy):F0} (удобный запас {a.Store:F0}) · возраст {a.Age:N0}");
-        int cell = a.Y * World.W + a.X;
+        int cell = a.Y * w.W + a.X;
         float fill = Main.Frame.Hover == a ? Main.Frame.HoverFloorFill : 0;
         string l3 = Loc.T($"cell {w.Temp[cell]:+0;-0} °C{CaveBrief(w, a)}, body {a.Tb:+0;-0} °C · neighbors {w.Count[cell] - 1}, floor {fill:P0} full",
                           $"клетка {w.Temp[cell]:+0;-0} °C{CaveBrief(w, a)}, тело {a.Tb:+0;-0} °C · соседей {w.Count[cell] - 1}, место занято на {fill:P0}")
@@ -406,15 +406,15 @@ public partial class Hud : Control
         string here = "";
         if (cell >= 0)
         {
-            int y = cell / World.W;
-            float lat = World.Latitude(y), decl = w.SunDecl, deg = lat * 180 / MathF.PI;
+            int y = cell / w.W;
+            float lat = w.Latitude(y), decl = w.SunDecl, deg = lat * 180 / MathF.PI;
             string ns = deg >= 0 ? Loc.T("N", "с.") : Loc.T("S", "ю.");
-            here = full ? Loc.T($" · ({cell % World.W}, {y}): latitude {MathF.Abs(deg):0.0}° {ns}, day {World.DayShare(lat, decl) * 24:0.0} h of 24, " +
+            here = full ? Loc.T($" · ({cell % w.W}, {y}): latitude {MathF.Abs(deg):0.0}° {ns}, day {World.DayShare(lat, decl) * 24:0.0} h of 24, " +
                                 $"noon sun {World.NoonElevation(lat, decl):0}°, power {w.Sun[cell]:0.00} (at the bottom {w.Light[cell]:0.00}), transparency {w.Transp[cell]:0.00}",
-                                $" · ({cell % World.W}, {y}): широта {MathF.Abs(deg):0.0}° {ns}, день {World.DayShare(lat, decl) * 24:0.0} ч из 24, " +
+                                $" · ({cell % w.W}, {y}): широта {MathF.Abs(deg):0.0}° {ns}, день {World.DayShare(lat, decl) * 24:0.0} ч из 24, " +
                                 $"солнце в полдень {World.NoonElevation(lat, decl):0}°, мощность {w.Sun[cell]:0.00} (у дна {w.Light[cell]:0.00}), прозрачность {w.Transp[cell]:0.00}")
-                        : Loc.T($" · ({cell % World.W}, {y}): {MathF.Abs(deg):0}° {ns}, day {World.DayShare(lat, decl) * 24:0.0} h, noon {World.NoonElevation(lat, decl):0}°, power {w.Sun[cell]:0.00}, transp. {w.Transp[cell]:0.00}",
-                                $" · ({cell % World.W}, {y}): {MathF.Abs(deg):0}° {ns}, день {World.DayShare(lat, decl) * 24:0.0} ч, полдень {World.NoonElevation(lat, decl):0}°, мощность {w.Sun[cell]:0.00}, прозр. {w.Transp[cell]:0.00}");
+                        : Loc.T($" · ({cell % w.W}, {y}): {MathF.Abs(deg):0}° {ns}, day {World.DayShare(lat, decl) * 24:0.0} h, noon {World.NoonElevation(lat, decl):0}°, power {w.Sun[cell]:0.00}, transp. {w.Transp[cell]:0.00}",
+                                $" · ({cell % w.W}, {y}): {MathF.Abs(deg):0}° {ns}, день {World.DayShare(lat, decl) * 24:0.0} ч, полдень {World.NoonElevation(lat, decl):0}°, мощность {w.Sun[cell]:0.00}, прозр. {w.Transp[cell]:0.00}");
         }
         return sun + " · " + ecl + here;
     }
@@ -423,7 +423,7 @@ public partial class Hud : Control
     // (with its density against the water's: what decides whether it rises or sinks).
     static string Where(World w, Agent a)
     {
-        int cell = a.Y * World.W + a.X;
+        int cell = a.Y * w.W + a.X;
         if (w.InCave(a)) return Loc.T("underground", "под землёй");
         if (!w.InWater(a)) return Loc.T("surface", "поверхность");
         string pos = World.OnFloor(a) ? Loc.T($"on the bottom, {w.Water[cell]:0.0} to the surface", $"на дне, до поверхности {w.Water[cell]:0.0}")
@@ -437,14 +437,14 @@ public partial class Hud : Control
     // Under a roof the body feels the cave climate (World.Cave). Read-only arithmetic on the world's arrays.
     static string CaveBrief(World w, Agent a)
     {
-        int cell = a.Y * World.W + a.X;
+        int cell = a.Y * w.W + a.X;
         if (!w.InCave(a)) return "";
         return Loc.T($", under a roof of {w.Roof(cell, a.Z)} bl.: around {w.LocalTemp(cell, a.Z):+0;-0} °C", $", под крышей {w.Roof(cell, a.Z)} бл.: вокруг {w.LocalTemp(cell, a.Z):+0;-0} °C");
     }
 
     static (string, string) CaveLines(World w, Agent a)
     {
-        int cell = a.Y * World.W + a.X;
+        int cell = a.Y * w.W + a.X;
         float surf = w.Temp[cell];
         if (!w.InCave(a)) return (Loc.T($"no roof · around {surf:+0;-0} °C (surface)", $"крыши нет · вокруг {surf:+0;-0} °C (поверхность)"), null);
         int roof = w.Roof(cell, a.Z);

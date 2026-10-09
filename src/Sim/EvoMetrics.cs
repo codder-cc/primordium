@@ -192,7 +192,7 @@ public sealed class EvoMetrics
         first = false;
         Depths(w, live, v);
         Mining(w, v);
-        Spatial(live, v);
+        Spatial(w, live, v);
         var shares = new double[Diets];
         for (int k = 0; k < Diets; k++) shares[k] = diet[k] / (double)pop;
         NoteDiets(w.Tick, shares, v);
@@ -210,7 +210,7 @@ public sealed class EvoMetrics
         for (int i = 0; i < live.Count; i++)
         {
             var a = live[i];
-            int c = a.Y * World.W + a.X;
+            int c = a.Y * w.W + a.X;
             if (w.Roof(c, a.Z) >= 1) roofed++;
             int d = Math.Max(0, w.Height[c] - 1 - a.Z);
             depth[i] = d; sum += d; deepest = Math.Max(deepest, d);
@@ -248,10 +248,8 @@ public sealed class EvoMetrics
 
     // ---- spatial heterogeneity over 32×32 regions ----
 
-    const int RX = World.W / Region, RY = World.H / Region, Regions = RX * RY;
-
-    // Rook neighbours of region r (x wraps around the planet, y stops at the poles).
-    static IEnumerable<int> Neighbours(int r)
+    // Rook neighbours of region r in rows of RX regions (x wraps around the planet, y stops at the poles).
+    static IEnumerable<int> Neighbours(int r, int RX, int RY)
     {
         int x = r % RX, y = r / RX;
         yield return y * RX + (x + 1) % RX;
@@ -260,9 +258,10 @@ public sealed class EvoMetrics
         if (y < RY - 1) yield return (y + 1) * RX + x;
     }
 
-    // Moran's I of x over the regions where use[r], binary weights between used rook neighbours.
-    public static double Moran(double[] x, bool[] use)
+    // Moran's I of x over the regions where use[r] (rows of rx regions), binary weights between used rook neighbours.
+    public static double Moran(double[] x, bool[] use, int rx)
     {
+        int ry = x.Length / rx;
         int n = 0; double mean = 0;
         for (int r = 0; r < x.Length; r++) if (use[r]) { n++; mean += x[r]; }
         if (n < 3) return double.NaN;
@@ -273,7 +272,7 @@ public sealed class EvoMetrics
             if (!use[r]) continue;
             double dr = x[r] - mean;
             den += dr * dr;
-            foreach (int q in Neighbours(r))
+            foreach (int q in Neighbours(r, rx, ry))
             {
                 if (q == r || !use[q]) continue;
                 num += dr * (x[q] - mean); wsum++;
@@ -283,8 +282,9 @@ public sealed class EvoMetrics
         return n / wsum * num / den;
     }
 
-    static void Spatial(List<Agent> live, double[] v)
+    static void Spatial(World w, List<Agent> live, double[] v)
     {
+        int RX = w.W / Region, Regions = RX * (w.H / Region);
         var pop = new double[Regions];
         var dietIn = new int[Regions, Diets];
         var all = new int[Diets];
@@ -296,7 +296,7 @@ public sealed class EvoMetrics
         int n = live.Count;
         var every = new bool[Regions];
         Array.Fill(every, true);
-        v[CPopMoran] = Moran(pop, every);
+        v[CPopMoran] = Moran(pop, every, RX);
         v[CPopMoran + 1] = Math.Exp(Entropy(pop.Select(p => (int)p), n));
 
         var used = new bool[Regions];
@@ -308,7 +308,7 @@ public sealed class EvoMetrics
             double share = all[d] / (double)n;
             if (share <= 0) continue;
             for (int r = 0; r < Regions; r++) x[r] = used[r] ? dietIn[r, d] / pop[r] : 0;
-            double m = Moran(x, used);
+            double m = Moran(x, used, RX);
             if (double.IsNaN(m)) continue;
             moran += share * m; weight += share;
         }

@@ -22,6 +22,7 @@ public sealed partial class World
         LawsRegression();
         LawsEnergyRegression();
         SaveLoadRegression();
+        SizeRegression();
         LifeSeedRegression();
         AsmRegression();
         DesignRegression();
@@ -69,14 +70,14 @@ public sealed partial class World
         finally { ParamRegistry.Changed -= Count; }
 
         // Strength: pressures follow gravity once the solver has looked at every column again.
-        var w = Fixture(); int c = 60 * W + 60;
+        var w = Fixture(); int c = 60 * w.W + 60;
         for (int z = 2; z < 8; z++) w.TestBlock(c, z, 0);
         w.StepStructure();
-        float before = w.Pressure[c * Z + 2];
+        float before = w.Pressure[c * w.Z + 2];
         w.SetParam("Gravity", P.Gravity * 2);
-        Require(w.structuralDirty.Count == N && w.ParamLog.Count == 1, "a stronger gravity did not wake the support solver everywhere");
+        Require(w.structuralDirty.Count == w.N && w.ParamLog.Count == 1, "a stronger gravity did not wake the support solver everywhere");
         w.StepStructure();
-        Require(MathF.Abs(w.Pressure[c * Z + 2] - 2 * before) < 1e-3f * before, $"pressure did not follow gravity: {before} -> {w.Pressure[c * Z + 2]}");
+        Require(MathF.Abs(w.Pressure[c * w.Z + 2] - 2 * before) < 1e-3f * before, $"pressure did not follow gravity: {before} -> {w.Pressure[c * w.Z + 2]}");
         // Block size: a full block's count follows the voxel's room.
         int cap = w.Chem.MatCap[2];
         w.SetParam("VoxelSpace", P.VoxelSpace * 2);
@@ -274,14 +275,14 @@ public sealed partial class World
         string designNote = "";
         int Find(Func<int, bool> ok)
         {
-            for (int k = 0; k < N; k++)
+            for (int k = 0; k < w.N; k++)
             {
-                int c = (int)((k * 2654435761L + 12345) % N);
+                int c = (int)((k * 2654435761L + 12345) % w.N);
                 if (ok(c)) return c;
             }
             throw new Exception("no cell for the design fixture");
         }
-        bool Mild(int c) => MathF.Abs(w.Temp[c] - 15) < 6 && c / W > 20 && c / W < H - 20;
+        bool Mild(int c) => MathF.Abs(w.Temp[c] - 15) < 6 && c / w.W > 20 && c / w.W < w.H - 20;
         int land = Find(c => Mild(c) && !w.Submerged(c) && w.Count[c] == 0);
         int lake = Find(c => Mild(c) && w.Water[c] > 2 && w.Count[c] == 0);
         var import = new SpawnOptions { Matter = MatterSource.Import, Energy = EnergySource.Import, Count = 3, Radius = 2 };
@@ -291,7 +292,7 @@ public sealed partial class World
         foreach (var d in CreatureExamples.All)
         {
             int at = d.Name == CreatureExamples.Swimmer.Name ? lake : land;
-            var r = w.SpawnDesign(d, at % W, at / W, import);
+            var r = w.SpawnDesign(d, at % w.W, at / w.W, import);
             Require(r.Made == 3 && r.Agents.All(a => a.Designed && a.Lineage == r.Lineage && a.Energy == d.Energy), $"{d.Name}: {r}");
             Require(w.DesignOf(r.Lineage) == d.Name, "designed lineage not recorded");
             energy += r.EnergyImported;
@@ -314,7 +315,7 @@ public sealed partial class World
             foreach (int s in w.Chem.Unstable.Take(2)) w.C[s][spot] += 6;
             w.C[w.Chem.Low[0]][spot] += 10;
             var before1 = w.AuditEnergy();
-            var r1 = w.SpawnDesign(small, spot % W, spot / W, new SpawnOptions { Matter = MatterSource.Import, Energy = EnergySource.Local, Radius = 0 });
+            var r1 = w.SpawnDesign(small, spot % w.W, spot / w.W, new SpawnOptions { Matter = MatterSource.Import, Energy = EnergySource.Local, Radius = 0 });
             Require(r1.Made == 1, $"matter brought, energy local: {r1}");
             w.EnergyBalanced(before1, "design: matter brought, energy local");
             {
@@ -325,7 +326,7 @@ public sealed partial class World
             }
             var before2 = w.AuditEnergy();
             double hand0 = w.HandEnergy;
-            var r2 = w.SpawnDesign(small, spot % W, spot / W, new SpawnOptions { Matter = MatterSource.Local, Energy = EnergySource.Import, Radius = 0 });
+            var r2 = w.SpawnDesign(small, spot % w.W, spot / w.W, new SpawnOptions { Matter = MatterSource.Local, Energy = EnergySource.Import, Radius = 0 });
             Require(r2.Made == 1, $"matter local, energy brought: {r2}");
             w.EnergyBalanced(before2, "design: matter local, energy brought", FDesign);
             Require(Math.Abs(w.AuditEnergy().Flows[FDesign] - before2.Flows[FDesign] - (w.HandEnergy - hand0)) < 1e-4, "local matter booked bond energy as an input");
@@ -334,11 +335,11 @@ public sealed partial class World
 
         // From the place: an empty spot gives nothing and changes nothing.
         var local = new CreatureDesign { Name = "местный", Genome = "label 0\npush 0\nphoto\ndigest\nyield\njmp 0\nnop\nnop", Body = new() { ["any"] = 8 }, Energy = 3 };
-        int bare = Find(c => !w.Submerged(c) && w.Count[c] == 0 && w.Height[c] > 2 && w.VoxelBarrier(c * Z + w.Height[c] - 1) >= 2);
+        int bare = Find(c => !w.Submerged(c) && w.Count[c] == 0 && w.Height[c] > 2 && w.VoxelBarrier(c * w.Z + w.Height[c] - 1) >= 2);
         foreach (int c in new[] { bare, w.Nb(bare, 0), w.Nb(bare, 1), w.Nb(bare, 2), w.Nb(bare, 3) })
             for (int s = 0; s < Chemistry.S; s++) w.C[s][c] = 0;   // swept clean (before the budget is taken)
         ulong hash = w.StateHash(); var budget = w.ElementBudget();
-        var fail = w.SpawnDesign(local, bare % W, bare / W, new SpawnOptions { Radius = 0 });
+        var fail = w.SpawnDesign(local, bare % w.W, bare / w.W, new SpawnOptions { Radius = 0 });
         Require(fail.Made == 0 && fail.Error != null && w.StateHash() == hash, $"a bare spot planted a body or changed: {fail}");
         BudgetEqual(budget, w.ElementBudget(), "failed planting", 0);
         // A spot with loose matter that releases energy: the body is made of it, no atom comes or goes.
@@ -348,7 +349,7 @@ public sealed partial class World
         budget = w.ElementBudget();
         double[] hand = (double[])w.HandInput.Clone();
         var localStart = w.AuditEnergy();
-        var ok = w.SpawnDesign(local, rich % W, rich / W, new SpawnOptions { Radius = 0 });
+        var ok = w.SpawnDesign(local, rich % w.W, rich / w.W, new SpawnOptions { Radius = 0 });
         w.EnergyBalanced(localStart, "design from local matter and local splits");
         Require(w.AuditEnergy().Flows[FDesign] == localStart.Flows[FDesign], "a design planted from the place booked an outside input");
         Require(ok.Made == 1 && ok.EnergyLocal >= 2.99 && ok.Agents[0].InvTotal == 8, $"local planting: {ok}");

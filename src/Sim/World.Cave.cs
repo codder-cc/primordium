@@ -22,9 +22,9 @@ namespace Primordium;
 // except caveHeatIn, which a body writes only in its own cells, like heatIn.
 public sealed partial class World
 {
-    public readonly float[] Tmean = new float[N];      // slow mean of Temp (°C), the base of the cave climate
-    public readonly float[] CaveWarm = new float[N];   // °C the cave air of a column is warmed by bodies under its roof
-    readonly float[] caveHeatIn = new float[N];        // of heatIn: what bodies under a roof shed since the last env step (× their cover)
+    public readonly float[] Tmean;      // slow mean of Temp (°C), the base of the cave climate
+    public readonly float[] CaveWarm;   // °C the cave air of a column is warmed by bodies under its roof
+    readonly float[] caveHeatIn;        // of heatIn: what bodies under a roof shed since the last env step (× their cover)
 
     public static bool CaveLaw => P.CaveClimate != 0;
 

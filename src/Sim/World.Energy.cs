@@ -57,7 +57,7 @@ public sealed partial class World
 
     // Per tile (agent phase), and one more slot for the main thread. Read through Flows.
     double[][] tileFlow;
-    readonly double[] rowLooseDecay = new double[H];   // cell chemistry runs in parallel by rows
+    readonly double[] rowLooseDecay;   // cell chemistry runs in parallel by rows
     long pressureHeat;                                  // integer energies: exact in any order
     double heatFlushed;
 

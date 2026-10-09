@@ -33,13 +33,13 @@ public sealed partial class World
             Require(mid > top && deep > 1.5 * top + 0.05, $"seed {seed}: deep element {top:P1} at the surface, {mid:P1} 30 and {deep:P1} 60 levels down");
             // Veins: rock in veins 5–15 levels down against the rest at the same depths.
             double vIn = 0, vAll = 0, oIn = 0, oAll = 0;
-            for (int c = 0; c < N; c += 7)
+            for (int c = 0; c < w.N; c += 7)
                 for (int k = 5; k <= 15; k++)
                 {
-                    int z = w.Height0[c] - 1 - k, v = c * Z + z;
+                    int z = w.Height0[c] - 1 - k, v = c * w.Z + z;
                     if (z < 2 || w.Mat[v] < 2) continue;
                     int s = w.Mat[v] - 2;
-                    bool vein = w.InVein(c % W, c / W, z, k);
+                    bool vein = w.InVein(c % w.W, c / w.W, z, k);
                     double n = w.Chem.Atoms[s, d], all = w.Chem.AtomCount(s);
                     if (vein) { vIn += n; vAll += all; } else { oIn += n; oAll += all; }
                 }

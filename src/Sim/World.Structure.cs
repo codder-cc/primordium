@@ -10,23 +10,23 @@ public sealed partial class World
     readonly HashSet<int> structuralDirty = new();
     // Solid voxels above a cavity (not resting on a solid column from the bottom), and how many each
     // column has: columns without any are skipped when looking for hanging rock.
-    readonly bool[] overhang = new bool[N * Z];
-    readonly int[] overhangCount = new int[N];
+    readonly bool[] overhang;
+    readonly int[] overhangCount;
     int overhangTotal;
-    readonly int[] grounded = new int[N];
+    readonly int[] grounded;
     // Solver state of the hanging voxels in the current pass, indexed by their position in
     // activeHanging (a few thousand at most), not by voxel: dense N·Z arrays cost 126 MB for this.
     int[] hParent = new int[1024], hParentAt = new int[1024];   // supporting voxel, and its index if it is hanging too (else -1)
     float[] hSupport = new float[1024], hCarried = new float[1024], hEdge = new float[1024];
-    public readonly float[] Pressure = new float[N * Z];
-    LoadMap bodyLoad = new(), nextBodyLoad = new();
+    public readonly float[] Pressure;
+    LoadMap bodyLoad, nextBodyLoad;
     readonly Dictionary<int, float> rootLoad = new();
-    readonly float[] compressionCache = new float[N * Z];
+    readonly float[] compressionCache;
     // Geometry version of each column as the solver last saw it. TopologyVersion moves only when
     // solid and air change places (TerrainChanged); ColumnVersion also moves on partial bites and
     // fills, for the view.
-    readonly int[] topologySeen = new int[N], topologyVersion = new int[N];
-    public readonly bool[] HasCavity = new bool[N];
+    readonly int[] topologySeen, topologyVersion;
+    public readonly bool[] HasCavity;
     readonly PriorityQueue<int, (float, int)> supportQueue = new();   // elements: index in activeHanging
     readonly List<int> supportOrder = new(), dirtyWork = new(), failures = new();
     readonly VoxelSet activeHanging = new();
@@ -904,11 +904,16 @@ public sealed partial class World
     // order of first use.
     sealed class LoadMap
     {
-        readonly float[] value = new float[N];
-        readonly int[] level = InitLevels();
+        readonly float[] value;
+        readonly int[] level;
+        readonly int Z;   // the world's levels
         readonly Dictionary<int, float> extra = new();
         public readonly List<int> Keys = new();
-        static int[] InitLevels() { var l = new int[N]; Array.Fill(l, -1); return l; }
+        public LoadMap(int cells, int levels)
+        {
+            value = new float[cells]; level = new int[cells]; Z = levels;
+            Array.Fill(level, -1);
+        }
 
         public void Add(int v, float w)
         {

@@ -8,7 +8,7 @@ namespace Primordium;
 // cells; two big bodies can't overlap.
 public sealed partial class World
 {
-    public readonly Agent[] Big = new Agent[N];   // the big body (if any) covering a cell beyond its own
+    public readonly Agent[] Big;   // the big body (if any) covering a cell beyond its own
 
     // The order in which a growing body spreads: around itself first, then one step further.
     static readonly (int dx, int dy)[] SpreadOrder =

@@ -34,14 +34,14 @@ namespace Primordium;
 // ledger); a rise takes the same from the strain it releases (not booked: elastic energy is not a pool).
 public sealed partial class World
 {
-    readonly float[] settleDebt = new float[N];           // pending settling of the grounded stack (volume; < 0: rebound)
-    readonly float[] elasticSeen = InitElasticSeen();      // elastic room of the grounded stack at the last look (NaN: never looked at)
-    readonly bool[] settleCheck = new bool[N];             // pressure or packing changed: look again in the next pass
-    readonly bool[] settleDue = new bool[N];
+    readonly float[] settleDebt;           // pending settling of the grounded stack (volume; < 0: rebound)
+    readonly float[] elasticSeen;      // elastic room of the grounded stack at the last look (NaN: never looked at)
+    readonly bool[] settleCheck;             // pressure or packing changed: look again in the next pass
+    readonly bool[] settleDue;
     readonly List<int> settleList = new();
     public long SettledMolecules, ReboundMolecules, SettleEvents;
     public long LedgeClimbs;   // bodies that got onto a ledge more than a block up (World.Move)
-    static float[] InitElasticSeen() { var a = new float[N]; Array.Fill(a, float.NaN); return a; }
+    float[] InitElasticSeen() { var a = new float[N]; Array.Fill(a, float.NaN); return a; }
 
     // Elastic strain of a block: σ / (ModulusRatio × strength), never above 1/ModulusRatio (a block loaded
     // past its strength fails rather than squeezing further).

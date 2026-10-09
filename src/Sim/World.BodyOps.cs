@@ -492,8 +492,8 @@ public sealed partial class World
     // Alarm: if somebody in this cell was attacked within the last few ticks, the attacker becomes the
     // target and the number of ticks since is returned (-1 if all is quiet). Whether to strike back,
     // flee or ignore it is up to the controller — a crowd that strikes back together is a crowd that wins.
-    readonly Agent[] lastAttacker = new Agent[N];
-    readonly long[] lastAttack = new long[N];
+    readonly Agent[] lastAttacker;
+    readonly long[] lastAttack;
 
     public int Alarm(Agent a, int cell)
     {

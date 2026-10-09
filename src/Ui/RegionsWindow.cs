@@ -55,8 +55,9 @@ public partial class RegionsWindow : UiWindow
             UiKit.Button(Loc.T("Clear", "Сбросить"), () => { hasSel = false; UpdateSelLabel(); }, Loc.T("drop the selection", "снять выделение"))));
 
         fullHeight = UiKit.Check(Loc.T("full height", "вся высота"), true, on => { fromLevel.Editable = toLevel.Editable = !on; }, Loc.T("every level from the bedrock to the sky", "все уровни от недр до неба"));
-        fromLevel = UiKit.Spin(0, World.Z - 1, 1, 0, 80);
-        toLevel = UiKit.Spin(1, World.Z, 1, World.Z, 80);
+        // The level limits follow the world when the window opens (FitWorld).
+        fromLevel = UiKit.Spin(0, WorldSettings.DefaultLevels - 1, 1, 0, 80);
+        toLevel = UiKit.Spin(1, WorldSettings.DefaultLevels, 1, WorldSettings.DefaultLevels, 80);
         fromLevel.Editable = toLevel.Editable = false;
         copyBodies = UiKit.Check(Loc.T("with bodies", "с существами"), true, null, Loc.T("the bodies standing in it, with genomes, matter and energy", "существа, стоящие там, с геномами, веществом и энергией"));
         Body.AddChild(UiKit.Row(8, fullHeight, UiKit.Text(Loc.T("levels from", "уровни от"), 13, UiKit.Dim), fromLevel, UiKit.Text(Loc.T("to", "до"), 13, UiKit.Dim), toLevel, UiKit.Spacer(), copyBodies));
@@ -76,7 +77,7 @@ public partial class RegionsWindow : UiWindow
         pasteMode.TooltipText = Loc.T("replace: the copied levels there are taken out and the region put in; above ground: nothing is taken out, the region fills only the air",
             "заменить: скопированные уровни там вынимаются и кладётся участок; над землёй: ничего не вынимается, участок заполняет только воздух");
         pasteBodies = UiKit.Check(Loc.T("bodies", "существа"), true, null, Loc.T("off: only matter — the bodies there stay, the region's are not brought", "выкл.: только вещество — тамошние существа остаются, существа участка не вносятся"));
-        dzSpin = UiKit.Spin(-World.Z, World.Z, 1, 0, 70);
+        dzSpin = UiKit.Spin(-WorldSettings.DefaultLevels, WorldSettings.DefaultLevels, 1, 0, 70);
         dzSpin.TooltipText = Loc.T("shift in levels (up +)", "сдвиг по уровням (вверх +)");
         Body.AddChild(UiKit.Row(8, UiKit.Button("⟲", () => Turn(-1), Loc.T("turn left", "повернуть влево")), rotation, UiKit.Button("⟳", () => Turn(1), Loc.T("turn right", "повернуть вправо")),
             pasteMode, pasteBodies, UiKit.Text(Loc.T("shift", "сдвиг"), 13, UiKit.Dim), dzSpin));
@@ -97,8 +98,19 @@ public partial class RegionsWindow : UiWindow
 
     protected override void OnOpen()
     {
+        FitWorld();
         EnsureOutline();
         Rebuild();
+    }
+
+    // The level spins' limits: the world's height (a world of another size may have come since).
+    void FitWorld()
+    {
+        var w = Main.World;
+        if (w == null) return;
+        fromLevel.MaxValue = w.Z - 1; toLevel.MaxValue = w.Z;
+        if (fullHeight.ButtonPressed) toLevel.Value = w.Z;
+        dzSpin.MinValue = -w.Z; dzSpin.MaxValue = w.Z;
     }
 
     protected override void OnClose()
@@ -132,7 +144,8 @@ public partial class RegionsWindow : UiWindow
         if (demo == 1)
         {
             selW = selH = 40;
-            selX = c % World.W - 20; selY = Math.Clamp(c / World.W - 20, 0, World.H - 40);
+            var w = Main.World;
+            selX = c % w.W - 20; selY = Math.Clamp(c / w.W - 20, 0, Math.Max(0, w.H - 40));
             hasSel = true;
             UpdateSelLabel();
         }
@@ -192,7 +205,8 @@ public partial class RegionsWindow : UiWindow
 
     void SetSel(int a, int b)
     {
-        int ax = a % World.W, ay = a / World.W, bx = b % World.W, by = b / World.W;
+        int W = Main.World.W;
+        int ax = a % W, ay = a / W, bx = b % W, by = b / W;
         selX = Math.Min(ax, bx); selY = Math.Min(ay, by);
         selW = Math.Abs(ax - bx) + 1; selH = Math.Abs(ay - by) + 1;
         hasSel = true;
@@ -237,7 +251,8 @@ public partial class RegionsWindow : UiWindow
     {
         int rot = rotation.Selected;
         int w = rot % 2 == 0 ? armed.SizeX : armed.SizeY, h = rot % 2 == 0 ? armed.SizeY : armed.SizeX;
-        return (((c % World.W - w / 2) % World.W + World.W) % World.W, c / World.W - h / 2, w, h);
+        int W = Main.World.W;
+        return (((c % W - w / 2) % W + W) % W, c / W - h / 2, w, h);
     }
 
     void Turn(int d) => rotation.Select(((rotation.Selected + d) % 4 + 4) % 4);
@@ -250,7 +265,7 @@ public partial class RegionsWindow : UiWindow
         busy = true;
         UpdateSelLabel();
         int x = selX, y = selY, w = selW, h = selH;
-        int z0 = fullHeight.ButtonPressed ? 0 : (int)fromLevel.Value, z1 = fullHeight.ButtonPressed ? World.Z : (int)toLevel.Value;
+        int z0 = fullHeight.ButtonPressed ? 0 : (int)fromLevel.Value, z1 = fullHeight.ButtonPressed ? Main.World.Z : (int)toLevel.Value;
         bool bodies = copyBodies.ButtonPressed;
         string name = nameEdit.Text.Trim();
         Main.Sim.Do(world =>
@@ -296,7 +311,7 @@ public partial class RegionsWindow : UiWindow
                     $"другая химия (seed {armed.Chem.Seed}, здесь {Main.World.Seed}): {armedMap.Changed} видов молекул станут ближайшими здешними — наведите, чтобы увидеть сопоставление");
         armedLabel.Text = Loc.T($"brush: “{armed.Name}” {armed.SizeX} × {armed.SizeY} — click the map to paste (Esc — put away)", $"кисть: «{armed.Name}» {armed.SizeX} × {armed.SizeY} — щёлкните по карте, чтобы вставить (Esc — убрать)");
         armedLabel.AddThemeColorOverride("font_color", UiKit.Acc);
-        mapLabel.Text = chem + (armed.WorldZ != World.Z ? Loc.T($" · from a world {armed.WorldZ} levels tall: what is above {World.Z - 1} is clipped", $" · из мира высотой {armed.WorldZ}: всё выше {World.Z - 1} обрежется") : "");
+        mapLabel.Text = chem + (armed.WorldZ != Main.World.Z ? Loc.T($" · from a world {armed.WorldZ} levels tall: what is above {Main.World.Z - 1} is clipped", $" · из мира высотой {armed.WorldZ}: всё выше {Main.World.Z - 1} обрежется") : "");
         mapLabel.AddThemeColorOverride("font_color", armedMap.Identity ? UiKit.Dim : UiKit.Bad);
         mapLabel.TooltipText = armedMap.Identity ? "" : string.Join("\n", armedMap.Lines);
         mapLabel.MouseFilter = MouseFilterEnum.Stop;
@@ -370,7 +385,7 @@ public partial class RegionsWindow : UiWindow
         text.AddChild(UiKit.Text(info?.Name is { Length: > 0 } n ? n : BaseName(path), 14, UiKit.Fg, UiKit.Bold));
         if (info != null)
         {
-            string levels = info.Z0 <= 0 && info.Z1 >= World.Z ? Loc.T("full height", "вся высота") : Loc.T($"levels {info.Z0}…{info.Z1 - 1}", $"уровни {info.Z0}…{info.Z1 - 1}");
+            string levels = info.Z0 <= 0 && info.Z1 >= Main.World.Z ? Loc.T("full height", "вся высота") : Loc.T($"levels {info.Z0}…{info.Z1 - 1}", $"уровни {info.Z0}…{info.Z1 - 1}");
             text.AddChild(UiKit.Text(Loc.T($"{info.SizeX} × {info.SizeY} columns · {levels} · {info.Voxels:N0} blocks · {info.Bodies} bodies",
                 $"{info.SizeX} × {info.SizeY} столбцов · {levels} · блоков {info.Voxels:N0} · существ {info.Bodies}"), 12, UiKit.Fg));
             bool same = Main.World != null && info.SrcSeed == Main.World.Seed;
@@ -496,7 +511,7 @@ public partial class RegionOutline : Node3D
         var key = (x0, y0, w, h, col, version);
         if (key == shown) return;
         shown = key;
-        int W = World.W, H = World.H;
+        int W = world.W, H = world.H;
         float G(int x, int y) { int c = Math.Clamp(y, 0, H - 1) * W + ((x % W) + W) % W; return view.Ground(c) + (world.Water[c] + world.Ice[c]) * P.BlockH + 0.25f; }
         mesh.ClearSurfaces();
         mesh.SurfaceBegin(Mesh.PrimitiveType.Triangles);

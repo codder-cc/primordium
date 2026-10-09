@@ -19,7 +19,7 @@ public sealed partial class World
     {
         ParamRegistry.ResetDefaults();
         var w = Fixture(); var ch = w.Chem;
-        int c = 80 * W + 120;
+        int c = 80 * w.W + 120;
         w.EnergyStart();
         // A monomer (relaxes, then leaves) and a composite whose excited state breaks into two fragments.
         int mono = Enumerable.Range(0, Chemistry.S).First(s => s % 2 == 0 && ch.AtomCount(s) == 1 && ch.SplitEnergy(s + 1) > 0);
@@ -91,7 +91,7 @@ public sealed partial class World
         (int start, int end) Sealed(float photo, float wear)
         {
             P.PhotoDamage = photo; P.PhotoHold = 10; P.PhotoCage = 1; P.WearK = wear; P.WearHold = 3;
-            int cell = c + 6 * W;
+            int cell = c + 6 * w.W;
             var a = w.TestAgent(cell, 2, mono, 30);
             a.Enz[0] = new Enzyme { Kind = Enzyme.Photo, A = (byte)mono, Amount = 3, Eff = 1, Topt = 15 }; a.EnzN = 1;
             int n0 = BodyAtoms(a);

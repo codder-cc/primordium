@@ -20,7 +20,18 @@ public enum EvKind { Move, Intake, Expel, Bind, Split, Photo, Express, Divide, M
 // live on exposed floors, including inside excavated cavities.
 public sealed partial class World
 {
-    public const int W = P.W, H = P.H, N = W * H, Z = P.ZMax;
+    // The world's size (WorldSettings.Width/Height/Levels; 256×160×192 by default): W columns around
+    // (x wraps), H rows from pole to pole, N = W·H cells, Z levels in every column. Fixed for the world's
+    // life; hot loops read them into locals.
+    public readonly int W, H, N, Z;
+    // What is given per planet (the first bodies, volcanoes, strikes, slope creep a tick) was set for the
+    // default world's area; a world of another size gets it in proportion to its own (PerArea). The default
+    // world takes the numbers as they are.
+    public const int RefN = WorldSettings.DefaultWidth * WorldSettings.DefaultHeight;
+    public int PerArea(int perDefaultWorld) => N == RefN ? perDefaultWorld : (int)Math.Round((double)perDefaultWorld * N / RefN, MidpointRounding.AwayFromZero);
+    // Half-width in x of a disk of radius r that touches no column twice (x wraps): r itself unless the world
+    // is narrower than the disk.
+    int AroundX(int r) => Math.Min(r, (W - 1) / 2);
     public static readonly int[] DX = { 1, 0, -1, 0 }, DY = { 0, 1, 0, -1 };
     public const int FlashAttack = 0, FlashKill = 1, FlashInject = 2, FlashDig = 3, FlashPile = 4, FlashLink = 5, FlashExpel = 6, FlashDeath = 7,
         FlashGrow = 8, FlashStrike = 9;
@@ -78,10 +89,10 @@ public sealed partial class World
     // out. It stays where it fell (it rots, and compacts into aggregates); only the gas spreads, as air.
     // In fixed point (Qty): moving matter between cells and pools conserves atoms exactly.
     public readonly Qty[][] C = new Qty[Chemistry.S][];
-    Qty[] back = new Qty[N];
-    public readonly float[] Light = new float[N], Temp = new float[N], Ash = new float[N];
-    public readonly float[] Photon = new float[N];               // light caught in a cell, shared by all bodies there
-    readonly float[] ventHeat = new float[N], tmp = new float[N];
+    Qty[] back;
+    public readonly float[] Light, Temp, Ash;
+    public readonly float[] Photon;               // light caught in a cell, shared by all bodies there
+    readonly float[] ventHeat, tmp;
 
     public readonly List<Agent> Agents = new();
 
@@ -96,7 +107,7 @@ public sealed partial class World
     public readonly Flash[] Flashes = new Flash[FlashCap];
     public int FlashHead;
 
-    readonly int[] nb = new int[N * 4];
+    readonly int[] nb;
     long nextId = 1;
     long nextStructure;
     // Tile layout (see the comment on Ctx and docs/SIMULATION.md). TileSize is the nominal side; tiles
@@ -104,7 +115,7 @@ public sealed partial class World
     public static int TileSize = 32;   // tools/bench --tile N compares layouts (set before creating a world)
     public const int SafeGap = 32;     // ≥ reach 7 of one agent + look 16 of another, with margin
     public readonly int TilesX, TilesY, Tiles, Colours, PeriodX, PeriodY;
-    readonly byte[] tileCol = new byte[W], tileRow = new byte[H];
+    readonly byte[] tileCol, tileRow;
     readonly List<Agent>[] tiles;
     readonly int[][] colour;          // tile indices of each colour
     readonly int[] phaseOrder;        // scratch: the tiles of a colour, most populous first
@@ -134,9 +145,56 @@ public sealed partial class World
     World(WorldSettings settings, int tileSize, bool generate, int chemModel = -1)
     {
         Settings = settings = settings?.Clone() ?? new WorldSettings();
+        settings.Validate();
+        W = settings.Width; H = settings.Height; N = W * H; Z = settings.Levels;
+        Crust = CrustFor(Z);
+        RegionsX = W / RegionSide; RegionsY = H / RegionSide; Regions = RegionsX * RegionsY;
+        // Every per-cell and per-voxel array, sized by the world (the fields are declared next to the
+        // code that uses them, by file; readonly, so they are made here).
+        // World.Body.cs
+        Big = new Agent[N];
+        // World.BodyOps.cs
+        lastAttacker = new Agent[N]; lastAttack = new long[N];
+        // World.Cave.cs
+        Tmean = new float[N]; CaveWarm = new float[N]; caveHeatIn = new float[N];
+        // World.Climate.cs
+        Water = new float[N]; Ice = new float[N]; Snow = new float[N]; Cloud = new float[N]; Rain = new float[N]; climRow = new float[H];
+        flowOut = new float[N * 4]; rowSum = new float[H]; heatIn = new float[N]; BodyHeat = new float[N]; DeathMap = new float[N];
+        // World.ClimateCycles.cs
+        Veil = new float[N]; veilRowTrans = new float[H]; veilT = new float[N]; climShift = new float[H]; dryW = new float[N]; dryT = new float[N];
+        veilRow = new float[H]; veilNext = new float[H];
+        // World.Energy.cs
+        rowLooseDecay = new double[H];
+        // World.Geochem.cs
+        Height0 = new int[N];
+        // World.Life.cs
+        Head = new Agent[N]; Count = new int[N];
+        // World.Matter.cs
+        sparse = new byte[N * Z]; Bite = new float[N]; biteAt = new long[N]; biteFace = InitFaces(); biteMat = new byte[N];
+        cohesionCache = new float[N * Z]; annealable = InitAnnealable();
+        // World.Settle.cs
+        settleDebt = new float[N]; elasticSeen = InitElasticSeen(); settleCheck = new bool[N]; settleDue = new bool[N];
+        // World.Sky.cs
+        Sun = new float[N]; Transp = new float[N]; yearInsol = new float[H]; bigCaught = new float[N];
+        // World.Structure.cs
+        overhang = new bool[N * Z]; overhangCount = new int[N]; grounded = new int[N]; Pressure = new float[N * Z];
+        compressionCache = new float[N * Z]; topologySeen = new int[N]; topologyVersion = new int[N]; HasCavity = new bool[N];
+        bodyLoad = new LoadMap(N, Z); nextBodyLoad = new LoadMap(N, Z);
+        // World.Resources.cs
+        resGas = new long[Regions]; resFood = new long[Regions];
+        // World.Terrain.cs
+        Height = new int[N]; Mat = new byte[N * Z]; Units = new ushort[N * Z]; Order = new byte[N * Z]; ColumnVersion = new int[N];
+        diffW = new float[N * 4];
+        // World.Volume.cs
+        LooseVolume = new float[N]; overfull = new bool[N];
+        // World.Waterways.cs
+        CurX = new float[N]; CurY = new float[N]; colFirst = new int[N]; colRuns = new int[N];
+        // World.cs
+        back = new Qty[N]; Light = new float[N]; Temp = new float[N]; Ash = new float[N]; Photon = new float[N]; ventHeat = new float[N];
+        tmp = new float[N]; nb = new int[N * 4]; tileCol = new byte[W]; tileRow = new byte[H]; weathering = new bool[N];
         if (generate && settings.Params != null) ParamRegistry.Restore(settings.Params);
         InitialLaws = ParamRegistry.Snapshot();
-        int seed = settings.Seed, initialPop = settings.InitialPop < 0 ? P.InitialPop : settings.InitialPop;
+        int seed = settings.Seed, initialPop = settings.InitialPop < 0 ? PerArea(P.InitialPop) : settings.InitialPop;
         Seed = seed;
         Abiogenesis = settings.Abiogenesis;
         AutoStrikes = settings.Strikes;
@@ -148,11 +206,14 @@ public sealed partial class World
         int size = Math.Clamp(tileSize, 8, 64);
         PeriodX = PeriodY = 1 + (SafeGap + size - 1) / size;
         TilesX = Math.Max(PeriodX, W / size / PeriodX * PeriodX);
+        // A world too narrow for one period of tiles around it is stepped as a single column of tiles
+        // (one colour across: nothing in parallel along x).
+        if (W / size < PeriodX) TilesX = PeriodX = 1;
         TilesY = Math.Max(1, H / size);
         Tiles = TilesX * TilesY;
         for (int x = 0; x < W; x++) tileCol[x] = (byte)(x * TilesX / W);
         for (int y = 0; y < H; y++) tileRow[y] = (byte)(y * TilesY / H);
-        if ((PeriodX - 1) * (W / TilesX) < SafeGap || (TilesY >= PeriodY && (PeriodY - 1) * (H / TilesY) < SafeGap))
+        if ((TilesX > 1 && (PeriodX - 1) * (W / TilesX) < SafeGap) || (TilesY >= PeriodY && (PeriodY - 1) * (H / TilesY) < SafeGap))
             throw new InvalidOperationException($"tile layout {TilesX}×{TilesY} leaves same-colour tiles closer than {SafeGap} cells");
         Colours = PeriodX * PeriodY;
         PhaseBusy = new double[Colours]; PhaseLongest = new double[Colours];
@@ -186,7 +247,7 @@ public sealed partial class World
 
         Array.Fill(topologySeen, -1);
         GenerateTerrain();   // (after InitGeochem above: the strata follow the depth profile)
-        for (int k = 0; k < P.VentCount; k++) SpawnVent();
+        for (int k = 0; k < VentTarget; k++) SpawnVent();
         RecomputeVentFields();
 
         // The primordial remains: a one-time endowment of loose matter like the ground it lies on. In the
@@ -547,7 +608,7 @@ public sealed partial class World
         C[Chem.Gas] = back; back = c; // swap buffers instead of copying a planet every tick
     }
 
-    readonly bool[] weathering = new bool[N];
+    readonly bool[] weathering;
 
     void EnvChem()
     {

@@ -20,7 +20,7 @@ public static class RegionBench
             int ci = Array.IndexOf(args, "--copy-region");
             var r4 = Ints(rect);
             string path = ci + 2 < args.Length ? args[ci + 2] : "region.region";
-            var lv = Arg(args, "--copy-levels") is string l ? Ints(l) : new[] { 0, World.Z };
+            var lv = Arg(args, "--copy-levels") is string l ? Ints(l) : new[] { 0, w.Z };
             var r = w.CopyRegion(r4[0], r4[1], r4[2], r4[3], lv[0], lv[1], Array.IndexOf(args, "--copy-no-bodies") < 0, System.IO.Path.GetFileNameWithoutExtension(path));
             r.Save(path);
             Console.WriteLine(Loc.T($"region {r.SizeX}×{r.SizeY} levels {r.Z0}…{r.Z1 - 1}: {r.Voxels} blocks, {r.Bodies.Count} bodies → {path}",

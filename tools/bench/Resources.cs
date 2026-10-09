@@ -27,24 +27,24 @@ public sealed partial class World
                 + $" (GasDiffK {P.GasDiffK}): rms travel {Math.Sqrt(4 * d * 1):F2} cells/tick, {Math.Sqrt(4 * d * P.DayLen):F1}/day, {Math.Sqrt(4 * d * P.DayLen * P.YearDays):F0}/year (flat ground)");
             for (int t = 1; t <= ticks; t++)
             {
-                if (t == from) w.ResProbe = new ResourceProbe();
+                if (t == from) w.ResProbe = new ResourceProbe(w.Regions);
                 w.Step();
             }
             var p = w.ResProbe;
             double T = Math.Max(1, p.Ticks);
             // Stocks at the end: surface gas, loose food, gas and food adsorbed in the top block (reachable on the floor).
-            var gas = new double[Regions]; var food = new double[Regions]; var adsGas = new double[Regions]; var adsFood = new double[Regions];
-            for (int i = 0; i < N; i++)
+            var gas = new double[w.Regions]; var food = new double[w.Regions]; var adsGas = new double[w.Regions]; var adsFood = new double[w.Regions];
+            for (int i = 0; i < w.N; i++)
             {
-                int r = RegionOf(i);
+                int r = w.RegionOf(i);
                 gas[r] += w.C[ch.Gas][i];
                 for (int s = 0; s < Chemistry.S; s++) if (s != ch.Gas) food[r] += w.C[s][i];
             }
             foreach (var kv in w.Buried)
             {
-                int c = kv.Key / Z, z = kv.Key % Z;
+                int c = kv.Key / w.Z, z = kv.Key % w.Z;
                 if (z != w.Height[c] - 1) continue;
-                int r = RegionOf(c);
+                int r = w.RegionOf(c);
                 for (int s = 0; s < Chemistry.S; s++) { if (s == ch.Gas) adsGas[r] += kv.Value.Matter[s]; else adsFood[r] += kv.Value.Matter[s]; }
             }
             double bodyGas = 0;
@@ -67,9 +67,9 @@ public sealed partial class World
                 + $" diffusion moves {p.DiffusionGross / Q / T:F1} gas/tick between cells; rain adsorbs {p.Rain.Sum() / Q / T:F3}");
             string[] ph = ResourceProbe.PhaseNames;
             Console.WriteLine("  net change of the planet's surface gas by phase, per tick: " + string.Join(", ", Enumerable.Range(0, ResourceProbe.Phases)
-                .Select(k => $"{ph[k]} {Enumerable.Range(0, Regions).Sum(r => p.Gas[k, r]) / Q / T:+0.000;-0.000}")));
+                .Select(k => $"{ph[k]} {Enumerable.Range(0, w.Regions).Sum(r => p.Gas[k, r]) / Q / T:+0.000;-0.000}")));
             Console.WriteLine("  ... of the loose food: " + string.Join(", ", Enumerable.Range(0, ResourceProbe.Phases)
-                .Select(k => $"{ph[k]} {Enumerable.Range(0, Regions).Sum(r => p.Food[k, r]) / Q / T:+0.000;-0.000}")));
+                .Select(k => $"{ph[k]} {Enumerable.Range(0, w.Regions).Sum(r => p.Food[k, r]) / Q / T:+0.000;-0.000}")));
             Console.WriteLine("  species (loose stock now; per tick: uptake, expel, net by diffusion/env/bio/other), the largest uptakes and stocks:");
             foreach (int s in Enumerable.Range(0, Chemistry.S).OrderByDescending(s => p.SpeciesIntake[s] * 1000.0 + w.C[s].Sum(q => q.D) / 1000).Take(6))
             {
@@ -80,7 +80,7 @@ public sealed partial class World
             Console.WriteLine($"  global gas turnover (air ÷ uptake): {(gI > 0 ? gas.Sum() / gI : double.PositiveInfinity):F0} ticks; food: {(fI > 0 ? food.Sum() / fI : double.PositiveInfinity):F0} ticks");
             // Per region: where uptake comes from.
             double sumI = 0, byLocal = 0, byImport = 0, byStock = 0, byEnv = 0;
-            var rows = Enumerable.Range(0, Regions).Select(r =>
+            var rows = Enumerable.Range(0, w.Regions).Select(r =>
             {
                 double I = p.GasIntake[r] / Q / T, D = p.Gas[ResourceProbe.PDiffusion, r] / Q / T, E = p.Gas[ResourceProbe.PEnv, r] / Q / T;
                 double B = p.Gas[ResourceProbe.PBio, r] / Q / T, O = p.Gas[ResourceProbe.POther, r] / Q / T;
@@ -100,13 +100,13 @@ public sealed partial class World
                 Console.WriteLine($"  gas uptake covered by: bodies' own release in the region {byLocal / sumI:P0}, diffusion from other regions {byImport / sumI:P0}, decay/env {byEnv / sumI:P0}, the region's stock {byStock / sumI:P0}");
             Console.WriteLine("  region     bodies   gas air  adsorbed  uptake/t  release/t  diff in/t  env/t   deplete(days, uptake only)  food  food up/t  food env/t");
             foreach (var x in rows.OrderByDescending(x => x.I).Take(10))
-                Console.WriteLine($"  ({x.r % RegionsX},{x.r / RegionsX})  {x.pop,8:F0} {x.G,9:F0} {x.A,9:F0} {x.I,9:F3} {x.rel,10:F3} {x.D,+10:F3} {x.E,7:F3} {(x.I > 0 ? x.G / x.I / P.DayLen : double.PositiveInfinity),10:F1}"
+                Console.WriteLine($"  ({x.r % w.RegionsX},{x.r / w.RegionsX})  {x.pop,8:F0} {x.G,9:F0} {x.A,9:F0} {x.I,9:F3} {x.rel,10:F3} {x.D,+10:F3} {x.E,7:F3} {(x.I > 0 ? x.G / x.I / P.DayLen : double.PositiveInfinity),10:F1}"
                     + $"              {x.F,8:F0} {x.FI,9:F3} {x.FD,10:F3}");
             // Loose food: is any region eaten out faster than it comes back? (World.Leach soaks litter away.)
             double leach = p.Leach.Sum() / Q / T;
             var fed = rows.Where(x => x.FI > 0.01).ToList();
             Console.WriteLine($"  food: uptake {fI:F2}/tick, leached into the ground {leach:F2}/tick (LeachK {P.LeachK}), env net (decay, weathering, settling, leaching) {rows.Sum(x => x.FD):+0.00;-0.00}/tick, bodies net {rows.Sum(x => x.FB):+0.00;-0.00}/tick;"
-                + $" regions with food uptake > 0.01/tick: {fed.Count} of {Regions}");
+                + $" regions with food uptake > 0.01/tick: {fed.Count} of {w.Regions}");
             if (fed.Count > 0)
             {
                 var ft = fed.Select(x => x.F / x.FI / P.DayLen).OrderBy(v => v).ToList();
@@ -117,7 +117,7 @@ public sealed partial class World
             if (occ.Count > 0)
             {
                 var times = occ.Select(x => x.G / x.I / P.DayLen).OrderBy(v => v).ToList();
-                Console.WriteLine($"  regions with uptake > 0.01/tick: {occ.Count} of {Regions}; days to empty the air by uptake alone: min {times[0]:F1}, median {times[times.Count / 2]:F1}, max {times[^1]:F1}");
+                Console.WriteLine($"  regions with uptake > 0.01/tick: {occ.Count} of {w.Regions}; days to empty the air by uptake alone: min {times[0]:F1}, median {times[times.Count / 2]:F1}, max {times[^1]:F1}");
             }
         }
     }

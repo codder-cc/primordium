@@ -65,7 +65,7 @@ public sealed partial class World
                 if (t % every != 0 && t != ticks) continue;
                 Console.WriteLine($"seed {w.Seed} tick {w.Tick} pop {w.Agents.Count} hash {w.StateHash():x16}");
                 foreach (var line in probe.Report()) Console.WriteLine("  " + line);
-                foreach (var line in CrowdReport(crowd, w.Agents)) Console.WriteLine("  " + line);
+                foreach (var line in CrowdReport(w, crowd, w.Agents)) Console.WriteLine("  " + line);
                 probe.Clear();
                 crowd = w.CrowdSnapshot();
             }
@@ -94,7 +94,7 @@ public sealed partial class World
         return list;
     }
 
-    static IEnumerable<string> CrowdReport(List<(Agent a, int crowd, int kids, int a0X, int a0Y)> snap, List<Agent> now)
+    static IEnumerable<string> CrowdReport(World w, List<(Agent a, int crowd, int kids, int a0X, int a0Y)> snap, List<Agent> now)
     {
         if (snap.Count < 20) yield break;
         var sorted = snap.OrderBy(x => x.crowd).ThenBy(x => x.a.Id).ToList();
@@ -115,7 +115,7 @@ public sealed partial class World
         // bodies, and the growth ln(N1/N0), against N0. Density-dependent regulation: deaths up, children
         // and growth down with N0.
         const int B = 16;
-        int bx = W / B, nb = bx * (H / B);
+        int bx = w.W / B, nb = bx * (w.H / B);
         var n0 = new double[nb]; var dead = new double[nb]; var kids2 = new double[nb]; var n1 = new double[nb];
         foreach (var x in snap) { int b = x.a0Y / B * bx + x.a0X / B; n0[b]++; if (x.a.Dead) dead[b]++; kids2[b] += x.a.NChildren - x.kids; }
         foreach (var a in now) { if (a.Dead) continue; n1[a.Y / B * bx + a.X / B]++; }

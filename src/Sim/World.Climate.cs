@@ -15,15 +15,15 @@ public sealed class Strike
 // snow → runoff into lakes and seas → ice in the cold — and now and then a mutagenic strike from space.
 public sealed partial class World
 {
-    public readonly float[] Water = new float[N], Ice = new float[N], Snow = new float[N], Cloud = new float[N], Rain = new float[N];
+    public readonly float[] Water, Ice, Snow, Cloud, Rain;
     public float Moisture, RainSum;
     public bool AutoStrikes = true;
     public readonly List<Strike> Strikes = new();
     public int StrikeCount;
-    readonly float[] climRow = new float[H], flowOut = new float[N * 4], rowSum = new float[H];
-    readonly float[] heatIn = new float[N];   // energy dissipated by bodies in each cell since the last env step
-    public readonly float[] BodyHeat = new float[N];   // for the view: what bodies dissipated per env step, smoothed
-    public readonly float[] DeathMap = new float[N];   // for the view: recent deaths per cell, fading
+    readonly float[] climRow, flowOut, rowSum;
+    readonly float[] heatIn;   // energy dissipated by bodies in each cell since the last env step
+    public readonly float[] BodyHeat;   // for the view: what bodies dissipated per env step, smoothed
+    public readonly float[] DeathMap;   // for the view: recent deaths per cell, fading
     long nextStrike;
 
     public bool Submerged(int i) => Water[i] >= P.SwimDepth;
@@ -40,8 +40,11 @@ public sealed partial class World
             tot += Water[i];
         }
         Moisture = (float)(tot * 0.01);
-        nextStrike = P.StrikeMin + mainRng.Next(P.StrikeMax - P.StrikeMin);
+        nextStrike = StrikeGap(P.StrikeMin + mainRng.Next(P.StrikeMax - P.StrikeMin));
     }
+
+    // Ticks to the next strike: as drawn on the default world, longer on a smaller one (the same strikes per area).
+    long StrikeGap(int ticks) => N == RefN ? ticks : (long)Math.Round((double)ticks * RefN / N);
 
     // Clouds are a noise field blown eastwards; there are more of them at the equator and fewer
     // over the dry belts. Where they are thick enough, it rains (or snows).
@@ -207,7 +210,7 @@ public sealed partial class World
     void MaybeStrike()
     {
         if (!AutoStrikes || Tick < nextStrike) return;
-        nextStrike = Tick + mainRng.Next(P.StrikeMin, P.StrikeMax);
+        nextStrike = Tick + StrikeGap(mainRng.Next(P.StrikeMin, P.StrikeMax));
         StrikeAt(mainRng.Next(W), mainRng.Next(H / 10, H - H / 10), 5 + mainRng.Next(8));
     }
 
@@ -221,11 +224,11 @@ public sealed partial class World
         if (Strikes.Count > 12) Strikes.RemoveAt(0);
         StrikeCount++;
         int struck = 0;
-        for (int dy = -r; dy <= r; dy++)
+        for (int dy = -r, rx = AroundX(r); dy <= r; dy++)
         {
             int y = cy + dy;
             if (y < 0 || y >= H) continue;
-            for (int dx = -r; dx <= r; dx++)
+            for (int dx = -rx; dx <= rx; dx++)
             {
                 float d = MathF.Sqrt(dx * dx + dy * dy);
                 if (d > r) continue;

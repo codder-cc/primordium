@@ -54,7 +54,7 @@ public sealed partial class World
         try { EnergyProbes(); } finally { P.ChemEnergyModel = model; }
         var w = Fixture();
         Require(w.Chem.Model == model, "the fixture's chemistry does not follow the law");
-        int cell = 20 * W + 20;
+        int cell = 20 * w.W + 20;
         for (int s = 0; s < Chemistry.S; s++) w.C[s][cell] += 12;
         w.EnergyStart();
         var before = w.AuditEnergy();
@@ -68,7 +68,7 @@ public sealed partial class World
     static void EnergyProbes()
     {
         var w = Fixture(); var ch = w.Chem;
-        int c = 80 * W + 120;
+        int c = 80 * w.W + 120;
         var e0 = w.EnergyStart();
         Require(Math.Abs(e0.Stock) < 1e-9, "empty fixture holds energy");
 
@@ -119,7 +119,7 @@ public sealed partial class World
         for (int k = 0; k < 4; k++) w.Intake(eater, c, food);
         w.Drink(eater, c);
         w.EnergyBalanced(before, "uptake", FDissipate);
-        int m = 120 * W + 30;
+        int m = 120 * w.W + 30;
         int soft = Enumerable.Range(0, Chemistry.S).Where(s => ch.E[s] > 0).OrderBy(s => ch.MatBarrier[s + 2]).First();
         w.TestBlock(m, 2, soft, 0); w.TestBlock(m, 3, soft, 0);
         var miner = w.TestAgent(m, 4, food, 10);
@@ -145,18 +145,18 @@ public sealed partial class World
         before = w.AuditEnergy();
         w.Die(b, c, CauseStarve);
         w.EnergyBalanced(before, "death", FDeath);
-        var parent = w.TestAgent(c + W, 2, food, 40);
+        var parent = w.TestAgent(c + w.W, 2, food, 40);
         before = w.AuditEnergy();
-        w.Divide(parent, c + W, 0, 4);
+        w.Divide(parent, c + w.W, 0, 4);
         Require(parent.NChildren == 1, "probe division failed");
         w.EnergyBalanced(before, "division", FDissipate);
-        var mate = w.TestAgent(c + W, 2, food, 40);
+        var mate = w.TestAgent(c + w.W, 2, food, 40);
         mate.MateTick = w.Tick; parent.Target = mate;
         before = w.AuditEnergy();
-        w.Mate(parent, c + W);
+        w.Mate(parent, c + w.W);
         Require(parent.NMates == 1, "probe mating failed");
         w.EnergyBalanced(before, "mating", FDissipate);
-        var hot = w.TestAgent(c + 2 * W, 2, sx, 200);
+        var hot = w.TestAgent(c + 2 * w.W, 2, sx, 200);
         hot.HeatHeld = 10; hot.Tb = 40;
         before = w.AuditEnergy();
         for (int k = 0; k < 400; k++) w.Live(hot);
@@ -164,7 +164,7 @@ public sealed partial class World
         w.EnergyBalanced(before, "living (upkeep, heat shed, decay)", FShed, FBodyDecay, FDissipate);
 
         // Burial: entombed where it stands, and under a collapsing slab (impact heat is gravity's).
-        int t = 30 * W + 200;
+        int t = 30 * w.W + 200;
         var tomb = w.TestAgent(t, 2, food, 12);
         tomb.HeatHeld = 2;
         w.TestBlock(t, 2, food);
@@ -172,21 +172,21 @@ public sealed partial class World
         w.SettleAgent(tomb);
         Require(tomb.Dead && tomb.Cause == CauseBuried, "probe body was not entombed");
         w.EnergyBalanced(before, "entombed", FDeath);
-        int f = 40 * W + 200;
+        int f = 40 * w.W + 200;
         var victim = w.TestAgent(f, 2, food, 12);
         w.TestBlock(f, 6, food);
         before = w.AuditEnergy();
         w.StepStructure();
-        Require(w.Mat[f * Z + 2] != 0 && (victim.Dead || !w.IsSolid(victim.Y * W + victim.X, victim.Z)), "probe slab did not fall on the victim (or left it inside the block)");   // the blow tears it as far as its molecules hold (World.Crush)
+        Require(w.Mat[f * w.Z + 2] != 0 && (victim.Dead || !w.IsSolid(victim.Y * w.W + victim.X, victim.Z)), "probe slab did not fall on the victim (or left it inside the block)");   // the blow tears it as far as its molecules hold (World.Crush)
         if (victim.Dead) w.EnergyBalanced(before, "collapse", FImpact, FDeath); else w.EnergyBalanced(before, "collapse", FImpact);
 
         // Pressure chemistry in a burial under a tall stack.
         var (px, py, pp, _) = FindBind(ch, de => de > 0);
-        int q = 140 * W + 100;
+        int q = 140 * w.W + 100;
         for (int z = 2; z < 60; z++) w.TestBlock(q, z, ch.Solids.OrderByDescending(s => ch.Mass[s]).First());
-        var burial = w.BurialAt(q * Z + 2);
+        var burial = w.BurialAt(q * w.Z + 2);
         burial.Matter[px] = 20; burial.Matter[py] = 20;
-        w.MatterChanged(q * Z + 2); w.StepStructure();
+        w.MatterChanged(q * w.Z + 2); w.StepStructure();
         long meta = w.Metamorphoses;
         before = w.AuditEnergy();
         for (int k = 0; k < 8; k++) w.Metamorphose();
@@ -194,14 +194,14 @@ public sealed partial class World
         w.EnergyBalanced(before, "pressure chemistry");
 
         // Ground and outside: loose decay, settling, weathering, strikes, vents, the hand, abiogenesis.
-        int g = 100 * W + 100;
+        int g = 100 * w.W + 100;
         for (int s = 0; s < Chemistry.S; s++) w.C[s][g] += 30.5f;
         w.TestBlock(g, 2, food, 0);
         before = w.AuditEnergy();
         w.Tick = 4000;
         w.EnvChem();
         w.Settle(g, 1e4f);
-        w.StrikeAt(g % W, g / W, 4);
+        w.StrikeAt(g % w.W, g / w.W, 4);
         w.EnergyBalanced(before, "ground chemistry and strike", FLooseDecay, FStrike);
         before = w.AuditEnergy();
         var vent = new Vent { X = 10, Y = 100, Strength = 1, Life = 100 };
@@ -209,7 +209,7 @@ public sealed partial class World
         w.Pour(60, 60, 3, food, 0.2f);
         w.DigOut(60, 60, 3, 1f);
         w.EnergyBalanced(before, "vent and hand", FVent, FHand);
-        int abio = 20 * W + 20;
+        int abio = 20 * w.W + 20;
         for (int s = 0; s < Chemistry.S; s++) w.C[s][abio] += 12;
         w.TestBlock(abio, 2, food, 0);
         before = w.AuditEnergy();

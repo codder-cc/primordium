@@ -29,7 +29,9 @@ public partial class Main : Node
     public long FastTo { get => Sim.FastTo; set => Sim.FastTo = value; }   // fast-forward: simulate without drawing until this tick
     public long FastFrom => Sim.FastFrom;
     public bool FastForward => Sim?.FastForward ?? false;
-    int initialPop = P.InitialPop;
+    int initialPop = -1;   // < 0: P.InitialPop by the world's area (World.PerArea)
+    // The size of new worlds (--size WxHxL, the New world window; R and ⇧R keep the current one).
+    int sizeW = WorldSettings.DefaultWidth, sizeH = WorldSettings.DefaultHeight, sizeL = WorldSettings.DefaultLevels;
     // Off by default (the player starts life and strikes): A and ⇧X toggle them, --abio/--strikes at start.
     bool abiogenesis, strikes;
     int worldGeneration;
@@ -88,6 +90,12 @@ public partial class Main : Node
             if (args[i] == "--shot") shotPath = args[i + 1];
             if (args[i] == "--slice") slice = int.Parse(args[i + 1]);
             if (args[i] == "--pop") initialPop = int.Parse(args[i + 1]);
+            if (args[i] == "--size")
+            {
+                if (!WorldSettings.TryParseSize(args[i + 1], out int sw, out int sh, out int sl)) GD.PrintErr(Loc.T($"--size {args[i + 1]}: expected WxHxL", $"--size {args[i + 1]}: нужно ШxВxУ"));
+                else if (new WorldSettings { Width = sw, Height = sh, Levels = sl }.SizeProblem() is string problem) GD.PrintErr("--size: " + problem);
+                else (sizeW, sizeH, sizeL) = (sw, sh, sl);
+            }
             if (args[i] == "--focus") focus = float.Parse(args[i + 1], System.Globalization.CultureInfo.InvariantCulture);
             if (args[i] == "--zoom") zoom = float.Parse(args[i + 1], System.Globalization.CultureInfo.InvariantCulture);
             if (args[i] == "--tool") startTool = int.Parse(args[i + 1]);
@@ -179,7 +187,7 @@ public partial class Main : Node
         bool wasPaused = Sim?.Paused ?? false;
         int tpf = Sim?.Tpf ?? startTpf;
         Sim?.Stop();
-        var settings = new WorldSettings { Seed = seed, InitialPop = initialPop, Abiogenesis = abiogenesis, Strikes = strikes };
+        var settings = new WorldSettings { Seed = seed, InitialPop = initialPop, Abiogenesis = abiogenesis, Strikes = strikes, Width = sizeW, Height = sizeH, Levels = sizeL };
         var sim = new SimRunner(new World(settings)) { Tpf = tpf, Paused = wasPaused };
         var sw = Stopwatch.StartNew();
         for (int i = 0; i < warm; i++)
@@ -207,9 +215,10 @@ public partial class Main : Node
     public void CreateWorld(WorldSettings settings)
     {
         initialPop = settings.InitialPop;
+        (sizeW, sizeH, sizeL) = (settings.Width, settings.Height, settings.Levels);
         abiogenesis = settings.Abiogenesis;
         strikes = settings.Strikes;
-        Ui.Toast(Loc.T($"creating a world: seed {settings.Seed}, population {settings.InitialPop}…", $"создаю мир: seed {settings.Seed}, население {settings.InitialPop}…"));
+        Ui.Toast(Loc.T($"creating a world: seed {settings.Seed}, {settings.SizeText}, population {settings.InitialPop}…", $"создаю мир: seed {settings.Seed}, {settings.SizeText}, население {settings.InitialPop}…"));
         Sim.NewWorld(settings);
     }
 
@@ -238,6 +247,7 @@ public partial class Main : Node
         Sim.Selected = View.Selected;
         Sim.Hover = View.Hover;
         Sim.WantStress = View.Overlay == 7;
+        View.Stress = Sim.Stress;
         // The clade tree is built on the simulation thread only while the tree window or the range overlay shows it.
         Sim.Obs.WantTree = View.Overlay == View3D.RangeOverlay || (Ui?.Tree?.Visible ?? false);
         View.Ranges = Sim.Obs.Tree;
@@ -694,7 +704,7 @@ public partial class Main : Node
                     if (c >= 0) Sim.Do(w => w.StrikeAt(c % World.W, c / World.W, 8));
                 }
                 break;
-            case Key.R: NewWorld(k.ShiftPressed ? World.Seed : (int)(Time.GetTicksMsec() % 100000)); break;
+            case Key.R: (sizeW, sizeH, sizeL) = (World.W, World.H, World.Z); NewWorld(k.ShiftPressed ? World.Seed : (int)(Time.GetTicksMsec() % 100000)); break;
             case Key.Escape:
                 if (FastForward) { FastTo = -1; break; }
                 if (Ui.Regions.CancelTool()) break;   // the regions window's selection or paste brush

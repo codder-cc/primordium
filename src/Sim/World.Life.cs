@@ -21,8 +21,8 @@ public sealed partial class World
 
     // A cell holds any number of bodies; they share its light and soil, and the heat of their living
     // warms it — a crowd overheats itself (or keeps itself warm in the cold).
-    public readonly Agent[] Head = new Agent[N];
-    public readonly int[] Count = new int[N];
+    public readonly Agent[] Head;
+    public readonly int[] Count;
 
     void Place(Agent a, int cell)
     {
@@ -354,7 +354,7 @@ public sealed partial class World
     }
 
     // Within touching distance: same or neighbouring cell, further for big bodies.
-    static bool Near(Agent a, Agent b)
+    bool Near(Agent a, Agent b)
     {
         int dx = Math.Abs(a.X - b.X);
         dx = Math.Min(dx, W - dx);

@@ -23,10 +23,10 @@ public sealed partial class World
         P.FreezeK = 0; P.HeatK = 0; P.HoldK = 0;
         var w = Fixture();
         w.AutoStrikes = false;
-        int y = 40, deep = y * W + 40, shallow = y * W + 60;
+        int y = 40, deep = y * w.W + 40, shallow = y * w.W + 60;
         void Roof(int c, int top)
         {
-            for (int z = 3; z < top; z++) { w.Mat[c * Z + z] = Chemistry.Bedrock; w.Order[c * Z + z] = 255; }
+            for (int z = 3; z < top; z++) { w.Mat[c * w.Z + z] = Chemistry.Bedrock; w.Order[c * w.Z + z] = 255; }
             w.Height[c] = top;
             w.TerrainChanged(c);
         }

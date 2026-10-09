@@ -158,7 +158,7 @@ public partial class UiManager : Control
         yield return Brush(4, Icons.Dig, Loc.T("Dig", "Копать"), Loc.T("brush: remove the top blocks", "кисть: снять верхние блоки"));
         yield return Brush(5, Icons.Plant, Loc.T("Plant a design", "Посадить"), Loc.T("brush: plant the designer's creature in the cell under the cursor", "кисть: посадить существо из конструктора в клетку под курсором"));
         yield return Tool("slice", Icons.Slice, Loc.T("Cross-section", "Разрез"), "C", Loc.T("cut the world open along a row; [ ] move the cut", "разрезать мир по строке; [ ] сдвигают разрез"),
-            () => { var v = m.View; v.Slice = v.Slice < 0 ? World.H / 2 : -1; }, () => m.View.Slice >= 0);
+            () => { var v = m.View; v.Slice = v.Slice < 0 ? m.World.H / 2 : -1; }, () => m.View.Slice >= 0);
         yield return Tool("overlay", Icons.Overlay, Loc.T("Surface layer", "Слой поверхности"), "M", Loc.T("what the surface shows: rock, temperature, light, deaths, clades… (⇧M — back)", "что показывает поверхность: породы, температура, свет, смерти, ветви… (⇧M — назад)"),
             () => { var v = m.View; v.Overlay = (v.Overlay + 1) % v.OverlayCount; }, () => m.View.Overlay != 0);
         yield return Tool("light", Icons.Light, Loc.T("Sunlight", "Освещение"), "L", Loc.T("light and shade of the sun on the map, or flat colours", "свет и тени солнца на карте или ровные цвета"),

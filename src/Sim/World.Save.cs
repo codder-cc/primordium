@@ -16,7 +16,10 @@ public sealed class SaveInfo
     public int Seed, Population;
     public DateTime SavedAt;   // UTC
     public string Note;
-    public override string ToString() => $"seed {Seed}, tick {Tick}, {Population} bodies, {SavedAt:yyyy-MM-dd HH:mm} UTC{(string.IsNullOrEmpty(Note) ? "" : " — " + Note)}";
+    // The world's size (version 16; older files were all 256×160×192).
+    public int Width = WorldSettings.DefaultWidth, Height = WorldSettings.DefaultHeight, Levels = WorldSettings.DefaultLevels;
+    public bool DefaultSize => Width == WorldSettings.DefaultWidth && Height == WorldSettings.DefaultHeight && Levels == WorldSettings.DefaultLevels;
+    public override string ToString() => $"seed {Seed}, tick {Tick}, {Population} bodies{(DefaultSize ? "" : $", {Width}×{Height}×{Levels}")}, {SavedAt:yyyy-MM-dd HH:mm} UTC{(string.IsNullOrEmpty(Note) ? "" : " — " + Note)}";
 }
 
 // Saving and loading the whole world. A loaded world continues exactly where the saved one was:
@@ -57,8 +60,10 @@ public sealed partial class World
     // life model's state; the mechanics block (SyncMechanics: the world's relief scale, settling state,
     // World.Settle) after the waterways. Before it the relief scale is 1 (worlds were made so), no body
     // presses against a ledge and settling starts fresh.
-    // (16 is free for the next format change: e.g. chemistry energies / abiogenesis state.)
-    public const int SaveVersion = 15, OldestSaveVersion = 1;
+    // 16: the world's size (WorldSettings.Width/Height/Levels) — in the settings and, for the list of saves,
+    // at the end of the header (width, height, levels). A file before it is 256×160×192 whatever its
+    // settings say; a world of another size cannot be written in an older format.
+    public const int SaveVersion = 16, OldestSaveVersion = 1;
     static readonly byte[] SaveMagic = Encoding.ASCII.GetBytes("PRIMSAVE");
     const int EndMarker = 0x21444E45;   // "END!"
 
@@ -167,6 +172,7 @@ public sealed partial class World
     {
         if (version < OldestSaveVersion || version > SaveVersion) throw new ArgumentOutOfRangeException(nameof(version));
         if (!BitConverter.IsLittleEndian) throw new PlatformNotSupportedException("save files are little-endian");
+        if (version < 16 && !Settings.DefaultSize) throw new ArgumentException($"a {Settings.SizeText} world needs save version 16 or later", nameof(version));
         using (var head = new BinaryWriter(stream, Encoding.UTF8, true))
         {
             head.Write(SaveMagic);
@@ -176,6 +182,7 @@ public sealed partial class World
             head.Write(Agents.Count(a => !a.Dead));
             head.Write(DateTime.UtcNow.Ticks);
             head.Write(note ?? "");
+            if (version >= 16) { head.Write(W); head.Write(H); head.Write(Z); }
         }
         using var z = new BrotliStream(stream, level, true);   // Fastest: quality 1, ~3× faster than GZip and smaller
         using var buf = new BufferedStream(z, 1 << 20);
@@ -203,6 +210,7 @@ public sealed partial class World
         info.Population = r.ReadInt32();
         info.SavedAt = new DateTime(r.ReadInt64(), DateTimeKind.Utc);
         info.Note = r.ReadString();
+        if (info.Version >= 16) { info.Width = r.ReadInt32(); info.Height = r.ReadInt32(); info.Levels = r.ReadInt32(); }
         return info;
     }
 
@@ -224,6 +232,8 @@ public sealed partial class World
         string settingsJson = null;
         reader.V(ref settingsJson);
         var settings = WorldSettings.FromJson(settingsJson);
+        // The size: the header's (version 16); an older file is of the one size there was.
+        settings.Width = info.Width; settings.Height = info.Height; settings.Levels = info.Levels;
         var initialLaws = ReadLaws(br);
         var laws = ReadLaws(br);
         int tileSide = br.ReadInt32();

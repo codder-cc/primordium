@@ -22,17 +22,17 @@ public sealed partial class World
             P.GasDiffK = k;
             var w = Fixture(); int g = w.Chem.Gas;
             var rng = new SimRng(9);
-            for (int i = 0; i < N; i++) w.Height[i] = 2 + (i / W < 20 ? rng.Next(3) : 0);
+            for (int i = 0; i < w.N; i++) w.Height[i] = 2 + (i / w.W < 20 ? rng.Next(3) : 0);
             w.RecomputeFlow();
-            int c0 = 120 * W + 128;
+            int c0 = 120 * w.W + 128;
             w.C[g][c0] = 100000;
-            for (int i = 0; i < 20 * W; i++) w.C[g][i] = (float)(rng.NextDouble() * 2000);
+            for (int i = 0; i < 20 * w.W; i++) w.C[g][i] = (float)(rng.NextDouble() * 2000);
             var before = w.ElementBudget();
             for (int t = 0; t < 200; t++) w.Diffuse();
             BudgetEqual(before, w.ElementBudget(), $"gas diffusion, GasDiffK {k}", 0);
             double m2 = 0, mass = 0;
             for (int y = 85; y < 156; y++)
-                for (int x = 93; x < 164; x++) { double q = w.C[g][y * W + x]; m2 += q * ((x - 128) * (x - 128) + (y - 120) * (y - 120)); mass += q; }
+                for (int x = 93; x < 164; x++) { double q = w.C[g][y * w.W + x]; m2 += q * ((x - 128) * (x - 128) + (y - 120) * (y - 120)); mass += q; }
             return m2 / mass;
         }
         double s1 = Spread(1f), s03 = Spread(0.3f);
@@ -41,8 +41,8 @@ public sealed partial class World
 
         // Gas under a roof.
         var v = Fixture(); var ch = v.Chem; int gas = ch.Gas;
-        int cave = 40 * W + 40;
-        for (int z = 3; z < 6; z++) { v.Mat[cave * Z + z] = Chemistry.Bedrock; v.Order[cave * Z + z] = 255; }
+        int cave = 40 * v.W + 40;
+        for (int z = 3; z < 6; z++) { v.Mat[cave * v.Z + z] = Chemistry.Bedrock; v.Order[cave * v.Z + z] = 255; }
         v.Height[cave] = 6; v.TerrainChanged(cave);
         v.StepStructure();
         Require(v.Roof(cave, 2) == 3, "roof of 3 blocks");
@@ -53,12 +53,12 @@ public sealed partial class World
         P.CaveGasK = 3;
         float reach = v.LooseAmount(a, cave, gas);
         Require(MathF.Abs(reach - 10 * MathF.Exp(-1)) < 1e-4f, $"under 3 blocks with CaveGasK 3: {reach:F4} of 10 (want {10 * MathF.Exp(-1):F4})");
-        v.BurialAt(cave * Z + 1).Matter[gas] += Qty.Of(0.5);   // gas lying on the cave floor goes first
+        v.BurialAt(cave * v.Z + 1).Matter[gas] += Qty.Of(0.5);   // gas lying on the cave floor goes first
         var before2 = v.ElementBudget();
         int held = a.Inv[gas];
         for (int k = 0; k < 4; k++) v.Intake(a, cave, gas);
         BudgetEqual(before2, v.ElementBudget(), "uptake of gas under a roof", 0);
-        Require(v.BurialAt(cave * Z + 1).Matter[gas] == 0, "the cave floor's gas was not taken first");
+        Require(v.BurialAt(cave * v.Z + 1).Matter[gas] == 0, "the cave floor's gas was not taken first");
         double took = 10 - v.C[gas][cave].D;
         Require(a.Inv[gas] == held + 4 && Math.Abs(took - 3.5) < 1e-6, $"took {took:F4} from the column air, body +{a.Inv[gas] - held}");
         double air = v.C[gas][cave].D;
@@ -68,7 +68,7 @@ public sealed partial class World
 
         // The probe watches only; the laws switched on mid-run keep atoms and energy.
         var w1 = new World(3, 600, true); var w2 = new World(3, 600, true);
-        w2.ResProbe = new ResourceProbe();
+        w2.ResProbe = new ResourceProbe(w2.Regions);
         for (int t = 0; t < 300; t++) { w1.Step(); w2.Step(); }
         Require(w1.StateHash() == w2.StateHash(), "the resource probe changed the world");
         Require(w2.ResProbe.Ticks == 300 && w2.ResProbe.SpeciesIntake.Sum() > 0, "the probe booked nothing");

@@ -47,7 +47,7 @@ public sealed partial class World
             }
             string o = Row(0), n = Row(1);
             ParamRegistry.Restore(laws);
-            Console.WriteLine($"  row {y,3} ({Latitude(y) * 180 / MathF.PI,5:F1}°): {o} | {n}");
+            Console.WriteLine($"  row {y,3} ({w0.Latitude(y) * 180 / MathF.PI,5:F1}°): {o} | {n}");
         }
         // The schedule of the first 12 000 ticks (pure functions of the seed and the tick).
         Console.WriteLine("schedule of the first 12 000 ticks: moon, eclipses (start ticks), solar cycle, activity, flares (start: peak power, length)");
@@ -79,8 +79,8 @@ public sealed partial class World
                 w.Step();
                 if (w.Tick % P.LightEvery != 0) continue;
                 double s = 0; int on = 0;
-                for (int i = 0; i < N; i++) { s += w.Sun[i]; if (w.Sun[i] > 0) on++; }
-                sum += s / N * P.PhotonK; lit += on / (double)N;
+                for (int i = 0; i < w.N; i++) { s += w.Sun[i]; if (w.Sun[i] > 0) on++; }
+                sum += s / w.N * P.PhotonK; lit += on / (double)w.N;
                 if (w.Tick % 200 == 0) { temp += w.Temp.Average(); samples++; }
             }
             int updates = ticks / P.LightEvery;

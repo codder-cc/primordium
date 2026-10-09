@@ -34,7 +34,8 @@ public sealed partial class World
             Require(MathF.Abs(DayShare(0, d) - 0.5f) < 1e-4f, "the equator's day is not half");
         float polar = 80 * MathF.PI / 180;
         Require(DayShare(polar, tilt) == 1 && DayShare(polar, -tilt) == 0 && MathF.Abs(DayShare(polar, 0) - 0.5f) < 1e-4f, "no polar day and night at 80°");
-        Require(DayShare(Latitude(40), tilt) > 0.55f && DayShare(Latitude(40), -tilt) < 0.45f, "mid-latitude summer days are not longer");
+        float lat40 = (0.5f - 40.5f / 160) * MathF.PI * 0.92f;   // row 40 of 160
+        Require(DayShare(lat40, tilt) > 0.55f && DayShare(lat40, -tilt) < 0.45f, "mid-latitude summer days are not longer");
         Require(MathF.Abs(Insol(1) - 1) < 1e-6f && MathF.Abs(Insol(0.5f) - 0.5f) < 1e-6f && Insol(-0.05f) == 0 && Insol(0.02f) > 0, "the cosine law and its twilight");
 
         // Annual photon supply: the sun's curve over a year at every row, × the mean transparency × PhotonK.
@@ -43,12 +44,12 @@ public sealed partial class World
         {
             P.Insolation = law ? 1 : 0;
             double sum = 0;
-            for (int y = 0; y < H; y++)
+            for (int y = 0; y < w.H; y++)
             {
-                float lat = Latitude(y);
+                float lat = w.Latitude(y);
                 for (int j = 0; j < 48; j++) sum += DailyInsol(lat, tilt * MathF.Sin(2 * MathF.PI * (j + 0.5f) / 48));
             }
-            return sum / (H * 48);
+            return sum / (w.H * 48);
         }
         double before = Supply(false) * 0.06, now = Supply(true) * w.TranspMean * P.PhotonK;
         ParamRegistry.ResetDefaults();
@@ -58,7 +59,7 @@ public sealed partial class World
         // Shading.
         var f = Fixture(); var ch = f.Chem;
         int ground = Enumerable.Range(0, Chemistry.S).First(s => ch.PhotoUp[s] >= 0);
-        int c = 70 * W + 100;
+        int c = 70 * w.W + 100;
         var big = f.TestAgent(c, 2, ground, 200);
         var small = f.TestAgent(c, 2, ground, 10);
         foreach (var a in new[] { big, small }) { a.Enz[0] = new Enzyme { Kind = Enzyme.Photo, A = (byte)ground, Amount = 3, Eff = 1, Topt = 15 }; a.EnzN = 1; }
@@ -86,7 +87,7 @@ public sealed partial class World
         Require(Math.Abs(gotBig - offBig) < 0.1 * offBig, $"the big body on top: {gotBig} photons with shading, {offBig} without");
         ParamRegistry.ResetDefaults();
         // A swimmer near the surface shades one on the bottom of the same column.
-        int lake = 70 * W + 140;
+        int lake = 70 * w.W + 140;
         f.Water[lake] = 4;
         var top = f.TestAgent(lake, 2, ground, 10); var bottom = f.TestAgent(lake, 2, ground, 10);
         top.Lift = 3.5f;
@@ -101,7 +102,7 @@ public sealed partial class World
         long t1 = next + 200 - (next + 200) % P.LightEvery;   // a little into it
         if (!e1.EclipseAt(t1, out _, out _)) t1 = next;
         Require(e1.EclipseAt(t1, out float ex, out float ey) && e2.EclipseAt(t1, out float ex2, out float ey2) && ex == ex2 && ey == ey2, "eclipse not deterministic");
-        int cx = (int)ex, cy = Math.Clamp((int)ey, 0, H - 1), cc = cy * W + cx;
+        int cx = (int)ex, cy = Math.Clamp((int)ey, 0, w.H - 1), cc = cy * w.W + cx;
         long events = e1.Chronicle.NextSeq;
         e1.Tick = t1 - 1; e1.Step();
         float dark = e1.Sun[cc];
@@ -120,9 +121,9 @@ public sealed partial class World
         // Flares on bodies: noon over x = 128.
         var g = Fixture();
         g.Tick = P.DayLen / 2 / P.LightEvery * P.LightEvery - 1;   // the next step is a light update at about noon over x = W/2
-        int y0 = 80, sunny = y0 * W + (int)(W * ((g.Tick + 1) % P.DayLen) / (float)P.DayLen);
+        int y0 = 80, sunny = y0 * w.W + (int)(w.W * ((g.Tick + 1) % P.DayLen) / (float)P.DayLen);
         int cave = sunny + 6, deep = sunny + 12, shielded = sunny - 6;
-        for (int z = 3; z < 13; z++) { g.Mat[cave * Z + z] = Chemistry.Bedrock; g.Order[cave * Z + z] = 255; }
+        for (int z = 3; z < 13; z++) { g.Mat[cave * w.Z + z] = Chemistry.Bedrock; g.Order[cave * w.Z + z] = 255; }
         g.Height[cave] = 13; g.TerrainChanged(cave); g.StepStructure();
         P.Flares = 0;   // nothing else happens to them while the light is set up
         g.Step();
@@ -149,10 +150,10 @@ public sealed partial class World
         float dose = g.Flare(open, out float harm);
         Require(dose == dOpen && open.Tb > tb && open.Energy < en && open.Enz[0].Amount < amount && open.HeatHeld > 0 && harm > 0, "a flare dose did nothing");
         g.EnergyBalanced(eb, "flare", FFlare, FDissipate);
-        var probe = new Agent(g.NewId(), 0, 0, GenomeAsm.Assemble("uv\nyield\nnop\nnop\nnop\nnop\nnop\nnop")) { Energy = 10, Z = 2, Tb = 15, X = sunny % W, Y = y0 };
+        var probe = new Agent(g.NewId(), 0, 0, GenomeAsm.Assemble("uv\nyield\nnop\nnop\nnop\nnop\nnop\nnop")) { Energy = 10, Z = 2, Tb = 15, X = sunny % w.W, Y = y0 };
         g.Exec(probe, sunny);
         int uv = probe.Stack[0];
-        probe.Sp = 0; probe.Ip = 0; probe.X = cave % W; probe.Z = 2;
+        probe.Sp = 0; probe.Ip = 0; probe.X = cave % w.W; probe.Z = 2;
         g.Exec(probe, cave);
         Require(uv > 100 && probe.Stack[0] < uv / 20, $"uv sensor: sunlit {uv}, under the roof {probe.Stack[0]}");
         string flare = $"flare doses: sunlit {dOpen:F2}, under 10 blocks {dCave / dOpen:P1}, lake bottom {dBottom / dOpen:P1}, shielded {dArm / dOpen:P0}; uv {uv}";
@@ -198,7 +199,7 @@ public sealed partial class World
         }
         float T(Agent a) => MathF.Exp(-P.ShadeK * Cover2(a));
         // A small body alone, then under a big one on the same floor, with a third, middle one.
-        int c = 60 * W + 100;
+        int c = 60 * f.W + 100;
         var small = Body(c, 10);
         float inflow = 1;
         float ground1 = f.CanopyCell(c, inflow, ref buf, out float w1, out float l1);
@@ -230,7 +231,7 @@ public sealed partial class World
         double kept = big.LightQuota + mid.LightQuota + small.LightQuota - kept0;
         Require(big.LightQuota <= P.PhotonCap && MathF.Abs(big.LightQuota - P.PhotonCap) < 1e-4f && Math.Abs(kept + rest - fell) < 1e-3, $"stores: big {big.LightQuota:F3} of cap {P.PhotonCap}, kept {kept:F3} + passed/lost {rest:F3} of {fell}");
         // A swimmer stops light before the one on the bottom; the water between them takes its share.
-        int lake = 60 * W + 140;
+        int lake = 60 * f.W + 140;
         f.Water[lake] = 4;
         var top = Body(lake, 10); var bottom = Body(lake, 10);
         top.Lift = 3.5f;
@@ -242,7 +243,7 @@ public sealed partial class World
             $"water canopy: swimmer {top.LightQuota:F4}, bottom {bottom.LightQuota:F4}, water {wl:F4}, ground {gl:F4}");
         float swim = top.LightQuota, deep = bottom.LightQuota;
         // A big body gets its share in every cell of its footprint (added after the pass).
-        int bc = 60 * W + 180;
+        int bc = 60 * f.W + 180;
         var giant = Body(bc, 400);
         f.SpreadBody(giant, bc);
         Require(giant.Cells > 1, $"the test body did not spread ({giant.Cells} cells)");

@@ -124,7 +124,7 @@ public sealed class SimRunner
 
     public volatile Agent Selected, Hover;
     public volatile bool WantStress;                 // the load overlay is on: keep Stress fresh
-    public readonly float[] Stress = new float[World.N];
+    public volatile float[] Stress;                  // per column of the current world
     int stressRow;
 
     public volatile SimStats Stats = new();
@@ -165,6 +165,7 @@ public sealed class SimRunner
     public SimRunner(World world)
     {
         this.world = world;
+        Stress = new float[world.N];
         Array.Copy(world.Ev, evPrev, evPrev.Length);
         PublishDesigned(world);
     }
@@ -463,6 +464,7 @@ public sealed class SimRunner
         // world, so it is only ever called here, between ticks).
         if (WantStress)
         {
+            var stressOf = Stress;
             for (int r = 0; r < World.H / 8; r++, stressRow = (stressRow + 1) % World.H)
                 for (int x = 0; x < World.W; x++)
                 {
@@ -473,7 +475,7 @@ public sealed class SimRunner
                         int v = i * World.Z + z;
                         if (w.Mat[v] >= 2) stress = Math.Max(stress, w.Pressure[v] / Math.Max(0.001f, w.CompressionCapacity(v)));
                     }
-                    Stress[i] = stress;
+                    stressOf[i] = stress;
                 }
         }
     }
@@ -764,7 +766,8 @@ public sealed class SimRunner
         trackedSel = kidsOf = parentOf = null; parent = null; kids.Clear();
         Array.Copy(w.Ev, evPrev, evPrev.Length);
         Array.Clear(evRate);
-        Array.Clear(Stress);
+        Stress = new float[w.N];   // the new world may be of another size
+        stressRow = 0;
         FastTo = -1;
         autosavedTick = -1;
         PublishDesigned(w);

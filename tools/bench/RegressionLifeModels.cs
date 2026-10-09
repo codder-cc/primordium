@@ -60,7 +60,7 @@ public sealed partial class World
 
         var w = Fixture();
         w.TrackHeat = true;
-        int c = 80 * W + 120;
+        int c = 80 * w.W + 120;
         int food = Enumerable.Range(0, Chemistry.S).First(s => s != w.Chem.Gas && w.Chem.SplitA[s] >= 0 && w.Chem.SplitExo[s]);
         var vm = w.TestAgent(c, 2, food, 40);
         long id = w.NewId();
@@ -83,9 +83,9 @@ public sealed partial class World
             other.Target = vm; vm.Target = other;
             vm.MateTick = w.Tick;
             int births = w.Births;
-            w.Mate(other, other.Y * W + other.X);
+            w.Mate(other, other.Y * w.W + other.X);
             Require(w.Births == births, "bodies of two life models mated");
-            w.Inject(vm, vm.Y * W + vm.X, 0, 8);
+            w.Inject(vm, vm.Y * w.W + vm.X, 0, 8);
             Require(ReferenceEquals(other.G, g), "model 1 code was injected into another model's genome");
         }
 

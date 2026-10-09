@@ -15,7 +15,8 @@ namespace Primordium;
 public partial class View3D : Node3D
 {
     const float BH = P.BlockH;
-    const int W = World.W, H = World.H, Z = World.Z, N = World.N;
+    // The shown world's size (SetWorld: a world of another size rebuilds the arrays, bands and textures).
+    int W, H, Z, N;
 
     public World World { get; private set; }
     public SimFrame Frame;           // set by Main every frame
@@ -38,7 +39,7 @@ public partial class View3D : Node3D
     public TreeView Ranges = TreeView.Empty;
     public ulong RangeHash;
     public long RangeOrigin;
-    readonly Rgb[] rangeCol = new Rgb[N];
+    Rgb[] rangeCol;
     long rangeVersion = -2;
     ulong rangeHashDone;
     long rangeOriginDone;
@@ -51,11 +52,15 @@ public partial class View3D : Node3D
     void Lap(int k) { Prof[k] += profSw.Elapsed.TotalMilliseconds; profSw.Restart(); }
 
     // The columns are drawn in bands of rows, each its own MultiMesh: only bands that changed are uploaded.
-    const int BandRows = 16, Bands = H / BandRows, BandN = BandRows * W;
-    readonly MultiMesh[] bands = new MultiMesh[Bands];
-    readonly float[][] bandBuf = new float[Bands][];
-    readonly bool[] bandDirty = new bool[Bands];
-    readonly int[] shapedVer = new int[N];
+    // (Height is a multiple of 32: WorldSettings.)
+    const int BandRows = 16;
+    int Bands, BandN;
+    MultiMesh[] bands = Array.Empty<MultiMesh>();
+    readonly List<MultiMeshInstance3D> bandNodes = new();
+    float[][] bandBuf;
+    bool[] bandDirty;
+    int[] shapedVer;
+    BoxMesh box;
     int colourBand, shapeRow, shapedSlice = -2, colouredOverlay = -1, sweepLeft;
     public int BandsUploaded;   // diagnostics
     bool colouredLighting;
@@ -64,7 +69,7 @@ public partial class View3D : Node3D
     MultiMesh caveTerrain;
     float[] caveBuf = Array.Empty<float>();
     bool cavesChanged;
-    readonly int[] topBase = new int[N];
+    int[] topBase;
     readonly Dictionary<int, List<(int bottom, int top)>> caveRuns = new();
     ShaderMaterial terrainMat;
     ImageTexture palTex;
@@ -72,20 +77,21 @@ public partial class View3D : Node3D
     // The strata texture: a texture array of 256×256 tiles, each holding 16 rows of the map × 16
     // levels. A changed column rewrites its bytes; only tiles whose bytes really changed are
     // uploaded (eating a block partly changes nothing here, and the air above the land never changes).
-    const int TileRows = 16, TileLevels = 16, YTiles = H / TileRows, ZTiles = (Z + TileLevels - 1) / TileLevels, Layers = YTiles * ZTiles;
+    const int TileRows = 16, TileLevels = 16;
     const int TileH = TileRows * TileLevels;
-    readonly byte[][] voxTile = new byte[Layers][];
-    readonly bool[] tileDirty = new bool[Layers];
+    int YTiles, ZTiles, Layers;
+    byte[][] voxTile;
+    bool[] tileDirty;
     Texture2DArray voxTex;
     Image tileImg;
-    readonly int[] voxVer = new int[N];
+    int[] voxVer;
     float groundY = 6;   // typical surface level, where the camera looks
     int seenTerrain = -1, frame;
     public int TilesUploaded;   // diagnostics
     readonly List<MeshInstance3D> ventMarks = new();
     StandardMaterial3D ventMat;
 
-    Vector3 target = new(W / 2f, 6, H / 2f);
+    Vector3 target = new(128, 6, 80);
     float yaw = 12, yawGoal = 12, pitch = -48, zoom = 250;
     bool framed;
 
@@ -162,25 +168,48 @@ void fragment() {
         AddChild(Cam);
 
         terrainMat = new ShaderMaterial { Shader = new Shader { Code = TerrainShader } };
-        var box = new BoxMesh();
-        for (int b = 0; b < Bands; b++)
-        {
-            bands[b] = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D, UseCustomData = true, Mesh = box, InstanceCount = BandN };
-            bandBuf[b] = new float[BandN * 16];
-            AddChild(new MultiMeshInstance3D { Multimesh = bands[b], MaterialOverride = terrainMat, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
-        }
-
+        box = new BoxMesh();
         caveTerrain = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D, UseCustomData = true, Mesh = box };
         AddChild(new MultiMeshInstance3D { Multimesh = caveTerrain, MaterialOverride = terrainMat, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
 
-        for (int l = 0; l < Layers; l++) voxTile[l] = new byte[W * TileH];
         ventMat = new StandardMaterial3D { ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded, AlbedoColor = new Color(1f, 0.42f, 0.12f) };
         BuildAgentNodes();
         BuildWeatherNodes();
     }
 
+    // Arrays, column bands and textures for a world of w's size (nothing if the size is the shown one).
+    void Resize(World w)
+    {
+        if (w.W == W && w.H == H && w.Z == Z && bandBuf != null) return;
+        W = w.W; H = w.H; Z = w.Z; N = w.N;
+        Bands = H / BandRows; BandN = BandRows * W;
+        YTiles = H / TileRows; ZTiles = (Z + TileLevels - 1) / TileLevels; Layers = YTiles * ZTiles;
+        foreach (var node in bandNodes) node.QueueFree();
+        bandNodes.Clear();
+        bands = new MultiMesh[Bands]; bandBuf = new float[Bands][]; bandDirty = new bool[Bands];
+        for (int b = 0; b < Bands; b++)
+        {
+            bands[b] = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D, UseCustomData = true, Mesh = box, InstanceCount = BandN };
+            bandBuf[b] = new float[BandN * 16];
+            var node = new MultiMeshInstance3D { Multimesh = bands[b], MaterialOverride = terrainMat, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
+            bandNodes.Add(node);
+            AddChild(node);
+        }
+        colourBand = shapeRow = 0;
+        rangeCol = new Rgb[N]; shapedVer = new int[N]; topBase = new int[N]; voxVer = new int[N]; groundTop = new float[N];
+        voxTile = new byte[Layers][]; tileDirty = new bool[Layers];
+        for (int l = 0; l < Layers; l++) voxTile[l] = new byte[W * TileH];
+        facetBytes = new byte[N * 2]; cutBytes = new byte[W * Z * 3];
+        // Textures of another size are made anew.
+        voxTex = null; tileImg = null; facetImg = null; facetTex = null; cutImg = null; cutTex = null;
+        rangeVersion = -2;
+        framed = false;
+        target = new Vector3(W / 2f, groundY, H / 2f);
+    }
+
     public void SetWorld(World w)
     {
+        Resize(w);
         World = w;
         Frame = null;
         Selected = null;
@@ -320,7 +349,7 @@ void fragment() {
     public float AgentGround(int x, int y, int z) => z == World.Height[y * W + x] ? Ground(y * W + x) : z * BH;
 
     // The ground of each column as last drawn (ShapeColumn): what bodies, effects and marks stand on.
-    readonly float[] groundTop = new float[N];
+    float[] groundTop;
 
     // Where the ground of a column is: a top block that is partly eaten is drawn thinner.
     public float Ground(int i)
@@ -502,7 +531,7 @@ void fragment() {
                 break;
             case 7:
                 // Pressure against strength, taken on the simulation thread (SimRunner.Stress).
-                c = new Rgb(0.15f, 0.6f, 0.35f).Lerp(new Rgb(1f, 0.15f, 0.04f), Math.Min(1, Stress?[i] ?? 0));
+                c = new Rgb(0.15f, 0.6f, 0.35f).Lerp(new Rgb(1f, 0.15f, 0.04f), Math.Min(1, Stress != null && i < Stress.Length ? Stress[i] : 0));
                 lit = 1; break;
             case MatterOverlay:
                 c = MatterColour(w, i, h);
@@ -526,7 +555,7 @@ void fragment() {
     // mass, against the world's densest packing); the shader adds facets and gloss by order (facet_map).
     // The cut (C) shows every level the same way. Read only; the facet map is uploaded a few times a second.
     public const int MatterOverlay = 8;
-    readonly byte[] facetBytes = new byte[N * 2];
+    byte[] facetBytes;
     Image facetImg;
     ImageTexture facetTex;
     bool facetDirty;
@@ -662,7 +691,7 @@ void fragment() {
     // only; refreshed a few times a second.
     Image cutImg;
     ImageTexture cutTex;
-    readonly byte[] cutBytes = new byte[W * Z * 3];
+    byte[] cutBytes;
     int cutShownRow = -2;
     double cutAt;
     void FillCutTemperature()
@@ -835,7 +864,7 @@ void fragment() {
         var vs = GetViewport().GetVisibleRect().Size;
         target = new Vector3(W / 2f, groundY, H / 2f);
         yawGoal = 12; pitch = -48;
-        zoom = Math.Clamp((W + 16) * vs.Y / Math.Max(200, vs.X - PanelWidth), 60, 420);
+        zoom = Math.Clamp((W + 16) * vs.Y / Math.Max(200, vs.X - PanelWidth), 16, 420);   // (a small world: close up)
     }
 
     // Fly to a column (a chronicle event whose body is gone).

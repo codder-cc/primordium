@@ -28,7 +28,7 @@ namespace Primordium;
 // ticks (CaveFlow in the climate step), except the body's own drift.
 public sealed partial class World
 {
-    public readonly float[] CurX = new float[N], CurY = new float[N];   // the water's speed, cells a tick (east, south)
+    public readonly float[] CurX, CurY;   // the water's speed, cells a tick (east, south)
     bool currentsOn = true;                                              // whether CurX/CurY may hold anything (cleared once the law is off)
     public long Drifted;                                                 // steps bodies were carried by a current (diagnostics)
     public double CaveFlowMs;                                            // time spent in CaveFlow (diagnostics, not saved)
@@ -96,7 +96,7 @@ public sealed partial class World
     int[] rCol = new int[256], rZ0 = new int[256], rZ1 = new int[256];
     float[] rDepth = new float[256], rOut = new float[256], rIn = new float[256];
     int runCount;
-    readonly int[] colFirst = new int[N], colRuns = new int[N];
+    readonly int[] colFirst, colRuns;
     readonly List<int> runCols = new();
     readonly List<(int from, int to, float q)> caveEdges = new();
     readonly Dictionary<int, float> surfOut = new();

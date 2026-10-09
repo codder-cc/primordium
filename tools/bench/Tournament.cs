@@ -51,7 +51,7 @@ public sealed partial class World
             list.Add(new Contestant
             {
                 Tick = w.Tick, Lineage = rep.Lineage, Count = g.Count, Molecules = rep.InvTotal, Hash = rep.Hash, Design = d,
-                Cells = g.Take(64).Select(a => a.Y * W + a.X).ToList(),
+                Cells = g.Take(64).Select(a => a.Y * w.W + a.X).ToList(),
             });
         }
         return list;
@@ -71,7 +71,7 @@ public sealed partial class World
         var w = Load(new MemoryStream(arena));
         if (!residents)
             foreach (var a in w.Agents.ToList())
-                if (!a.Dead) w.Die(a, a.Y * W + a.X, CauseHand);
+                if (!a.Dead) w.Die(a, a.Y * w.W + a.X, CauseHand);
         // Places: alternately where the moderns live and where the ancestors lived, chosen by the repeat.
         var places = new List<int>();
         var pools = new[] { moderns.SelectMany(c => c.Cells).ToList(), ancients.SelectMany(c => c.Cells).ToList() };
@@ -99,7 +99,7 @@ public sealed partial class World
                     int n = count / slots + (slot < count % slots ? 1 : 0);
                     if (n == 0) continue;
                     var c = list[j];
-                    var r = w.SpawnDesign(c.Design, places[p] % W, places[p] / W,
+                    var r = w.SpawnDesign(c.Design, places[p] % w.W, places[p] / w.W,
                         new SpawnOptions { Matter = MatterSource.Import, Energy = EnergySource.Import, Count = n, Lineage = lineages[c], Radius = 3 });
                     if (r.Ok) { lineages[c] = r.Lineage; planted[side] += r.Made; }
                 }

@@ -15,7 +15,7 @@ namespace Primordium;
 // block) takes the whole voxel and pushes out whatever was there the same way.
 public sealed partial class World
 {
-    public readonly float[] LooseVolume = new float[N];   // loose remains on each surface floor (refreshed with the soil chemistry)
+    public readonly float[] LooseVolume;   // loose remains on each surface floor (refreshed with the soil chemistry)
     public long Pushed;                                     // bodies pushed off overfull floors (diagnostics)
 
     // How much of a body takes room in one of its cells (a big body spreads over its footprint).
@@ -123,7 +123,7 @@ public sealed partial class World
     readonly List<Agent> crowd = new();
     readonly List<(Agent a, int from, int to, int level)> shifts = new();
     readonly Dictionary<int, float> arriving = new();
-    readonly bool[] overfull = new bool[N];
+    readonly bool[] overfull;
 
     // Does a floor of this cell hold more than it has room for? Everybody on one floor (nearly always)
     // is one sum; bodies on several floors go to the full sweep.

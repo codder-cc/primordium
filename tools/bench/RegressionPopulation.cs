@@ -20,8 +20,8 @@ public sealed partial class World
         var w = new World(new WorldSettings { Seed = 1, InitialPop = 300, Abiogenesis = false, Strikes = false });
         {
             // Leaves (protein genes, proteins once they express them) among the random first bodies.
-            int c = w.Agents.First(a => !a.Dead).Y * W + w.Agents.First(a => !a.Dead).X;
-            w.SpawnDesign(CreatureExamples.Leaf, c % W, c / W, new SpawnOptions { Matter = MatterSource.Import, Energy = EnergySource.Import, Count = 6, Radius = 3 });
+            int c = w.Agents.First(a => !a.Dead).Y * w.W + w.Agents.First(a => !a.Dead).X;
+            w.SpawnDesign(CreatureExamples.Leaf, c % w.W, c / w.W, new SpawnOptions { Matter = MatterSource.Import, Energy = EnergySource.Import, Count = 6, Radius = 3 });
         }
         for (int t = 0; t < 300; t++) w.Step();
         var lineage = w.Agents.Where(a => !a.Dead).GroupBy(a => a.Lineage)
@@ -43,7 +43,7 @@ public sealed partial class World
         double handE0 = w.HandEnergy;
         var budget0 = w.ElementBudget();
         var start = w.EnergyStart();
-        int ax = (bodies[0].X + W / 2) % W, ay = bodies[0].Y;
+        int ax = (bodies[0].X + w.W / 2) % w.W, ay = bodies[0].Y;
         var r = w.PastePopulation(loaded, ax, ay, new PasteOptions { Matter = MatterSource.Import, Energy = EnergySource.Import });
         Require(r.Map.Same && r.GenesRemapped == 0, "population: the same world's chemistry was not recognised");
         Require(r.Made >= Math.Max(1, r.Requested * 8 / 10), $"population pasted from outside: {r} ({string.Join(", ", r.Failures.Select(kv => $"{kv.Key} ×{kv.Value}"))})");
@@ -92,10 +92,10 @@ public sealed partial class World
         var b0 = one.Bodies[0];
         b0.Energy = Math.Min(b0.Energy, 20);
         int spot = -1;
-        for (int k = 0; k < N && spot < 0; k++)
+        for (int k = 0; k < w.N && spot < 0; k++)
         {
-            int c = (int)((k * 2654435761L + 777) % N);
-            if (c / W > 20 && c / W < H - 20 && !w.Submerged(c) && w.Count[c] == 0 && w.Big[c] == null && w.Height[c] < Z - 4) spot = c;
+            int c = (int)((k * 2654435761L + 777) % w.N);
+            if (c / w.W > 20 && c / w.W < w.H - 20 && !w.Submerged(c) && w.Count[c] == 0 && w.Big[c] == null && w.Height[c] < w.Z - 4) spot = c;
         }
         Require(spot >= 0, "population: no spot for the local paste");
         foreach (var (k, n) in b0.Body) w.C[int.Parse(k)][spot] += n;
@@ -106,7 +106,7 @@ public sealed partial class World
         double handE1 = w.HandEnergy;
         var budget2 = w.ElementBudget();
         var start2 = w.AuditEnergy();
-        var rl = w.PastePopulation(one, spot % W, spot / W, new PasteOptions());
+        var rl = w.PastePopulation(one, spot % w.W, spot / w.W, new PasteOptions());
         Require(rl.Made == 1, $"population from local matter: {rl}");
         Require(w.HandInput.SequenceEqual(hand1) && w.HandEnergy == handE1, "population from local matter booked an import");
         Require(Math.Abs(rl.EnergyLocal - b0.Energy) < 1e-3 * Math.Max(1, b0.Energy), $"population: local energy {rl.EnergyLocal} of {b0.Energy}");
@@ -117,16 +117,16 @@ public sealed partial class World
         Require(rl.Agents[0].G.SequenceEqual(src0.G) && rl.Agents[0].Inv.SequenceEqual(src0.Inv) && rl.Agents[0].Pend.SequenceEqual(src0.Pend), "population: the local body differs from its source");
         // A bare spot: nothing made, nothing changed.
         int bare = -1;
-        for (int k = 0; k < N && bare < 0; k++)
+        for (int k = 0; k < w.N && bare < 0; k++)
         {
-            int c = (int)((k * 2654435761L + 4242) % N);
-            if (!w.Submerged(c) && w.Count[c] == 0 && w.Height[c] > 2 && w.VoxelBarrier(c * Z + w.Height[c] - 1) >= 2) bare = c;
+            int c = (int)((k * 2654435761L + 4242) % w.N);
+            if (!w.Submerged(c) && w.Count[c] == 0 && w.Height[c] > 2 && w.VoxelBarrier(c * w.Z + w.Height[c] - 1) >= 2) bare = c;
         }
         foreach (int c in new[] { bare, w.Nb(bare, 0), w.Nb(bare, 1), w.Nb(bare, 2), w.Nb(bare, 3) })
             for (int s = 0; s < Chemistry.S; s++) w.C[s][c] = 0;
         ulong hash = w.StateHash();
         var budget3 = w.ElementBudget();
-        var rf = w.PastePopulation(one, bare % W, bare / W, new PasteOptions());
+        var rf = w.PastePopulation(one, bare % w.W, bare / w.W, new PasteOptions());
         Require(rf.Made == 0 && rf.Error != null && w.StateHash() == hash, $"population: a bare spot made a body or changed: {rf}");
         BudgetEqual(budget3, w.ElementBudget(), "population: failed paste", 0);
 
@@ -141,7 +141,7 @@ public sealed partial class World
         var oHand = (double[])other.HandInput.Clone();
         var oBudget = other.ElementBudget();
         var oStart = other.EnergyStart();
-        var rx = other.PastePopulation(loaded, W / 2, H / 2, new PasteOptions { Matter = MatterSource.Import, Energy = EnergySource.Import });
+        var rx = other.PastePopulation(loaded, w.W / 2, w.H / 2, new PasteOptions { Matter = MatterSource.Import, Energy = EnergySource.Import });
         Require(!rx.Map.Same && rx.Map.Changes.Count == Chemistry.S && rx.Made > 0, $"population in another chemistry: {rx}");
         for (int s = 0; s < Chemistry.S; s++)
         {

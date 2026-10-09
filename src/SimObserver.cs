@@ -243,8 +243,8 @@ public sealed class SimObserver
             disp[t] = startIdx.TryGetValue(t, out int d) ? d : ph.Parent[t] >= 0 ? disp[ph.Parent[t]] : -1;
 
         // The bodies: own members, the oldest as the representative, and where they live.
-        var cellClade = new short[World.N];
-        var cellN = new byte[World.N];
+        var cellClade = new short[w.N];
+        var cellN = new byte[w.N];
         Array.Fill(cellClade, (short)-1);
         var rep = new Agent[nodes.Count];
         foreach (var a in w.Agents)
@@ -254,7 +254,7 @@ public sealed class SimObserver
             if (d < 0) continue;
             nodes[d].Own++;
             if (rep[d] == null || a.Age > rep[d].Age || (a.Age == rep[d].Age && a.Id < rep[d].Id)) rep[d] = a;
-            int cell = a.Y * World.W + a.X;
+            int cell = a.Y * w.W + a.X;
             cellClade[cell] = (short)d;
             if (cellN[cell] < 255) cellN[cell]++;
         }

@@ -21,15 +21,15 @@ public sealed class Vent
 public sealed partial class World
 {
     // Terrain: column heights and voxels (material + mineral units still locked in the block).
-    public readonly int[] Height = new int[N];
-    public readonly byte[] Mat = new byte[N * Z];
-    public readonly ushort[] Units = new ushort[N * Z];   // molecules in each block (a full one fills its voxel by volume)
-    public readonly byte[] Order = new byte[N * Z];
-    public readonly int[] ColumnVersion = new int[N];
+    public readonly int[] Height;
+    public readonly byte[] Mat;
+    public readonly ushort[] Units;   // molecules in each block (a full one fills its voxel by volume)
+    public readonly byte[] Order;
+    public readonly int[] ColumnVersion;
     public int TerrainVersion;
     public readonly List<Vent> Vents = new();
 
-    readonly float[] diffW = new float[N * 4];
+    readonly float[] diffW;
     bool flowDirty = true, ventsDirty;
     long nextVentAt;
 
@@ -113,8 +113,10 @@ public sealed partial class World
     // Ground under the lowest surface (above the two levels of bedrock). The relief on top of it is
     // ~28 levels from valleys to mountains times P.ReliefScale (4: ~115 levels; bodies climb ledges by
     // their momentum, World.Move); the ground beneath is four times as thick as in the first worlds —
-    // room for caves, shafts and deep strata.
-    public const int Crust = 60;
+    // room for caves, shafts and deep strata. 60 in a world of 192 levels; the same share (5/16) of a
+    // world of other height.
+    public readonly int Crust;
+    public static int CrustFor(int levels) => levels * 5 / 16;
 
     // Removing a voxel leaves a real cavity. Only the support solver can move its roof.
     void RemoveVoxel(int c, int z)
@@ -156,7 +158,7 @@ public sealed partial class World
     // Surface creep is also a transfer, never deletion. Cohesion/order set the angle of repose.
     void Erode()
     {
-        for (int k = 0; k < 128; k++)
+        for (int k = 0, tries = ErodeTries(); k < tries; k++)
         {
             int i = Rng.Next(N), h = Height[i];
             if (h <= 2) continue;
@@ -172,6 +174,21 @@ public sealed partial class World
         }
     }
 
+    // 128 columns a pass on the default world, in proportion to the area on another (a fraction is
+    // a chance, so the rate per column is the same).
+    int ErodeTries()
+    {
+        if (N == RefN) return 128;
+        long q = 128L * N;
+        int k = (int)(q / RefN);
+        return q % RefN != 0 && Rng.Next(RefN) < q % RefN ? k + 1 : k;
+    }
+
+    // How many volcanoes the world keeps: P.VentCount on the default world, by area on another.
+    int VentTarget => PerArea(P.VentCount);
+    // Volcanoes open at least this far from each other: 45 columns, less on a world too small for it.
+    int VentGap => Math.Min(45, Math.Min(W, H) * 45 / WorldSettings.DefaultHeight);
+
     void SpawnVent()
     {
         for (int t = 0; t < 300; t++)
@@ -183,7 +200,7 @@ public sealed partial class World
             {
                 int dx = Math.Abs(o.X - x);
                 dx = Math.Min(dx, W - dx);
-                if (dx * dx + (o.Y - y) * (o.Y - y) < 45 * 45) far = false;
+                if (dx * dx + (o.Y - y) * (o.Y - y) < VentGap * VentGap) far = false;
             }
             if (!far) continue;
             Vents.Add(new Vent
@@ -211,7 +228,7 @@ public sealed partial class World
             ventsDirty = true;
             nextVentAt = Tick + Rng.Next(3000, 15000);
         }
-        if (Vents.Count < P.VentCount && Tick >= nextVentAt)
+        if (Vents.Count < VentTarget && Tick >= nextVentAt)
         {
             int vents = Vents.Count;
             SpawnVent();
@@ -227,11 +244,11 @@ public sealed partial class World
         Array.Clear(Ash);
         Array.Clear(ventHeat);
         foreach (var v in Vents)
-            for (int dy = -26; dy <= 26; dy++)
+            for (int dy = -26, rx = AroundX(26); dy <= 26; dy++)
             {
                 int y = v.Y + dy;
                 if (y < 0 || y >= H) continue;
-                for (int dx = -26; dx <= 26; dx++)
+                for (int dx = -rx; dx <= rx; dx++)
                 {
                     int i = y * W + ((v.X + dx) % W + W) % W;
                     float d2 = dx * dx + dy * dy;

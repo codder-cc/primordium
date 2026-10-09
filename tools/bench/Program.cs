@@ -26,6 +26,7 @@ if (Array.IndexOf(args, "--self-test") >= 0) { World.RunRegression(); return; }
 if (Array.IndexOf(args, "--self-test-mechanics") >= 0) { World.MechanicsRegression(); return; }   // structure, confinement, climbing, settling, relief, impacts (also in --self-test)
 if (Array.IndexOf(args, "--relief-report") >= 0) { World.ReliefReport(args); return; }   // relief ×1 against the current ReliefScale (×4 if it is 1): steps, water, light
 if (Array.IndexOf(args, "--self-test-infra") >= 0) { World.RunInfraRegression(); return; }
+if (Array.IndexOf(args, "--self-test-size") >= 0) { World.RunSizeRegression(); return; }   // just the world size test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-sun") >= 0) { World.SkyRegression(); return; }   // just the sky test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-cave") >= 0) { World.CaveClimateRegression(); return; }   // just the cave climate test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-evolution") >= 0) { World.RunEvolutionRegression(); return; }
@@ -217,13 +218,13 @@ for (int t = 1; t <= ticks; t++)
         foreach (var a in w.Agents)
         {
             if (a.Dead) continue;
-            int depth = w.Height[a.Y * World.W + a.X] - a.Z;
+            int depth = w.Height[a.Y * w.W + a.X] - a.Z;
             if (depth > 0) inCave++;
             if (depth >= 3) deep3++;
             deepest = Math.Max(deepest, depth);
         }
         int cavities = 0;
-        for (int i = 0; i < World.N; i++) if (w.HasCavity[i]) cavities++;
+        for (int i = 0; i < w.N; i++) if (w.HasCavity[i]) cavities++;
         Console.WriteLine($"   underground: {inCave} bodies in cavities ({deep3} at 3+ below the surface, deepest {deepest}); columns with cavities {cavities}");
     }
     Console.WriteLine($"   agent tiles: work {w.AgentBusy / every:F2} ms/tick, slowest tile per colour {w.AgentLongest / every:F2}, wall {w.Prof[1] / every:F2}; by colour busy/longest "
@@ -284,11 +285,11 @@ for (int t = 1; t <= ticks; t++)
     }
     Console.WriteLine($"   divide tries {w.DivFail[0]}: no energy {w.DivFail[1]}, small body {w.DivFail[2]}, no room {w.DivFail[3]}, uneven {w.DivFail[4]}");
     {
-        int wetCells = 0; for (int i = 0; i < World.N; i++) if (w.Submerged(i)) wetCells++;
+        int wetCells = 0; for (int i = 0; i < w.N; i++) if (w.Submerged(i)) wetCells++;
         var wet = w.Agents.Where(a => !a.Dead && w.InWater(a)).ToList();
         int gassy = wet.Count(a => a.Inv[w.Chem.Gas] > 0), photo = wet.Count(a => World.Diet(a) == World.DietPlant);
-        Console.WriteLine($"   water: {wetCells * 100.0 / World.N:F0}% of cells, {c.InWater} bodies in it ({c.Afloat} afloat, {c.AtSurface} at the surface, {photo} plants, {gassy} hold gas)" +
-                          (wet.Count > 0 ? $", density {wet.Average(a => a.Density):F2}, depth under surface {wet.Average(a => w.Below(a, a.Y * World.W + a.X)):F1}" : ""));
+        Console.WriteLine($"   water: {wetCells * 100.0 / w.N:F0}% of cells, {c.InWater} bodies in it ({c.Afloat} afloat, {c.AtSurface} at the surface, {photo} plants, {gassy} hold gas)" +
+                          (wet.Count > 0 ? $", density {wet.Average(a => a.Density):F2}, depth under surface {wet.Average(a => w.Below(a, a.Y * w.W + a.X)):F1}" : ""));
         var ww = w.WaterCensus();
         Console.WriteLine($"   waterways: current mean {ww[0]:E1} max {ww[1]:F3} cells/tick, drifted {ww[2]:F0}, afloat {ww[3]:P1}; caves {ww[4]:F1} water in {ww[5]:F0} runs, {ww[6]:F0} bodies in it; sea under ice {ww[7]:P1}, {ww[8]:F0} bodies under ice; cave flow {w.CaveFlowMs:F1} ms in all");
     }
@@ -307,28 +308,28 @@ if (savePath != null)
 {
     // What the tall columns are made of, and whether anybody lives on them.
     int towers = 0, looseTowers = 0, inhabited = 0, spikes = 0, depositTops = 0;
-    for (int i = 0; i < World.N; i++)
+    for (int i = 0; i < w.N; i++)
     {
         int h = w.Height[i], maxNb = 0;
         for (int d = 0; d < 4; d++) maxNb = Math.Max(maxNb, w.Height[w.Nb(i, d)]);
         if (h - maxNb >= 2) spikes++;
     }
-    for (int i = 0; i < World.N; i++) if (w.Height[i] > 2 && w.Order[i * World.Z + w.Height[i] - 1] <= 25) depositTops++;
+    for (int i = 0; i < w.N; i++) if (w.Height[i] > 2 && w.Order[i * w.Z + w.Height[i] - 1] <= 25) depositTops++;
     Console.WriteLine($"spikes (2+ above all neighbours): {spikes}; columns topped by a deposit layer: {depositTops}");
     var mats = new int[w.Chem.MatCount];
-    for (int i = 0; i < World.N; i++)
+    for (int i = 0; i < w.N; i++)
     {
         int h = w.Height[i], maxNb = 0;
         for (int d = 0; d < 4; d++) maxNb = Math.Max(maxNb, w.Height[w.Nb(i, d)]);
         if (h - maxNb < 5) continue;
         towers++;
-        int top = w.Mat[i * World.Z + h - 1];
+        int top = w.Mat[i * w.Z + h - 1];
         mats[top]++;
-        if (w.Order[i * World.Z + h - 1] < 64) looseTowers++;
+        if (w.Order[i * w.Z + h - 1] < 64) looseTowers++;
         if (w.Count[i] > 0) inhabited++;
     }
     var vox = new long[w.Chem.MatCount];
-    for (int i = 0; i < World.N; i++) for (int z = 0; z < w.Height[i]; z++) if (w.Mat[i * World.Z + z] != Chemistry.Air) vox[w.Mat[i * World.Z + z]]++;
+    for (int i = 0; i < w.N; i++) for (int z = 0; z < w.Height[i]; z++) if (w.Mat[i * w.Z + z] != Chemistry.Air) vox[w.Mat[i * w.Z + z]]++;
     Console.WriteLine("all blocks: " + string.Join(", ", Enumerable.Range(0, vox.Length).Where(m => vox[m] > 0).Select(m => $"{w.Chem.MatName[m]} {vox[m]}")));
     Console.WriteLine($"towers (5+ above all neighbours): {towers}, disordered on top: {looseTowers}, inhabited: {inhabited}; tops: " +
         string.Join(", ", Enumerable.Range(0, mats.Length).Where(m => mats[m] > 0).Select(m => $"{w.Chem.MatName[m]} {mats[m]}")));

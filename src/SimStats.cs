@@ -66,7 +66,7 @@ public sealed class SimStats
             {
                 var a = agents[i];
                 if (a.Dead) continue;
-                int cell = a.Y * World.W + a.X;
+                int cell = a.Y * w.W + a.X;
                 c.Pop++;
                 c.AvgLen += a.G.Length;
                 c.AvgEnergy += (float)a.Energy;
@@ -169,7 +169,7 @@ public sealed class SimStats
                 10 => Loc.Both($"attacks {a.NAttacks}", $"атак {a.NAttacks}"),
                 11 => Loc.Both($"insertions {a.NInjects}", $"вставок {a.NInjects}"),
                 12 => Loc.Both($"matings {a.NMates}", $"спариваний {a.NMates}"),
-                13 => Loc.Both($"neighbors {w.Count[a.Y * World.W + a.X] - 1}", $"соседей {w.Count[a.Y * World.W + a.X] - 1}"),
+                13 => Loc.Both($"neighbors {w.Count[a.Y * w.W + a.X] - 1}", $"соседей {w.Count[a.Y * w.W + a.X] - 1}"),
                 _ => $"{a.Tb:+0;-0} °C",
             };
             s.Records.Add((RecordNames[r], a, value));

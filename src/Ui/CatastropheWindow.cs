@@ -26,8 +26,9 @@ public partial class CatastropheWindow : UiWindow
                                        "Те же законы, что и в мире, запущенные вручную: вещество, вода и энергия учитываются. Кнопка — дважды (подтверждение). " +
                                        "Катастрофа записывается в хронику и в историю законов: мир из сохранения или из seed с этой историей идёт так же."), 12, UiKit.Dim, null, true));
 
-        x = UiKit.Spin(0, World.W - 1, 1, World.W / 2, 80);
-        y = UiKit.Spin(0, World.H - 1, 1, World.H / 2, 80);
+        // The limits follow the world when the window opens (FitWorld).
+        x = UiKit.Spin(0, WorldSettings.DefaultWidth - 1, 1, WorldSettings.DefaultWidth / 2, 80);
+        y = UiKit.Spin(0, WorldSettings.DefaultHeight - 1, 1, WorldSettings.DefaultHeight / 2, 80);
         r = UiKit.Spin(2, 120, 1, 20, 70);
         var centre = UiKit.Button(Loc.T("screen centre", "центр экрана"), () => TakeCentre(false), Loc.T("take the cell at the centre of the screen", "взять клетку в центре экрана"));
         Body.AddChild(UiKit.Row(6, UiKit.Text(Loc.T("Place (drought, poisoning, volcano):", "Место (засуха, отравление, вулкан):"), 13, UiKit.Dim), UiKit.Text("x", 13), x, UiKit.Text("y", 13), y, UiKit.Text(Loc.T("radius", "радиус"), 13), r, centre));
@@ -108,10 +109,18 @@ public partial class CatastropheWindow : UiWindow
         var vs = GetViewportRect().Size;
         int cell = Main.View.PickCell(new Vector2((vs.X - Hud.PanelW) / 2, vs.Y / 2));
         if (cell < 0) { if (!quiet) Ui.Toast(Loc.T("no surface at the centre of the screen", "в центре экрана нет поверхности"), true); return; }
-        x.Value = cell % World.W; y.Value = cell / World.W;
+        x.Value = cell % Main.World.W; y.Value = cell / Main.World.W;
     }
 
-    protected override void OnOpen() { TakeCentre(true); Refresh(); }
+    protected override void OnOpen() { FitWorld(); TakeCentre(true); Refresh(); }
+
+    // The place's limits: the world's size (a world of another size may have come since).
+    void FitWorld()
+    {
+        var w = Main.World;
+        if (w == null) return;
+        x.MaxValue = w.W - 1; y.MaxValue = w.H - 1;
+    }
 
     void Refresh()
     {

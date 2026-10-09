@@ -64,7 +64,7 @@ public sealed partial class World
     // ---- copy ----
 
     // A region of sx × sy columns from (x0, y0) (x wraps, y must lie in the world), levels z0 ≤ z < z1.
-    public Region CopyRegion(int x0, int y0, int sx, int sy, int z0 = 0, int z1 = Z, bool bodies = true, string name = null)
+    public Region CopyRegion(int x0, int y0, int sx, int sy, int z0 = 0, int z1 = int.MaxValue, bool bodies = true, string name = null)
     {
         if (sx < 1 || sy < 1 || sx > W || sy > H) throw new ArgumentException($"region size {sx}×{sy} must lie within 1…{W} × 1…{H}");
         if (y0 < 0 || y0 + sy > H) throw new ArgumentException($"rows {y0}…{y0 + sy - 1} leave the world (0…{H - 1})");

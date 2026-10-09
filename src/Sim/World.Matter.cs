@@ -16,7 +16,7 @@ public sealed partial class World
     // Per voxel: does it have a mixture / a burial? Most rock has neither, so hot paths check this
     // byte instead of hashing into the dictionaries.
     const byte HasMix = 1, HasBurial = 2;
-    readonly byte[] sparse = new byte[N * Z];
+    readonly byte[] sparse;
     bool Mixed(int v, out ushort[] counts) { counts = null; return (sparse[v] & HasMix) != 0 && mixtures.TryGetValue(v, out counts); }
     bool BurialOf(int v, out Burial b) { b = null; return (sparse[v] & HasBurial) != 0 && Buried.TryGetValue(v, out b); }
     void SetMixture(int v, ushort[] counts) { mixtures[v] = counts; sparse[v] |= HasMix; }
@@ -43,11 +43,11 @@ public sealed partial class World
     // The face is one voxel: when the work moves to another level or the block there is another one,
     // the progress starts over, so loosening the surface does not pay for a gnawer deep below.
     // Lazily refilled: only cells being eaten cost anything.
-    public readonly float[] Bite = new float[N];
-    readonly long[] biteAt = new long[N];
-    readonly int[] biteFace = InitFaces();
-    readonly byte[] biteMat = new byte[N];
-    static int[] InitFaces() { var f = new int[N]; Array.Fill(f, -1); return f; }
+    public readonly float[] Bite;
+    readonly long[] biteAt;
+    readonly int[] biteFace;
+    readonly byte[] biteMat;
+    int[] InitFaces() { var f = new int[N]; Array.Fill(f, -1); return f; }
 
     bool TakeBite(int v, float barrier, float effort = 0)
     {
@@ -61,7 +61,7 @@ public sealed partial class World
         Bite[c] = b - 1;
         return true;
     }   // Metamorphoses: reactions in buried matter driven by pressure
-    readonly float[] cohesionCache = new float[N * Z];
+    readonly float[] cohesionCache;
 
     void UpdateBurialStats(Burial b)
     {
@@ -526,8 +526,8 @@ public sealed partial class World
     // 245). Set wherever pressure or order can change (RefreshColumn, the solver, TerrainChanged);
     // cleared once a pass finds nothing left to anneal there. Rock nobody touches and that has
     // reached its order is never scanned again.
-    readonly bool[] annealable = InitAnnealable();
-    static bool[] InitAnnealable() { var a = new bool[N]; Array.Fill(a, true); return a; }
+    readonly bool[] annealable;
+    bool[] InitAnnealable() { var a = new bool[N]; Array.Fill(a, true); return a; }
 
     readonly List<int> burialOrder = new();
     List<int>[] annealRows;

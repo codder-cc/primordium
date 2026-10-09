@@ -106,7 +106,7 @@ public sealed partial class World
             Require(pc <= 0.02 && pn > 0.05 && pnc > 0.05, $"EvoMetrics oscillation: a made-up predator–prey cycle gave p {pc:F3}, noise {pn:F3} (circular {pnc:F3})");
             var clump = new double[40]; var board = new double[40]; var use = Enumerable.Repeat(true, 40).ToArray();
             for (int r = 0; r < 40; r++) { clump[r] = r % 8 < 3 ? 10 : 0; board[r] = (r % 8 + r / 8) % 2; }
-            double mc = EvoMetrics.Moran(clump, use), mb = EvoMetrics.Moran(board, use);
+            double mc = EvoMetrics.Moran(clump, use, 8), mb = EvoMetrics.Moran(board, use, 8);
             Require(mc > 0.3 && mb < -0.9, $"Moran's I: clump {mc:F2}, checkerboard {mb:F2}");
             Console.WriteLine($"   EvoMetrics: roofed {M("roofed_share"):P1}, depth mean {M("body_depth_mean"):F2} p90 {M("body_depth_p90"):F0}, pop Moran {M("pop_moran"):F2}, diet Moran {M("diet_moran"):F2}, osc p {M("osc_p"):F3}; made-up cycle p {pc:F3}, noise p {pn:F3} (circular {pnc:F3}); Moran clump {mc:F2} checkerboard {mb:F2}");
         }

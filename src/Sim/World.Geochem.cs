@@ -30,7 +30,7 @@ public sealed partial class World
     public readonly float[] DepthBias = new float[Chemistry.ElementCount];
     // Each column's height as the world was made (from the seed; derived, not saved): a stratum's depth
     // is counted from it, so is the depth a molecule was mined from.
-    public readonly int[] Height0 = new int[N];
+    public readonly int[] Height0;
     public int DeepElement;   // the element with the largest bias (also defined with the profile off: the metrics compare it)
     public bool GeoOn;
     float geoScale = 4f, geoMid = 12f, geoVeinThr = 0.72f, geoVeinGain = 4f;

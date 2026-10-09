@@ -23,8 +23,8 @@ public sealed partial class World
         }
         int other = -1;
         for (int s = 0; s < Chemistry.S && other < 0; s++) if (s != food && s != heavy) other = s;   // what test bodies hold
-        int c = 50 * W + 50;
-        for (int z = 2; z < 6; z++) { w.Mat[c * Z + z] = Chemistry.Bedrock; w.Order[c * Z + z] = 255; }
+        int c = 50 * w.W + 50;
+        for (int z = 2; z < 6; z++) { w.Mat[c * w.Z + z] = Chemistry.Bedrock; w.Order[c * w.Z + z] = 255; }
         w.Height[c] = 6; w.TerrainChanged(c);
         w.StepStructure();
         w.C[food][c] = 10; w.C[heavy][c] = 10;
@@ -44,7 +44,7 @@ public sealed partial class World
         Require(Math.Abs(left - 5) < 1e-6, $"leaching took {10 - left} of the lightest litter (want 5)");
         double wantHeavy = 10 * (1 - 0.5 * ch.Diff[heavy] / ch.Diff[food]);
         Require(Math.Abs(leftHeavy - wantHeavy) < 1e-6 && leftHeavy > left, $"the heaviest litter: {leftHeavy:F4} left (want {wantHeavy:F4}, more than the lightest {left:F4})");
-        Require(w.BurialOf(c * Z + 4, out var b) && b.Matter[food] + w.C[food][c] == 10, "the litter is not in the burial under the top block");
+        Require(w.BurialOf(c * w.Z + 4, out var b) && b.Matter[food] + w.C[food][c] == 10, "the litter is not in the burial under the top block");
         Require(Math.Abs(w.LooseAmount(a, c, food) - left) < 1e-6, "a body on the surface still reaches the leached litter");
         // The top block goes: its burial below becomes the floor.
         w.Die(a, c, CauseHand); w.RemoveDead();
@@ -54,12 +54,12 @@ public sealed partial class World
         var a2 = w.TestAgent(c, 5, other, 5);
         Require(Math.Abs(w.LooseAmount(a2, c, food) - 10) < 1e-6, $"after the top block went, the floor holds {w.LooseAmount(a2, c, food)} (want 10: lying + leached)");
         // A void under the top block: the litter drips onto the cavity's floor.
-        int d = 60 * W + 60;
-        for (int z = 2; z < 8; z++) if (z != 5 && z != 6) { w.Mat[d * Z + z] = Chemistry.Bedrock; w.Order[d * Z + z] = 255; }
+        int d = 60 * w.W + 60;
+        for (int z = 2; z < 8; z++) if (z != 5 && z != 6) { w.Mat[d * w.Z + z] = Chemistry.Bedrock; w.Order[d * w.Z + z] = 255; }
         w.Height[d] = 8; w.TerrainChanged(d);
         w.C[food][d] = 8; w.Water[d] = 1;
         w.Leach(d, k);
-        Require(w.BurialOf(d * Z + 4, out var cf) && Math.Abs(cf.Matter[food].D - 4) < 1e-6, "the litter did not drip onto the cavity's floor");
+        Require(w.BurialOf(d * w.Z + 4, out var cf) && Math.Abs(cf.Matter[food].D - 4) < 1e-6, "the litter did not drip onto the cavity's floor");
 
         // A living world: the law mid-run keeps atoms and energy; off it changes nothing.
         var w1 = new World(2, 800, true); var w2 = new World(2, 800, true);
@@ -73,7 +73,7 @@ public sealed partial class World
         {
             if (t == 100)
             {
-                for (int s = 0; s < Chemistry.S; s++) for (int i = 0; i < N; i++) litter0 += w3.C[s][i];
+                for (int s = 0; s < Chemistry.S; s++) for (int i = 0; i < w.N; i++) litter0 += w3.C[s][i];
                 Require(w3.SetParam("LeachK", 0.001), "law LeachK");
             }
             w3.Step();
@@ -87,7 +87,7 @@ public sealed partial class World
             note = EnergyWorldCheck(w3, e0, $"leaching, tick {t}");
         }
         double litter = 0;
-        for (int s = 0; s < Chemistry.S; s++) for (int i = 0; i < N; i++) litter += w3.C[s][i];
+        for (int s = 0; s < Chemistry.S; s++) for (int i = 0; i < w.N; i++) litter += w3.C[s][i];
         Require(w3.Leached > 0 && litter < litter0, $"leaching 0.001 for 800 ticks: litter {litter0:F0} -> {litter:F0}, leached {w3.Leached:F0}");
         ParamRegistry.ResetDefaults();
         Console.WriteLine($"PASS leach: wet ground: half the lightest litter under the top block exactly, the heaviest less by mobility, dry ground keeps it, out of reach until the block goes; drips into a cavity; living world LeachK 0.001 for 800 ticks: litter {litter0:F0} -> {litter:F0} (leached {w3.Leached:F0}), atoms exact, {note}");

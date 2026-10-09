@@ -92,8 +92,8 @@ public sealed partial class World
         var design = CreatureDesign.FromJson(fossil.ToDesign(w.Seed).ToJson());
         Require(design.Check(w.Chem).Count == 0, "a fossil's design has errors: " + string.Join("; ", design.Check(w.Chem)));
         Require(design.Assemble().AsSpan().SequenceEqual(fossil.Genome), "a fossil's genome changed on its way to a design");
-        int cell = Enumerable.Range(0, N).Select(k => (int)((k * 2654435761L + 777) % N)).First(c => !w.Submerged(c) && w.Count[c] == 0 && w.Height[c] < Z - 4);
-        var r = w.SpawnDesign(design, cell % W, cell / W, new SpawnOptions { Matter = MatterSource.Import, Energy = EnergySource.Import, Count = 1, Radius = 0 });
+        int cell = Enumerable.Range(0, w.N).Select(k => (int)((k * 2654435761L + 777) % w.N)).First(c => !w.Submerged(c) && w.Count[c] == 0 && w.Height[c] < w.Z - 4);
+        var r = w.SpawnDesign(design, cell % w.W, cell / w.W, new SpawnOptions { Matter = MatterSource.Import, Energy = EnergySource.Import, Count = 1, Radius = 0 });
         Require(r.Made == 1 && r.Agents[0].G.AsSpan().SequenceEqual(fossil.Genome) && r.Agents[0].Tracked, $"a fossil did not plant again: {r}");
         Require(w.Chronicle.All().Last().Type == EvType.Player, "planting not in the chronicle");
         for (int t = 0; t < 50; t++) w.Step();

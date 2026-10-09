@@ -5,12 +5,14 @@ using Godot;
 
 namespace Primordium;
 
-// F4: a new world from settings — seed, first population, outside influences, a law preset and, under
+// F4: a new world from settings — seed, size, first population, outside influences, a law preset and, under
 // "More", every law (including those read only when a world is made).
 public partial class NewWorldWindow : UiWindow
 {
     LineEdit seed;
-    SpinBox pop;
+    SpinBox pop, width, height, levels;
+    Label sizeNote;
+    int suggestedPop = -1;   // the population offered for the size shown (by area); kept in step while untouched
     CheckBox abio, strikes, flares, eclipses, cycles;
     OptionButton preset;
     Button more;
@@ -19,14 +21,24 @@ public partial class NewWorldWindow : UiWindow
     List<(string name, string path)> presetList = new();
     Label note;
 
-    public NewWorldWindow() : base("newworld", Loc.T("New world", "Новый мир"), new Vector2(600, 270))
+    public NewWorldWindow() : base("newworld", Loc.T("New world", "Новый мир"), new Vector2(600, 300))
     {
-        MinSize = new Vector2(480, 240);
+        MinSize = new Vector2(480, 270);
         seed = UiKit.Edit("", Loc.T("number", "число"), 120);
         seed.TextSubmitted += _ => Create();
         var dice = UiKit.Button(Loc.T("random", "случайный"), () => seed.Text = NewSeed().ToString(), Loc.T("a new random seed", "новый случайный seed"));
         Body.AddChild(UiKit.Row(8, Label("Seed"), seed, dice,
             UiKit.Text(Loc.T("sets the elements, molecules, terrain and climate", "задаёт элементы, молекулы, рельеф и климат"), 12, UiKit.Dim, null, true)));
+
+        // The size: columns around (x wraps), rows pole to pole, levels; width and height in steps of 32.
+        width = UiKit.Spin(WorldSettings.MinSide, WorldSettings.MaxWidth, WorldSettings.SideStep, WorldSettings.DefaultWidth, 80);
+        height = UiKit.Spin(WorldSettings.MinSide, WorldSettings.MaxHeight, WorldSettings.SideStep, WorldSettings.DefaultHeight, 80);
+        levels = UiKit.Spin(WorldSettings.MinLevels, WorldSettings.MaxLevels, 1, WorldSettings.DefaultLevels, 70);
+        foreach (var s in new[] { width, height, levels }) { s.GetLineEdit().FocusMode = FocusModeEnum.Click; s.ValueChanged += _ => SizeChanged(); }
+        sizeNote = UiKit.Text("", 12, UiKit.Dim, null, true);
+        var defaultSize = UiKit.Button(Loc.T("default", "обычный"), () => SetSize(WorldSettings.DefaultWidth, WorldSettings.DefaultHeight, WorldSettings.DefaultLevels),
+            Loc.T($"{WorldSettings.DefaultWidth}×{WorldSettings.DefaultHeight}×{WorldSettings.DefaultLevels}, the planet the laws were tuned on", $"{WorldSettings.DefaultWidth}×{WorldSettings.DefaultHeight}×{WorldSettings.DefaultLevels} — планета, на которой подбирались законы"));
+        Body.AddChild(UiKit.Row(8, Label(Loc.T("Size", "Размер")), width, UiKit.Text("×", 13), height, UiKit.Text("×", 13), levels, defaultSize, sizeNote));
 
         pop = UiKit.Spin(0, 50000, 50, P.InitialPop, 110);
         pop.GetLineEdit().FocusMode = FocusModeEnum.Click;
@@ -71,7 +83,9 @@ public partial class NewWorldWindow : UiWindow
     {
         var w = Main.World;
         seed.Text = NewSeed().ToString();
-        pop.Value = Main.InitialPop >= 0 ? Main.InitialPop : P.InitialPop;
+        SetSize(w?.W ?? WorldSettings.DefaultWidth, w?.H ?? WorldSettings.DefaultHeight, w?.Z ?? WorldSettings.DefaultLevels);
+        suggestedPop = ByArea();
+        pop.Value = Main.InitialPop >= 0 ? Main.InitialPop : suggestedPop;
         abio.ButtonPressed = w?.Abiogenesis ?? false;
         strikes.ButtonPressed = w?.AutoStrikes ?? false;
         presetList = Presets.List();
@@ -83,6 +97,30 @@ public partial class NewWorldWindow : UiWindow
         FillDraft();
         note.Text = Loc.T($"now: seed {w?.Seed}, tick {w?.Tick:N0}. R — new seed, ⇧R — the same one again (with the current laws).",
             $"сейчас: seed {w?.Seed}, тик {w?.Tick:N0}. R — новый seed, ⇧R — тот же заново (с текущими законами).");
+    }
+
+    WorldSettings SizeShown() => new() { Width = (int)width.Value, Height = (int)height.Value, Levels = (int)levels.Value };
+
+    // P.InitialPop on the default world, in proportion to the area on another (as World.PerArea).
+    int ByArea() => (int)Math.Round((double)P.InitialPop * width.Value * height.Value / World.RefN, MidpointRounding.AwayFromZero);
+
+    void SetSize(int w, int h, int l)
+    {
+        width.SetValueNoSignal(w); height.SetValueNoSignal(h); levels.SetValueNoSignal(l);
+        SizeChanged();
+    }
+
+    void SizeChanged()
+    {
+        var s = SizeShown();
+        long voxels = (long)s.Width * s.Height * s.Levels;
+        string problem = s.SizeProblem();
+        sizeNote.Text = problem ?? Loc.T($"{voxels / 1e6:0.#} million voxels ({voxels * 100.0 / ((long)World.RefN * WorldSettings.DefaultLevels):0}% of the default)",
+                                         $"{voxels / 1e6:0.#} млн вокселей ({voxels * 100.0 / ((long)World.RefN * WorldSettings.DefaultLevels):0}% обычного)");
+        sizeNote.AddThemeColorOverride("font_color", problem != null ? UiKit.Bad : UiKit.Dim);
+        // The first population follows the area until it is set by hand.
+        if (pop != null && (int)pop.Value == suggestedPop) { suggestedPop = ByArea(); pop.SetValueNoSignal(suggestedPop); }
+        else suggestedPop = ByArea();
     }
 
     void FillDraft()
@@ -117,9 +155,9 @@ public partial class NewWorldWindow : UiWindow
     {
         editor.Visible = more.ButtonPressed;
         more.Text = more.ButtonPressed ? Loc.T("More ▾", "Дополнительно ▾") : Loc.T("More ▸", "Дополнительно ▸");
-        float h = more.ButtonPressed ? 640 : 270;
+        float h = more.ButtonPressed ? 670 : 300;
         Size = new Vector2(more.ButtonPressed ? Math.Max(Size.X, 780) : Size.X, h);
-        MinSize = new Vector2(480, more.ButtonPressed ? 420 : 240);
+        MinSize = new Vector2(480, more.ButtonPressed ? 450 : 270);
         KeepInside();
     }
 
@@ -127,9 +165,12 @@ public partial class NewWorldWindow : UiWindow
     {
         double s = UiKit.ParseNumber(seed.Text, out bool ok);
         if (!ok || s < int.MinValue || s > int.MaxValue) { Ui.Toast(Loc.T("seed must be an integer", "seed — целое число"), true); return; }
+        var size = SizeShown();
+        if (size.SizeProblem() is string problem) { Ui.Toast(Loc.T("world size: ", "размер мира: ") + problem, true); return; }
         var settings = new WorldSettings
         {
             Seed = (int)s,
+            Width = size.Width, Height = size.Height, Levels = size.Levels,
             InitialPop = (int)pop.Value,
             Abiogenesis = abio.ButtonPressed,
             Strikes = strikes.ButtonPressed,

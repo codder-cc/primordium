@@ -24,7 +24,7 @@ public sealed partial class World
             Require(ch.Reactivity[s] <= ch.Reactivity[ch.MostReactive], "MostReactive is not the most reactive");
         }
         int hot = ch.MostReactive, ground = Chemistry.Ground(hot);
-        int c = 80 * W + 120;
+        int c = 80 * w.W + 120;
 
         // Held: N molecules and a protein; count reactions over many ticks against the law's expectation.
         (long hits, double expected) Held(int s, float tb, int n, int ticks)
@@ -72,7 +72,7 @@ public sealed partial class World
 
         // Lying in the cell: reacts on the floor, nothing enters the body.
         P.ReactContact = 0.2f;
-        int lc = c + 12 * W;
+        int lc = c + 12 * w.W;
         w.C[hot][lc] += 200;
         var body = w.TestAgent(lc, 2, ground, 10);
         var atoms1 = w.ElementBudget(); var e1 = w.EnergyStart();
@@ -94,13 +94,13 @@ public sealed partial class World
         var pw = Fixture();
         var pa = pw.ElementBudget();
         Require(pw.Catastrophe(new Catastrophe { Kind = CatastropheKind.Poison, X = 50, Y = 50, R = 3, Amount = 40 }, out string err) != null, "poisoning by the law: " + err);
-        Require(pw.C[hot][50 * W + 50].D == 40, "poisoning by the law did not spray the most reactive species");
+        Require(pw.C[hot][50 * w.W + 50].D == 40, "poisoning by the law did not spray the most reactive species");
         var mix = new float[Chemistry.S]; mix[ground] = 0.25f; mix[(hot + 2) % Chemistry.S] = 0.75f;
         var spec = new Catastrophe { Kind = CatastropheKind.Poison, X = 90, Y = 50, R = 3, Amount = 40, Mix = mix }.Spec();
         var parsed = Primordium.Catastrophe.Parse(spec);
         Require(parsed.Spec() == spec && parsed.Mix[ground] == 0.25f, $"poison spec with a mix does not round trip: {spec}");
         Require(pw.Catastrophe(parsed, out err) != null, "poisoning with a mix: " + err);
-        Require(pw.C[ground][50 * W + 90].D == 10 && pw.C[(hot + 2) % Chemistry.S][50 * W + 90].D == 30, "poisoning with a mix: wrong amounts");
+        Require(pw.C[ground][50 * w.W + 90].D == 10 && pw.C[(hot + 2) % Chemistry.S][50 * w.W + 90].D == 30, "poisoning with a mix: wrong amounts");
         var pb = pw.ElementBudget();
         for (int e = 0; e < pb.Length; e++) pb[e] -= pw.HandInput[e];
         BudgetEqual(pa, pb, "poisoning", 0);
@@ -116,7 +116,7 @@ public sealed partial class World
     {
         ParamRegistry.ResetDefaults();
         var w = Fixture(); var ch = w.Chem;
-        int c = 60 * W + 60;
+        int c = 60 * w.W + 60;
         // A mixed block laid directly: the card's numbers are the block's.
         int a = ch.Solids.Length > 0 ? ch.Solids[0] : 2, b = (a + 3) % Chemistry.S == ch.Gas ? (a + 5) % Chemistry.S : (a + 3) % Chemistry.S;
         byte order = 200;
@@ -125,8 +125,8 @@ public sealed partial class World
         var counts = new ushort[Chemistry.S];
         int total = (int)props.MolPerBlock;
         counts[a] = (ushort)Math.Round(total * 0.6); counts[b] = (ushort)(total - counts[a]);
-        w.PutMixture(c * Z + 2, counts, order);
-        int v = c * Z + 2;
+        w.PutMixture(c * w.Z + 2, counts, order);
+        int v = c * w.Z + 2;
         double cohesion = w.VoxelCohesion(v);
         Require(Math.Abs(props.Cohesion - cohesion) < 0.02 * cohesion + 1e-4, $"cohesion {props.Cohesion:F4} vs block {cohesion:F4}");
         Require(Math.Abs(props.Barrier - w.VoxelBarrier(v)) < 0.03 * w.VoxelBarrier(v), $"barrier {props.Barrier:F3} vs block {w.VoxelBarrier(v):F3}");
@@ -161,9 +161,9 @@ public sealed partial class World
         for (int e = 0; e < atoms1.Length; e++) atoms1[e] -= w.HandInput[e];
         BudgetEqual(atoms0, atoms1, "pour a recipe", 0);
         w.EnergyBalanced(e0, "pour a recipe", FHand);
-        int pc = py * W + px, top = pc * Z + w.Height[pc] - 1;
+        int pc = py * w.W + px, top = pc * w.Z + w.Height[pc] - 1;
         Require(poured > 0 && w.Height[pc] > 2 && w.Order[top] == 240 && w.VoxelCount(top, a) > 0 && w.VoxelCount(top, b) > 0, "the poured block is not the recipe");
-        Require(loose > 0 && w.C[a][py * W + px + 20].D > 0 && w.Height[py * W + px + 20] == 2, "loose pouring laid a block");
+        Require(loose > 0 && w.C[a][py * w.W + px + 20].D > 0 && w.Height[py * w.W + px + 20] == 2, "loose pouring laid a block");
         int events = w.Chronicle.All().Count();
         Require(w.EndStroke() && w.Chronicle.All().Count() == events + 1 && w.Chronicle.All().Last().Type == EvType.Player, "the stroke is not in the chronicle");
         Require(!w.EndStroke(), "an empty stroke was chronicled");

@@ -602,9 +602,9 @@ public partial class MatterWindow : UiWindow
             Main.Sim.Do(sw =>
             {
                 var r = MatterRecipe.SampleBlock(sw, cell);
-                string text = r == null ? Loc.T($"({cell % World.W}, {cell / World.W}): no block on top", $"({cell % World.W}, {cell / World.W}): сверху нет блока")
-                    : Loc.T($"({cell % World.W}, {cell / World.W}) top block: {MatterRecipe.MixText(sw.Chem, r.MixOf(sw.Chem), true, 3)}, order {r.Order / 255.0:P0}, {sw.Units[cell * World.Z + sw.Height[cell] - 1]} molecules, fill {sw.Fill(cell * World.Z + sw.Height[cell] - 1):P0}",
-                            $"({cell % World.W}, {cell / World.W}) верхний блок: {MatterRecipe.MixText(sw.Chem, r.MixOf(sw.Chem), false, 3)}, порядок {r.Order / 255.0:P0}, {sw.Units[cell * World.Z + sw.Height[cell] - 1]} молекул, заполнен на {sw.Fill(cell * World.Z + sw.Height[cell] - 1):P0}");
+                string text = r == null ? Loc.T($"({cell % w.W}, {cell / w.W}): no block on top", $"({cell % w.W}, {cell / w.W}): сверху нет блока")
+                    : Loc.T($"({cell % w.W}, {cell / w.W}) top block: {MatterRecipe.MixText(sw.Chem, r.MixOf(sw.Chem), true, 3)}, order {r.Order / 255.0:P0}, {sw.Units[cell * w.Z + sw.Height[cell] - 1]} molecules, fill {sw.Fill(cell * w.Z + sw.Height[cell] - 1):P0}",
+                            $"({cell % w.W}, {cell / w.W}) верхний блок: {MatterRecipe.MixText(sw.Chem, r.MixOf(sw.Chem), false, 3)}, порядок {r.Order / 255.0:P0}, {sw.Units[cell * w.Z + sw.Height[cell] - 1]} молекул, заполнен на {sw.Fill(cell * w.Z + sw.Height[cell] - 1):P0}");
                 Ui.Post(() => cursorText = text);
             });
         }

@@ -526,7 +526,7 @@ public partial class CreatorWindow : UiWindow
             Count = (int)count.Value,
             Radius = Math.Max(1, (int)Main.BrushR),
         };
-        Main.Sim.SpawnDesign(current, cell % World.W, cell / World.W, options);
+        Main.Sim.SpawnDesign(current, cell % w.W, cell / w.W, options);
     }
 
     public string BrushText => Loc.En
@@ -563,8 +563,8 @@ public partial class CreatorWindow : UiWindow
         for (int s = 0; s < Chemistry.S; s++) if (ch.SplitExo[s]) e += Loose(s) * ch.SplitEnergy(s);
         bool eok = e >= current.Energy;
         string found = parts.Count > 0 ? string.Join(" · ", parts) : "—";
-        string place = Loc.T($"At the cursor ({cell % World.W}, {cell / World.W}), loose matter of the cell and its neighbours: {found}. Energy from local splits ≈ {e:0} of {current.Energy:0}.",
-                             $"У курсора ({cell % World.W}, {cell / World.W}), рыхлое вещество клетки и соседей: {found}. Энергия местных распадов ≈ {e:0} из {current.Energy:0}.");
+        string place = Loc.T($"At the cursor ({cell % w.W}, {cell / w.W}), loose matter of the cell and its neighbours: {found}. Energy from local splits ≈ {e:0} of {current.Energy:0}.",
+                             $"У курсора ({cell % w.W}, {cell / w.W}), рыхлое вещество клетки и соседей: {found}. Энергия местных распадов ≈ {e:0} из {current.Energy:0}.");
         if (matter.Selected == 0 && !all) place += Loc.T(" The soft top block may add its own; otherwise use 'bring from outside'.", " Мягкий верхний блок может добавить своё; иначе — «принести извне».");
         availability.Text = place;
         availability.AddThemeColorOverride("font_color", (matter.Selected == 1 || all) && (energySrc.Selected == 1 || eok) ? UiKit.Dim : new Color(1f, 0.7f, 0.5f));

@@ -25,7 +25,7 @@ public sealed partial class World
         {
             int y = cy + dy;
             if (y < 0 || y >= H) continue;
-            for (int dx = -ir; dx <= ir; dx++)
+            for (int dx = -AroundX(ir); dx <= AroundX(ir); dx++)
             {
                 float d2 = (dx * dx + dy * dy) / (r * r);
                 if (d2 > 1) continue;

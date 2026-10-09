@@ -78,17 +78,17 @@ public sealed partial class World
         int px = 100, py = 60, sx = 24, sy = 18;
         for (int k = 0; k < 6; k++)
         {
-            int c = (py + 2 + 2 * k) * W + px + 3 + 3 * k;
+            int c = (py + 2 + 2 * k) * w.W + px + 3 + 3 * k;
             w.TestAgent(c, w.Height[c], k % Chemistry.S == w.Chem.Gas ? 1 : k % Chemistry.S, 30);
         }
         w.Pour(px + 8, py + 8, 3, 3 == w.Chem.Gas ? 4 : 3, 0.6f);
         w.PourWater(px + 15, py + 6, 3, 1.5f);
         {
-            int c = (py + 10) * W + px + 12, bv = c * Z + w.Height[c] - 4;
+            int c = (py + 10) * w.W + px + 12, bv = c * w.Z + w.Height[c] - 4;
             w.BurialAt(bv).Matter[2] += Qty.Of(7.25);
             w.MatterChanged(bv);
         }
-        var r = w.CopyRegion(px, py, sx, sy, 0, Z, true, "probe");
+        var r = w.CopyRegion(px, py, sx, sy, 0, w.Z, true, "probe");
         Require(r.Bodies.Count == 6, $"copied {r.Bodies.Count} of 6 bodies");
         Require(r.Voxels > 0 && r.Cols.Any(c => c.Mix.Count > 0) && r.Cols.Any(c => c.Burials.Count > 0) && r.Cols.Any(c => c.Top && c.Water > 0), "the region misses mixtures, burials or water");
 
@@ -112,7 +112,7 @@ public sealed partial class World
         Balanced(w, before, "paste");
         Require(w.Agents.Count(a => !a.Dead) == alive + res.BodiesIn - res.BodiesOut, "paste: bodies counted");
         w.CheckCellLists();
-        var again = w.CopyRegion(qx, qy, sx, sy, 0, Z, true);
+        var again = w.CopyRegion(qx, qy, sx, sy, 0, w.Z, true);
         Require(r.SameCells(again, out string why2), "copy after paste: " + why2);
         Require(again.Bodies.Count == 6 && again.Bodies.Sum(b => b.Molecules) == r.Bodies.Sum(b => b.Molecules)
             && Math.Abs(again.Bodies.Sum(b => b.Energy) - r.Bodies.Sum(b => b.Energy)) < 1e-9, "copy after paste: bodies differ");
@@ -123,7 +123,7 @@ public sealed partial class World
         res = w.PasteRegion(r, tx, ty, new RegionPasteOptions { Rotation = 1 });
         Require(res.Ok && res.SizeX == sy && res.SizeY == sx, "turned paste: " + res);
         Balanced(w, before, "turned paste");
-        var turned = w.CopyRegion(tx, ty, sy, sx, 0, Z, false);
+        var turned = w.CopyRegion(tx, ty, sy, sx, 0, w.Z, false);
         for (int j = 0; j < sy; j++)
             for (int i = 0; i < sx; i++)
             {
@@ -147,14 +147,14 @@ public sealed partial class World
 
         // Clipped at the pole; refused when it cannot fit (nothing changes).
         before = RegionLedger.Of(w);
-        res = w.PasteRegion(r, 200, H - 5, new RegionPasteOptions());
+        res = w.PasteRegion(r, 200, w.H - 5, new RegionPasteOptions());
         Require(res.Ok && res.ColumnsClipped == (sy - 5) * sx && res.Warnings.Count > 0, "clipped: " + res);
         Balanced(w, before, "clipped");
         ulong hash = w.RegionStateHash();
-        var huge = new Region { SizeX = W + 1, SizeY = 1, Chem = r.Chem, Cols = new RegionColumn[W + 1], WorldZ = Z };
+        var huge = new Region { SizeX = w.W + 1, SizeY = 1, Chem = r.Chem, Cols = new RegionColumn[w.W + 1], WorldZ = w.Z };
         for (int k = 0; k < huge.Cols.Length; k++) huge.Cols[k] = new RegionColumn();
         Require(!w.PasteRegion(huge, 0, 0).Ok, "a region wider than the world was pasted");
-        Require(!w.PasteRegion(r, 0, 0, new RegionPasteOptions { Dz = Z }).Ok, "a region above the world's levels was pasted");
+        Require(!w.PasteRegion(r, 0, 0, new RegionPasteOptions { Dz = w.Z }).Ok, "a region above the world's levels was pasted");
         Require(w.RegionStateHash() == hash, "a refused paste changed the world");
 
         // Paste back: a place overwritten by another region and then given its own region back is the
@@ -162,8 +162,8 @@ public sealed partial class World
         var v = new World(7, 0, false) { AutoStrikes = false };
         for (int t = 0; t < 20; t++) v.Step();
         int ax = 40, ay = 50;
-        var own = v.CopyRegion(ax, ay, 24, 20, 0, Z, false);
-        var other = v.CopyRegion(150, 90, 20, 24, 0, Z, false);
+        var own = v.CopyRegion(ax, ay, 24, 20, 0, w.Z, false);
+        var other = v.CopyRegion(150, 90, 20, 24, 0, w.Z, false);
         var twin = Twin(v);
         Require(v.RegionStateHash() == twin.RegionStateHash(), "twin");
         res = v.PasteRegion(other, ax, ay, new RegionPasteOptions { Rotation = 1, Bodies = false });
@@ -184,9 +184,9 @@ public sealed partial class World
         if (!goesOn)
         {
             int diffP = 0, diffV = 0, diffC = 0, firstP = -1;
-            for (int q = 0; q < N * Z; q++) { if (v.Pressure[q] != twin.Pressure[q]) { diffP++; if (firstP < 0) firstP = q; } if (v.Mat[q] != twin.Mat[q] || v.Units[q] != twin.Units[q] || v.Order[q] != twin.Order[q]) diffV++; }
-            for (int s = 0; s < Chemistry.S; s++) for (int q = 0; q < N; q++) if (v.C[s][q] != twin.C[s][q]) diffC++;
-            Console.WriteLine($"diverged at tick {v.Tick}: pressure {diffP} (first col {(firstP < 0 ? -1 : firstP / Z)} z {firstP % Z}), voxels {diffV}, loose {diffC}, state {v.StateHash() == twin.StateHash()}");
+            for (int q = 0; q < w.N * w.Z; q++) { if (v.Pressure[q] != twin.Pressure[q]) { diffP++; if (firstP < 0) firstP = q; } if (v.Mat[q] != twin.Mat[q] || v.Units[q] != twin.Units[q] || v.Order[q] != twin.Order[q]) diffV++; }
+            for (int s = 0; s < Chemistry.S; s++) for (int q = 0; q < w.N; q++) if (v.C[s][q] != twin.C[s][q]) diffC++;
+            Console.WriteLine($"diverged at tick {v.Tick}: pressure {diffP} (first col {(firstP < 0 ? -1 : firstP / w.Z)} z {firstP % w.Z}), voxels {diffV}, loose {diffC}, state {v.StateHash() == twin.StateHash()}");
         }
         Require(goesOn, "paste back: the restored world went another way than the original");
 
@@ -199,8 +199,8 @@ public sealed partial class World
         Require(res.Mapping.Map.All(t => t >= 0 && t < Chemistry.S) && res.Mapping.Lines.Count == Chemistry.S, "another chemistry: mapping");
         Balanced(u, before, "another chemistry");
         u.CheckCellLists();
-        for (int c = 0; c < N; c++)
-            for (int z = 0; z < u.Height[c]; z++) Require(u.Mat[c * Z + z] < Chemistry.S + 2, "another chemistry: a block of no kind");
+        for (int c = 0; c < w.N; c++)
+            for (int z = 0; z < u.Height[c]; z++) Require(u.Mat[c * w.Z + z] < Chemistry.S + 2, "another chemistry: a block of no kind");
         before = RegionLedger.Of(u);
         for (int t = 0; t < 60; t++) u.Step();
         Require(Math.Abs(EnergyAudit.Drift(before.Energy, u.AuditEnergy())) < EnergyAudit.Tolerance(before.Energy, u.AuditEnergy()), "another chemistry: the ledger drifts after the paste");

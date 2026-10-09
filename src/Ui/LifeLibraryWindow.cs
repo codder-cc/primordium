@@ -376,7 +376,7 @@ public partial class LifeLibraryWindow : UiWindow
     // A click with brush 5 while the library holds it.
     public void BrushClick(int cell)
     {
-        int x = cell % World.W, y = cell / World.W;
+        int x = cell % Main.World.W, y = cell / Main.World.W;
         if (Armed == Arm.CopyArea)
         {
             float r = Main.BrushR;

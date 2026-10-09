@@ -30,13 +30,13 @@ public sealed partial class World
     static void ClimbRegression()
     {
         var w = Fixture();
-        int s = 0, row = 30 * W;
+        int s = 0, row = 30 * w.W;
         Agent Body(int x, int n) { var a = w.TestAgent(row + x, 2, s, n); a.Energy = 1000; return a; }
         void Ledge(int x, int top) { for (int z = 2; z < top; z++) w.TestBlock(row + x, z, s); }
         // Three blocks up.
         Ledge(21, 5);
         var a = Body(20, 20);
-        int cell = a.Y * W + a.X;
+        int cell = a.Y * w.W + a.X;
         a.Vx = 1.05f; w.Move(a, ref cell);
         Require(a.X == 20 && a.Climb > 0, $"one push climbed a 3-block ledge or kept nothing: x {a.X}, pressing {a.Climb}");
         int ticks = 1;
@@ -48,27 +48,27 @@ public sealed partial class World
         // A strong push (several in one tick) at once.
         Ledge(41, 5);
         var b = Body(40, 20);
-        int bc = b.Y * W + b.X;
+        int bc = b.Y * w.W + b.X;
         b.Vx = 3.2f; w.Move(b, ref bc);
         Require(b.X == 41 && b.Z == 5 && Math.Abs(b.Vx) < 0.85f, $"a push of 3.2 did not lift a body 3 blocks (x {b.X}, z {b.Z}, v {b.Vx})");
         // Ten blocks: never with steady full pushes.
         Ledge(61, 12);
         var d = Body(60, 20);
-        int dc = d.Y * W + d.X;
+        int dc = d.Y * w.W + d.X;
         for (int t = 0; t < 300; t++) { d.Vx += 1.05f; w.Move(d, ref dc); }
         Require(d.X == 60, "a wall of ten blocks was climbed by steady pushes");
         // A roof over its own cell (a tunnel): no climbing up the face through it.
         Ledge(81, 5);
         w.TestBlock(row + 80, 3, s, 255, 1);   // a one-molecule roof slab over the body's floor
         var r = Body(80, 20);
-        int rc = r.Y * W + r.X;
+        int rc = r.Y * w.W + r.X;
         r.Z = 2;
         r.Vx = 5f; w.Move(r, ref rc);
         Require(r.X == 80, "a body climbed up a face through the roof over it");
         // Heavier bodies pay more for the same climb.
         Ledge(101, 5); Ledge(121, 5);
         var light = Body(100, 10); var heavy = Body(120, 40);
-        int lc = light.Y * W + light.X, hc = heavy.Y * W + heavy.X;
+        int lc = light.Y * w.W + light.X, hc = heavy.Y * w.W + heavy.X;
         double l0 = light.Energy, h0 = heavy.Energy;
         light.Vx = 3.2f; heavy.Vx = 3.2f;
         w.Move(light, ref lc); w.Move(heavy, ref hc);
@@ -92,12 +92,12 @@ public sealed partial class World
             P.ModulusRatio = 2;
             var w = Fixture();
             int s = Enumerable.Range(0, Chemistry.S).Where(x => x % 2 == 0).OrderByDescending(x => w.Chem.Bond[x]).First();
-            int c = 50 * W + 50;
+            int c = 50 * w.W + 50;
             for (int z = 2; z < 32; z++) w.TestBlock(c, z, s, 100, w.BlockCapacity(s, 100));   // a softer lattice (order 100)
             w.StepStructure();
             w.SettleColumns();   // the first look records its strain: born in equilibrium
             Require(w.SettleEvents == 0, "a column settled at its first look");
-            float Fullest() { float m = 0; for (int z = 2; z < w.Height[c]; z++) m = Math.Max(m, w.VoxelVolume(c * Z + z)); return m; }
+            float Fullest() { float m = 0; for (int z = 2; z < w.Height[c]; z++) m = Math.Max(m, w.VoxelVolume(c * w.Z + z)); return m; }
             for (int z = 32; z < 92; z++) w.TestBlock(c, z, s, 100, w.BlockCapacity(s, 100));
             var before = w.ElementBudget();
             for (int i = 0; i < 6; i++) { w.StepStructure(); w.SettleColumns(); }
@@ -120,11 +120,11 @@ public sealed partial class World
             // column above it settles into the freed room, the top coming down.
             P.ModulusRatio = mr;
             var k = Fixture();
-            int pit = 80 * W + 120;
+            int pit = 80 * w.W + 120;
             for (int dy = -2; dy <= 2; dy++)
                 for (int dx = -2; dx <= 2; dx++)
                 {
-                    int q = pit + dy * W + dx;
+                    int q = pit + dy * w.W + dx;
                     bool wall = Math.Abs(dx) == 2 || Math.Abs(dy) == 2;
                     for (int z = 2; z < 62; z++) k.TestBlock(q, z, s, wall ? (byte)255 : (byte)0, wall ? -1 : k.BlockCapacity(s, 0));
                 }
@@ -134,9 +134,9 @@ public sealed partial class World
             for (int t = 0; t < 250; t++) { k.Metamorphose(); k.StepStructure(); }
             int top = k.Height[pit];
             Require(k.SettleEvents > 0 && top < 62, $"a compacting stratum did not let the column settle: {k.SettleEvents} events, top {top} of 62");
-            Require(k.Order[pit * Z + 3] > 0, "the loose stratum did not compact");
+            Require(k.Order[pit * w.Z + 3] > 0, "the loose stratum did not compact");
             BudgetEqual(b0, k.ElementBudget(), "compaction settling", 1e-6);
-            Console.WriteLine($"PASS settle: soft law — a column loaded with 60 blocks came down 92 → {top1} ({down} molecules moved, fullest block {full1:F0} of {P.VoxelSpace:F0}), unloaded sprang back {top2} → {w.Height[c]} ({w.ReboundMolecules} molecules, fullest {vol2:F0}); a compacting loose stratum (order → {k.Order[pit * Z + 3]}) let its column settle 62 → {top} ({k.SettleEvents} settling events in the pit); atoms exact");
+            Console.WriteLine($"PASS settle: soft law — a column loaded with 60 blocks came down 92 → {top1} ({down} molecules moved, fullest block {full1:F0} of {P.VoxelSpace:F0}), unloaded sprang back {top2} → {w.Height[c]} ({w.ReboundMolecules} molecules, fullest {vol2:F0}); a compacting loose stratum (order → {k.Order[pit * w.Z + 3]}) let its column settle 62 → {top} ({k.SettleEvents} settling events in the pit); atoms exact");
         }
         finally { P.ModulusRatio = mr; }
     }
@@ -156,7 +156,7 @@ public sealed partial class World
             int Rise(World w) { var h = w.Height0.OrderBy(x => x).ToArray(); return h[h.Length * 99 / 100] - h[h.Length / 100]; }
             int r1 = Rise(w1), r4 = Rise(w4);
             Require(r4 > 3.4 * r1 && r4 < 4.3 * r1, $"relief not stretched 4×: rise {r1} → {r4}");
-            Require(w4.Height.Max() <= Z - 14 && w4.Height.Min() >= Crust + 2, "relief out of the world");
+            Require(w4.Height.Max() <= w4.Z - 14 && w4.Height.Min() >= w4.Crust + 2, "relief out of the world");
             float span1 = w1.Lapse * r1, span4 = w4.Lapse * r4;
             Require(w1.Lapse == P.TLapse && Math.Abs(w4.Lapse - P.TLapse / 4) < 1e-6f, "lapse rate does not follow the world's relief");
             Require(Math.Abs(span4 - span1) < 0.2f * span1, $"altitude climate span changed: {span1:F1} → {span4:F1} °C");
@@ -186,16 +186,16 @@ public sealed partial class World
                 w.TestBlock(c, 2 + fall, rock);
                 int before = a.InvTotal;
                 var atoms = w.ElementBudget();
-                w.TransferVoxel(c * Z + 2 + fall, c * Z + 2, true);
+                w.TransferVoxel(c * w.Z + 2 + fall, c * w.Z + 2, true);
                 w.SettleAll();
                 BudgetEqual(atoms, w.ElementBudget(), "impact", 1e-6);
                 return (before - a.InvTotal, a.Dead);
             }
-            var mild = Drop(20 * W + 20, weak, 4);
+            var mild = Drop(20 * w.W + 20, weak, 4);
             Require(!mild.dead, $"a fall of 4 levels killed a body outright under the world's gravity (lost {mild.lost})");
             P.Gravity = g * 400;   // a heavy world: the same blow tears much more
-            var weakHit = Drop(20 * W + 40, weak, 6);
-            var strongHit = Drop(20 * W + 60, strong, 6);
+            var weakHit = Drop(20 * w.W + 40, weak, 6);
+            var strongHit = Drop(20 * w.W + 60, strong, 6);
             Require(weakHit.lost > strongHit.lost, $"a shell did not help: weak lost {weakHit.lost}, strong {strongHit.lost}");
             Require(weakHit.lost > mild.lost, "a heavier blow did not tear more");
             w.Agents.RemoveAll(x => x.Dead);
@@ -216,7 +216,7 @@ public sealed partial class World
             P.ReliefScale = k;   // the altitude climate follows the scale itself (World.Lapse)
             var w = new World(new WorldSettings { Seed = seed, InitialPop = 0 });
             long steps = 0, up2 = 0, up7 = 0; int wet = 0; double depth = 0, light = 0, photons = 0;
-            for (int c = 0; c < N; c++)
+            for (int c = 0; c < w.N; c++)
             {
                 for (int d = 0; d < 4; d++) { int n = w.nb[c * 4 + d]; if (n == c) continue; int dh = w.Height[n] - w.Height[c]; steps++; if (dh >= 2) up2++; if (dh >= 7) up7++; }
                 if (w.Submerged(c)) { wet++; depth += w.Water[c]; }
@@ -224,10 +224,10 @@ public sealed partial class World
             for (int t = 0; t < P.DayLen; t++)
             {
                 w.Step();
-                if (t % 50 == 0) for (int c = 0; c < N; c++) if (!w.Submerged(c)) { light += w.Light[c]; photons += w.Photon[c]; }
+                if (t % 50 == 0) for (int c = 0; c < w.N; c++) if (!w.Submerged(c)) { light += w.Light[c]; photons += w.Photon[c]; }
             }
-            int samples = P.DayLen / 50, land = N - wet;
-            Console.WriteLine($"relief ×{k}: steps up ≥2 levels {up2 / (double)steps:P1}, ≥7 {up7 / (double)steps:P1}; flooded {wet / (double)N:P0}, mean depth {depth / Math.Max(1, wet):F1}; land light {light / samples / land:F3}, photons {photons / samples / land:F3}; mean temp {w.Temp.Average():F1}");
+            int samples = P.DayLen / 50, land = w.N - wet;
+            Console.WriteLine($"relief ×{k}: steps up ≥2 levels {up2 / (double)steps:P1}, ≥7 {up7 / (double)steps:P1}; flooded {wet / (double)w.N:P0}, mean depth {depth / Math.Max(1, wet):F1}; land light {light / samples / land:F3}, photons {photons / samples / land:F3}; mean temp {w.Temp.Average():F1}");
         }
         P.ReliefScale = scale;
     }

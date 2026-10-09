@@ -47,11 +47,11 @@ public sealed partial class World
     long forcedIceUntil = -1;    // a catastrophe: the glaciation grows until this tick
 
     // The ash veil: optical depth over each cell (saved), its row means of transmission (derived).
-    public readonly float[] Veil = new float[N];
+    public readonly float[] Veil;
     bool veilOn;
-    readonly float[] veilRowTrans = new float[H];
-    readonly float[] veilT = new float[N];       // e^(−veil) per cell for the light (derived)
-    readonly float[] climShift = new float[H];   // °C added to climRow by the cycles (derived at each light update)
+    readonly float[] veilRowTrans;
+    readonly float[] veilT;       // e^(−veil) per cell for the light (derived)
+    readonly float[] climShift;   // °C added to climRow by the cycles (derived at each light update)
     public float VeilTransMean = 1;
 
     // Observation (HUD, chronicle, bench): the orbit and the sun now, the summer insolation at 65°.
@@ -74,7 +74,7 @@ public sealed partial class World
     // A drought: a blocking high over a disk (clear sky, no rain, warmer) until a tick.
     sealed class Drought { public int X, Y; public float R, DT; public long Start, Until; }
     readonly List<Drought> droughts = new();
-    readonly float[] dryW = new float[N], dryT = new float[N];   // derived from the droughts
+    readonly float[] dryW, dryT;   // derived from the droughts
     bool dryOn;
 
     // ---- the orbit and the sun: pure functions of the tick ----
@@ -163,7 +163,7 @@ public sealed partial class World
 
     // ---- the ash veil ----
 
-    readonly float[] veilRow = new float[H], veilNext = new float[H];
+    readonly float[] veilRow, veilNext;
 
     void StepVeil()
     {
@@ -282,8 +282,8 @@ public sealed partial class World
         float rad = 1.5f + MathF.Sqrt(Math.Max(1, blocks) / MathF.PI) / 2;
         int ir = (int)MathF.Ceiling(rad);
         var disk = new List<(int cell, float d2)>();
-        for (int dy = -ir; dy <= ir; dy++)
-            for (int dx = -ir; dx <= ir; dx++)
+        for (int dy = -ir, rx = AroundX(ir); dy <= ir; dy++)
+            for (int dx = -rx; dx <= rx; dx++)
             {
                 int y = cy + dy;
                 float d2 = dx * dx + dy * dy;
@@ -315,13 +315,14 @@ public sealed partial class World
             const float sigma = 6;
             int r = (int)(3 * sigma);
             double sum = 0;
-            for (int dy = -r; dy <= r; dy++) for (int dx = -r; dx <= r; dx++) if (cy + dy >= 0 && cy + dy < H) sum += Math.Exp(-(dx * dx + dy * dy) / (2.0 * sigma * sigma));
+            int rx = AroundX(r);
+            for (int dy = -r; dy <= r; dy++) for (int dx = -rx; dx <= rx; dx++) if (cy + dy >= 0 && cy + dy < H) sum += Math.Exp(-(dx * dx + dy * dy) / (2.0 * sigma * sigma));
             float peak = (float)(ash * N / sum);
             for (int dy = -r; dy <= r; dy++)
             {
                 int y = cy + dy;
                 if (y < 0 || y >= H) continue;
-                for (int dx = -r; dx <= r; dx++)
+                for (int dx = -rx; dx <= rx; dx++)
                     Veil[y * W + ((cx + dx) % W + W) % W] += peak * MathF.Exp(-(dx * dx + dy * dy) / (2 * sigma * sigma));
             }
             veilOn = true;
@@ -454,7 +455,7 @@ public sealed partial class World
             {
                 int y = d.Y + dy;
                 if (y < 0 || y >= H) continue;
-                for (int dx = -ir; dx <= ir; dx++)
+                for (int dx = -AroundX(ir); dx <= AroundX(ir); dx++)
                 {
                     float dist = MathF.Sqrt(dx * dx + dy * dy);
                     if (dist > outer) continue;

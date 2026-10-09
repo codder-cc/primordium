@@ -37,14 +37,14 @@ public sealed partial class World
     // Direct light at the surface of each cell (the water's surface where there is water): the sun's
     // power after the sky, mountain shadows, ash, clouds, ice and snow — what photons accrue from and what
     // a flare hits. Light[i] is what is left of it at the floor. Saved (version 8).
-    public readonly float[] Sun = new float[N];
+    public readonly float[] Sun;
     // Clear-sky transparency, TranspMin … 1 (1 everywhere with the law off). Saved (version 8): it depends
     // on the heights when it was last computed.
-    public readonly float[] Transp = new float[N];
+    public readonly float[] Transp;
     public float TranspMean = 1;
     bool transpValid;
 
-    public static float Latitude(int y) => (0.5f - (y + 0.5f) / H) * MathF.PI * 0.92f;
+    public float Latitude(int y) => (0.5f - (y + 0.5f) / H) * MathF.PI * 0.92f;
     public float DeclinationAt(double tick) => (float)(TiltAt(tick) * Math.Sin(2 * Math.PI * tick / P.DayLen / P.YearDays));   // the tilt of the climate cycles
 
     // ---- 1.1 insolation ----
@@ -84,7 +84,7 @@ public sealed partial class World
     // The year's mean insolation per row and the equator's equinox day (the climate's yardstick):
     // derived from the laws, rebuilt when they change (and, with the climate cycles, when the tilt moved
     // by a step of 0.002 rad: the light update passes the tilt rounded to that).
-    readonly float[] yearInsol = new float[H];
+    readonly float[] yearInsol;
     float insolEq = 1;
     (float, float, float, float, int) insolKey = (float.NaN, 0, 0, 0, -1);
     void EnsureInsolNorms() => EnsureInsolNorms(P.Tilt);
@@ -218,7 +218,7 @@ public sealed partial class World
     }
 
     // Light left at a cell centre by a shadow centred at (cx, cy).
-    public static float EclipseShade(int x, int y, float cx, float cy)
+    public float EclipseShade(int x, int y, float cx, float cy)
     {
         float dx = MathF.Abs(x + 0.5f - cx);
         dx = MathF.Min(dx, W - dx);
@@ -459,7 +459,7 @@ public sealed partial class World
     // what a big body stops in the other cells of its footprint waits in bigCaught and is added after the
     // pass in the order of Agents.
     public static bool CanopyLaw => P.Canopy != 0 && P.ShadeK > 0;
-    readonly float[] bigCaught = new float[N];   // scratch of one update, not state
+    readonly float[] bigCaught;   // scratch of one update, not state
     [ThreadStatic] static Agent[] canopyBuf;
 
     void DistributeCanopy()

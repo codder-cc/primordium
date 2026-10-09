@@ -13,7 +13,7 @@ public sealed partial class World
     {
         var w = Fixture(); var ch = w.Chem;
         w.TrackHeat = true;
-        int c = 60 * W + 60;
+        int c = 60 * w.W + 60;
         var withE = Enumerable.Range(0, Chemistry.S).Where(s => ch.E[s] > 0).ToArray();
         int soft = withE.OrderBy(s => ch.Bond[s]).First(), hard = withE.OrderByDescending(s => ch.Bond[s]).First();
         Require(ch.Bond[hard] > ch.Bond[soft] * 1.5f, "chemistry without a hard molecule");

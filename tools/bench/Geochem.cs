@@ -115,9 +115,9 @@ public sealed partial class World
                     int planted = 0;
                     for (int k = 0, tries = 0; k < spots && tries < 5000; tries++)
                     {
-                        int c = (int)(Hash32.U(seed, tries, 0x1A7) % N);
+                        int c = (int)(Hash32.U(seed, tries, 0x1A7) % w.N);
                         if (w.Submerged(c) || w.Height[c] > w.LowlandTop) continue;
-                        var r = w.SpawnDesign(design, c % W, c / W, new SpawnOptions { Matter = MatterSource.Import, Energy = EnergySource.Import, Count = count, Lineage = lineage, Radius = 3 });
+                        var r = w.SpawnDesign(design, c % w.W, c / w.W, new SpawnOptions { Matter = MatterSource.Import, Energy = EnergySource.Import, Count = count, Lineage = lineage, Radius = 3 });
                         if (!r.Ok) continue;
                         lineage = r.Lineage; planted += r.Made; k++;
                     }
@@ -129,7 +129,7 @@ public sealed partial class World
                 double depth = 0, deep = 0, all = 0; int dmax = 0, roof = 0;
                 foreach (var a in mine)
                 {
-                    int c = a.Y * W + a.X, d = Math.Max(0, w.Height0[c] - a.Z);
+                    int c = a.Y * w.W + a.X, d = Math.Max(0, w.Height0[c] - a.Z);
                     depth += d; dmax = Math.Max(dmax, d);
                     if (w.Roof(c, a.Z) >= 1) roof++;
                     for (int s = 0; s < Chemistry.S; s++) { deep += (double)a.Inv[s] * w.Chem.Atoms[s, w.DeepElement]; all += (double)a.Inv[s] * w.Chem.AtomCount(s); }
@@ -181,7 +181,7 @@ public sealed partial class World
                 {
                     if (s == ch.Gas) continue;
                     double n = 0;
-                    for (int i = 0; i < N; i++) n += w.C[s][i];
+                    for (int i = 0; i < w.N; i++) n += w.C[s][i];
                     for (int e = 0; e < Chemistry.ElementCount; e++) at[e] += n * ch.Atoms[s, e];
                 }
                 Console.WriteLine($"  loose litter (start)              {Shares(at)}");

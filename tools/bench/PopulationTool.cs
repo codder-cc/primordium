@@ -28,7 +28,7 @@ public static class PopulationTool
         string file = Arg(args, "--plant-population");
         if (file == null) return;
         var t = PopulationLibrary.Load(file);
-        int x = World.W / 2, y = World.H / 2;
+        int x = w.W / 2, y = w.H / 2;
         if (Arg(args, "--at") is string at) { var v = Ints(at); x = v[0]; y = v[1]; }
         var o = new PasteOptions
         {

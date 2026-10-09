@@ -27,9 +27,9 @@ public sealed partial class World
     static string CurrentsTest()
     {
         var w = Fixture();
-        int row = 80 * W;
+        int row = 80 * w.W;
         // A step in the water of a channel: the deep end runs towards the shallow one.
-        for (int y = 76; y <= 84; y++) for (int x = 90; x < 120; x++) w.Water[y * W + x] = x < 105 ? 4 : 1;
+        for (int y = 76; y <= 84; y++) for (int x = 90; x < 120; x++) w.Water[y * w.W + x] = x < 105 ? 4 : 1;
         w.Flow();
         float u = w.CurX[row + 104], v = w.CurY[row + 104];
         Require(u > 0.01f && Math.Abs(v) < 1e-6f && w.CurX[row + 95] == 0, $"a step in the water gave no current down it: east {u}, north {v}, upstream {w.CurX[row + 95]}");
@@ -42,7 +42,7 @@ public sealed partial class World
             if (s != ch.Gas && (heavy < 0 || ch.Mass[s] / ch.Volume[s] > ch.Mass[heavy] / ch.Volume[heavy])) heavy = s;
         for (int x = 100; x < 110; x++) w.Water[row + x] = 6;
         for (int z = 2; z < 8; z++) w.TestBlock(row + 110, z, heavy);   // a bank above the surface
-        void Run(Agent a, int ticks) { for (int t = 0; t < ticks; t++) { int cell = a.Y * W + a.X; w.Move(a, ref cell); } }
+        void Run(Agent a, int ticks) { for (int t = 0; t < ticks; t++) { int cell = a.Y * w.W + a.X; w.Move(a, ref cell); } }
         Agent Floater(int cell)
         {
             var f = w.TestAgent(cell, 2, heavy, 20);
@@ -80,16 +80,16 @@ public sealed partial class World
             w.Moisture = 0;
             double t0 = w.WaterTotal();
             for (int k = 0; k < 1500; k++) w.Hydro();   // half a year of env steps at −20 °C
-            int c = 80 * W + 100;
+            int c = 80 * w.W + 100;
             return (w.Water[c], w.Ice[c], w.WaterTotal() - t0, w);
         }
         var (l0, i0, d0, _) = Winter(0);
         var (l1, i1, d1, w) = Winter(1);
         Require(l0 < 0.05f && i0 > 5.9f, $"the old law did not freeze the lake through: water {l0}, ice {i0}");
         Require(l1 > 1.5f && i1 > 2 && Math.Abs(l1 + i1 - 6) < 1e-3f, $"floating ice did not keep water under it: water {l1}, ice {i1}");
-        Require(Math.Abs(d0) < 1e-6 * 6 * N && Math.Abs(d1) < 1e-6 * 6 * N, $"water not conserved through freezing: {d0:E1} / {d1:E1}");
+        Require(Math.Abs(d0) < 1e-6 * 6 * w.N && Math.Abs(d1) < 1e-6 * 6 * w.N, $"water not conserved through freezing: {d0:E1} / {d1:E1}");
         // A swimmer under the ice: no air above it.
-        int cell = 80 * W + 100, gas = w.Chem.Gas;
+        int cell = 80 * w.W + 100, gas = w.Chem.Gas;
         var f = w.TestAgent(cell, 2, 0, 20);
         while (f.Density >= P.WaterDensity) w.AddMol(f, gas);
         for (int t = 0; t < 1000; t++) { int c = cell; w.Move(f, ref c); }
@@ -102,17 +102,17 @@ public sealed partial class World
     {
         var w = Fixture();
         Array.Fill(w.Water, 5f);   // a sea everywhere: level 7
-        int y0 = 60, row = y0 * W;
+        int y0 = 60, row = y0 * w.W;
         // A hill (x 105…112, rows 58…62) to level 10. Under it in row 60 a tunnel at levels 2–3 from the
         // sea at x 104 to x 108, then a chamber at levels 2–6 at x 109.
         for (int y = 58; y <= 62; y++)
             for (int x = 105; x <= 112; x++)
             {
-                int c = y * W + x;
+                int c = y * w.W + x;
                 w.Water[c] = 0;
                 int top = y == y0 && x >= 105 && x <= 108 ? 4 : y == y0 && x == 109 ? 7 : 2;
-                for (int z = top; z < 10; z++) { w.Mat[c * Z + z] = Chemistry.Bedrock; w.Order[c * Z + z] = 255; }
-                for (int z = 2; z < top; z++) w.Mat[c * Z + z] = y == y0 && x <= 109 ? Chemistry.Air : Chemistry.Bedrock;
+                for (int z = top; z < 10; z++) { w.Mat[c * w.Z + z] = Chemistry.Bedrock; w.Order[c * w.Z + z] = 255; }
+                for (int z = 2; z < top; z++) w.Mat[c * w.Z + z] = y == y0 && x <= 109 ? Chemistry.Air : Chemistry.Bedrock;
                 w.Height[c] = 10;
                 w.TerrainChanged(c);
             }
@@ -164,14 +164,14 @@ public sealed partial class World
         Steps(w, 1);
         Require(w.Height[row + 109] == 2 && w.CaveDepth(row + 109, 2) == 0 && w.Water[row + 109] > 1, $"the opened chamber kept its water: height {w.Height[row + 109]}, surface water {w.Water[row + 109]}");
         // Rock laid into the flooded tunnel pushes its water up and out.
-        w.Mat[(row + 106) * Z + 2] = Chemistry.Bedrock; w.Order[(row + 106) * Z + 2] = 255; w.TerrainChanged(row + 106);
+        w.Mat[(row + 106) * w.Z + 2] = Chemistry.Bedrock; w.Order[(row + 106) * w.Z + 2] = 255; w.TerrainChanged(row + 106);
         Steps(w, 1);
         Require(w.CaveDepth(row + 106, 2) == 0 && w.CaveDepth(row + 106, 3) <= 1, $"rock in the tunnel did not displace its water: {w.CaveDepth(row + 106, 3)}");
         Require(Math.Abs(caveDrift) < 1e-4, $"water not conserved when the rock changed: {caveDrift:E2}");
 
         // The sea gone: the caves drain through the mouth, all but a pool behind the sill the rock made
         // at x 106 (the tunnel's floor is a level higher there): x 107–108 keep one block.
-        for (int i = 0; i < N; i++) if (w.Height[i] == 2) w.Water[i] = 0;
+        for (int i = 0; i < w.N; i++) if (w.Height[i] == 2) w.Water[i] = 0;
         caveDrift = 0;
         float held = (float)w.CaveWaterTotal();
         Steps(w, 600);
