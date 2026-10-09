@@ -25,7 +25,7 @@ Every world is grown from a seed: its own artificial elements, its own molecules
 - 🌦 **Living climate and sky.** Seasons, day length by latitude, Milankovitch-style cycles (obliquity, precession, eccentricity), ice ages, eclipses, solar flares, volcanoes, cave microclimates.
 - 📈 **Open-endedness metrics.** Bedau-style neutral shadow, novelty, complexity, ecology, tempo and phylogeny tracks, with an honest "progressing / stagnating / regressing" hint.
 - 📜 **A chronicle of the world.** First proteins, first swimmers, the first predator, speciation and extinction, plus fossils you can resurrect.
-- 🛠 **Play god, carefully.** Tune the 320 world laws live, design your own creatures in genome assembly, trigger catastrophes, save and load. Nothing appears for free: whatever you add is booked in the ledger.
+- 🛠 **Play god, carefully.** Tune the 326 world laws live, design your own creatures in genome assembly, trigger catastrophes, save and load. Nothing appears for free: whatever you add is booked in the ledger.
 - ⚙️ **Deterministic and fast.** Multithreaded checkerboard stepping with a reproducible trajectory: the same seed and laws give the same world on any run. A headless bench runs long experiments and statistical comparisons.
 
 ## Screenshots
@@ -97,7 +97,7 @@ dotnet run -c Release --project tools/bench -- --self-test                 # con
 dotnet run -c Release --project tools/bench -- --self-test-one RubbleRegression   # one part of it, timed
 dotnet run -c Release --project tools/bench -- --seed 1 --size 64x64x64 --ticks 6000   # a small world (WxHxL; default 256x160x192)
 dotnet run -c Release --project tools/bench -- --seed 1 --ticks 10000 --every 1000 --audit
-dotnet run -c Release --project tools/bench -- --list-params               # all 320 world laws
+dotnet run -c Release --project tools/bench -- --list-params               # all 326 world laws
 dotnet run -c Release --project tools/bench -- --batch --seeds 1-16 --reps 3 --ticks 6000 --out runs/base
 dotnet run -c Release --project tools/bench -- --compare runs/base/runs.csv runs/try/runs.csv
 dotnet run -c Release --project tools/bench -- --batch ... --resume                  # after a crash: only the unfinished runs
@@ -132,6 +132,7 @@ Decide on laws with batches, not single runs: `--compare` reports medians with b
 | **Structure** | Load follows the strongest support path to grounded rock. Confinement strengthens strata, crushed rock bulks and flows downhill, and pressure packs it back with exponentially rising resistance. |
 | **Life** | Eight VM steps per tick. Enzymes are encoded by the genome itself: catalysis type, target molecules, temperature optimum and efficiency. Proteins wear out, bodies need energy, and heat and frost hurt. |
 | **Water** | Bodies sink without gas; gas in the body is a bubble, so intake and expel choose a depth. Light fades with depth. |
+| **Default world** | A body's energy is the excitation of the molecules it holds (`MatterEnergy` 1); every molecule decays by one Arrhenius law, faster warm and wet (`ArrheniusDecay` 1); every sense and the motor is a protein the genome made, with a cost (`Organs` 1); uphill reactions follow the body's k·T (`UphillKT` 1); every species has a share in the air by its cohesion (`Volatility` 1). Chosen by batches on full worlds: no extinctions, ~80× the bodies and ~13× the generations of the old default at 30 000 ticks, hunters, cave and water dwellers (CHANGELOG 2026-10-09 (11)). The old default world is the preset `presets/legacy.json` (`--preset presets/legacy.json`; built-in in the F2 and F4 windows); saves keep their own laws. |
 | **Threads** | Bodies step in parallel on 32 × 32 tiles in a checkerboard pattern under a strict locality contract, with the same trajectory as a serial run. |
 
 The full model, with its limits and what is only approximated, is in **[docs/SIMULATION.md](docs/SIMULATION.md)**. The development log ([CHANGELOG](docs/CHANGELOG.md)) and [ROADMAP](docs/ROADMAP.md) are in Russian. Contributor rules are in [AGENTS.md](AGENTS.md).
