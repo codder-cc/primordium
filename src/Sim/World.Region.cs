@@ -297,6 +297,7 @@ public sealed partial class World
                 if (b.Design != null && !DesignedLineages.ContainsKey(lineage)) DesignedLineages[lineage] = b.Design;
                 for (int s = 0; s < Chemistry.S; s++) { book.WholeIn[s] += a.Inv[s]; book.FracIn[s] += a.Pend[s].Raw; }
                 for (int k = 0; k < a.EnzN; k++) book.FracIn[a.Enz[k].Material] += a.Enz[k].Matter.Raw;
+                if (a.Poly != null) { for (int s = 0; s < Chemistry.S; s++) book.FracIn[s] += a.Poly.M[s].Raw; book.BodyIn += a.Poly.BondEnergy; }   // World.Polymer.cs
                 book.BodyIn += a.Energy + a.HeatHeld;
                 res.BodiesIn++;
             }
@@ -530,6 +531,23 @@ public sealed partial class World
     // mapped kinds.
     void RemapBody(Agent a, int[] map, RegionChemistry src)
     {
+        if (a.Poly != null)
+        {
+            // Polymers (World.Polymer.cs) are sequences of the other chemistry's letters: they fall apart into
+            // their residues here (the matter joins the partly absorbed molecules, the bonds' energy the body's
+            // held heat) and the body's model starts its state anew from what the body holds.
+            for (int s = 0; s < Chemistry.S; s++)
+            {
+                if (a.Poly.M[s].Raw == 0) continue;
+                a.Pend[s] += a.Poly.M[s];
+                float sv = s == src.Gas ? src.Volume[s] * P.GasExpand : src.Volume[s];
+                a.Volume += a.Poly.M[s].F * (sv - src.Volume[s]);
+            }
+            for (int s = 0; s < Chemistry.S; s++) while (a.Pend[s] >= 1) { a.Pend[s] -= 1; a.Inv[s]++; a.InvTotal++; }
+            a.HeatHeld += a.Poly.BondEnergy;
+            a.Poly = null;
+            a.ModelState = null;
+        }
         var inv = (int[])a.Inv.Clone();
         var pend = (Qty[])a.Pend.Clone();
         Array.Clear(a.Inv); Array.Clear(a.Pend);
@@ -576,6 +594,7 @@ public sealed partial class World
         int cell = a.Y * W + a.X;
         for (int s = 0; s < Chemistry.S; s++) { book.WholeOut[s] += a.Inv[s]; book.FracOut[s] += a.Pend[s].Raw; }
         for (int k = 0; k < a.EnzN; k++) book.FracOut[a.Enz[k].Material] += a.Enz[k].Matter.Raw;
+        if (a.Poly != null) { for (int s = 0; s < Chemistry.S; s++) book.FracOut[s] += a.Poly.M[s].Raw; book.BodyOut += a.Poly.BondEnergy; }   // World.Polymer.cs
         book.BodyOut += a.Energy + a.HeatHeld;
         foreach (var b in a.Links) Unlink(b, a);
         a.Links.Clear();

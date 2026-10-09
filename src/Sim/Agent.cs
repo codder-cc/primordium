@@ -24,6 +24,24 @@ public struct Enzyme
     public int Src;   // genome position of its gene (the bytes get protected while it is useful)
 }
 
+// A body's polymer pool: per species, the matter its polymers are made of (Qty, exact; residues are ground
+// states), and the energy held in their bonds and excited residues (Bond, in 2⁻³² energy units, exact).
+public sealed class Polymers
+{
+    public readonly Qty[] M = new Qty[Chemistry.S];
+    public long Bond;
+    public double BondEnergy => Bond / Qty.One;
+    public bool Empty
+    {
+        get
+        {
+            if (Bond != 0) return false;
+            foreach (var q in M) if (q.Raw != 0) return false;
+            return true;
+        }
+    }
+}
+
 public sealed class Agent
 {
     public readonly long Id, Lineage;
@@ -68,6 +86,12 @@ public sealed class Agent
     // Proteins currently present.
     public Enzyme[] Enz = new Enzyme[4];   // grows as needed: no limit on how many proteins a body keeps
     public int EnzN;
+
+    // Matter bound in polymers (genome strands, protein chains) and the energy in their bonds — the body's
+    // polymer pool (World.Polymer.cs); null for a body that keeps none (every model-1 body). Written by the
+    // model that keeps it (its SyncState: World.SyncPolymers), counted by the world in atoms, energy,
+    // mass, room, death, regions and populations.
+    public Polymers Poly;
 
     // Model 1 (VM) state. Signal is what others hear (`listen`); LastCycles the steps thought last tick,
     // each paid at P.CostInstr (another model may use them the same way).

@@ -137,6 +137,11 @@ public sealed partial class World
             e.Held += a.HeatHeld;
             for (int s = 0; s < Chemistry.S; s++) e.BodyMatter += (a.Inv[s] + a.Pend[s].D) * E[s];
             for (int k = 0; k < a.EnzN; k++) e.Protein += a.Enz[k].Matter.D * E[a.Enz[k].Material];
+            if (a.Poly != null)   // polymers (World.Polymer.cs): their residues' bonds as molecules, and the bonds between them
+            {
+                for (int s = 0; s < Chemistry.S; s++) e.Polymer += a.Poly.M[s].D * E[s];
+                e.Polymer += a.Poly.BondEnergy;
+            }
         }
         double pending = 0;
         for (int i = 0; i < N; i++) pending += heatIn[i];
@@ -150,12 +155,12 @@ public sealed partial class World
 public sealed class EnergyAudit
 {
     public long Tick;
-    public double Bodies, Held, BodyMatter, Protein, Loose, Rock, Burial;
+    public double Bodies, Held, BodyMatter, Protein, Polymer, Loose, Rock, Burial;   // Polymer: bodies' polymer pools (World.Polymer.cs)
     public double[] Flows;
     public double HeatSeen;     // heat that went through heatIn (only with World.TrackHeat)
     public bool HeatTracked;
 
-    public double Stock => Bodies + Held + BodyMatter + Protein + Loose + Rock + Burial;
+    public double Stock => Bodies + Held + BodyMatter + Protein + Polymer + Loose + Rock + Burial;
     public double In { get { double t = 0; for (int k = 0; k < World.InputsEnd; k++) t += Flows[k]; return t; } }
     public double Out { get { double t = 0; for (int k = World.InputsEnd; k < World.OutputsEnd; k++) t += Flows[k]; return t; } }
     // Everything the flows say reached the cells as heat (Unpaid went nowhere; impact heat is
@@ -187,6 +192,6 @@ public sealed class EnergyAudit
         var flows = string.Join(" ", Enumerable.Range(0, World.FlowCount)
             .Where(k => Flows[k] != from.Flows[k]).Select(k => $"{World.FlowNames[k]} {F(Flows[k] - from.Flows[k])}"));
         string heat = HeatTracked && from.HeatTracked ? $", heat via cells off by {HeatMismatch(from, this).ToString("F3", inv)}" : "";
-        return $"energy drift {Drift(from, this).ToString("F3", inv)} (tolerance {Tolerance(from, this).ToString("F1", inv)}) over in {F(In - from.In)} out {F(Out - from.Out)}{heat} | stock {F(Stock)}: bodies {F(Bodies)} held {F(Held)} body matter {F(BodyMatter)} protein {F(Protein)} loose {F(Loose)} rock {F(Rock)} burial {F(Burial)} | flows: {flows}";
+        return $"energy drift {Drift(from, this).ToString("F3", inv)} (tolerance {Tolerance(from, this).ToString("F1", inv)}) over in {F(In - from.In)} out {F(Out - from.Out)}{heat} | stock {F(Stock)}: bodies {F(Bodies)} held {F(Held)} body matter {F(BodyMatter)} protein {F(Protein)}{(Polymer != 0 || from.Polymer != 0 ? $" polymer {F(Polymer)}" : "")} loose {F(Loose)} rock {F(Rock)} burial {F(Burial)} | flows: {flows}";
     }
 }

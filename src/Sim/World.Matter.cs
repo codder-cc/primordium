@@ -429,6 +429,7 @@ public sealed partial class World
                 {
                     for (int s = 0; s < Chemistry.S; s++) { whole[s] += a.Inv[s]; frac[s] += a.Pend[s].Raw; }
                     for (int k = 0; k < a.EnzN; k++) frac[a.Enz[k].Material] += a.Enz[k].Matter.Raw;
+                    if (a.Poly != null) for (int s = 0; s < Chemistry.S; s++) frac[s] += a.Poly.M[s].Raw;   // polymers (World.Polymer.cs)
                 }
             var atoms = new double[Chemistry.ElementCount];
             for (int e = 0; e < atoms.Length; e++)

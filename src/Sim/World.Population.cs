@@ -85,8 +85,13 @@ public sealed partial class World
             };
             for (int s = 0; s < Chemistry.S; s++)
             {
-                if (a.Inv[s] > 0) b.Body[s.ToString(System.Globalization.CultureInfo.InvariantCulture)] = a.Inv[s];
-                if (a.Pend[s].Raw > 0) b.Pend[s.ToString(System.Globalization.CultureInfo.InvariantCulture)] = a.Pend[s].Raw;
+                // A body's polymers (World.Polymer.cs) are carried as the monomers they are made of: the pasted body's
+                // model builds its own anew from them (life model 2 assembles itself on its first tick).
+                long raw = a.Pend[s].Raw + (a.Poly != null ? a.Poly.M[s].Raw : 0);
+                int whole = a.Inv[s] + (int)(raw >> Qty.Bits);
+                raw &= (1L << Qty.Bits) - 1;
+                if (whole > 0) b.Body[s.ToString(System.Globalization.CultureInfo.InvariantCulture)] = whole;
+                if (raw > 0) b.Pend[s.ToString(System.Globalization.CultureInfo.InvariantCulture)] = raw;
             }
             for (int k = 0; k < a.EnzN; k++)
             {

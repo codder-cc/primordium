@@ -77,7 +77,7 @@ public static class ParamRegistry
         ["Действия"] = "Actions", ["Тело"] = "Body", ["Износ"] = "Wear", ["Объём"] = "Volume",
         ["Энергия"] = "Energy", ["Размножение"] = "Reproduction", ["Связи"] = "Links", ["Движение"] = "Motion",
         ["Среда"] = "Environment", ["Геохимия"] = "Geochemistry", ["Климат"] = "Climate", ["Вода"] = "Water",
-        ["Ресурсы"] = "Resources", ["Космос"] = "Space", ["Хроника"] = "Chronicle",
+        ["Ресурсы"] = "Resources", ["Космос"] = "Space", ["Хроника"] = "Chronicle", ["Жизнь 2"] = "Life 2",
     };
 
     // The group's name in the current language.
@@ -336,6 +336,48 @@ public static class ParamRegistry
         F("FlareProtK", "Космос", "Protein destruction by flares: share per tick per unit of dose", "Разрушение белков вспышкой: доля за тик на единицу дозы", 0, 0.1, 0.0005);
         F("FlareHarmK", "Космос", "Flare damage: energy per tick per unit of dose", "Урон от вспышки: энергия за тик на единицу дозы", 0, 1, 0.005);
         F("FlareHeatK", "Космос", "Flare heating of a body: external energy per tick per unit of dose", "Нагрев тела вспышкой: энергия извне за тик на единицу дозы", 0, 5, 0.05);
+        // Life model 2 (src/Sim/Model2)
+        I("Life2ResidueBits", "Жизнь 2", "A residue of a model-2 polymer is 2^−bits of a molecule of its letter", "Остаток полимера модели 2 — 2^−bits молекулы своей буквы", 4, 16, 1, live: false);
+        F("Life2Link", "Жизнь 2", "Model 2: energy held in the bond of one residue", "Модель 2: энергия в связи одного остатка", 0, 0.1, 0.0005);
+        F("Life2LinkEff", "Жизнь 2", "Model 2: share of the charge paid for a bond that stays in it (the rest is heat)", "Модель 2: доля заряда, заплаченного за связь, которая остаётся в ней (остальное — тепло)", 0.05, 1, 0.05);
+        F("Life2EpsB", "Жизнь 2", "Model 2 folding: binding energy per matched atom of a pocket and its ligand", "Свёртка модели 2: энергия связывания на совпавший атом кармана и лиганда", 0, 5, 0.05, live: false);
+        F("Life2EpsM", "Жизнь 2", "Model 2 folding: penalty per atom of mismatch", "Свёртка модели 2: штраф на атом несовпадения", 0, 5, 0.05, live: false);
+        F("Life2EpsQ", "Жизнь 2", "Model 2 folding: weight of polarity (opposite charges attract)", "Свёртка модели 2: вес полярности (противоположные заряды притягиваются)", 0, 5, 0.05, live: false);
+        F("Life2EpsH", "Жизнь 2", "Model 2 folding: weight of hydrophobicity mismatch", "Свёртка модели 2: вес несовпадения гидрофобности", 0, 10, 0.1, live: false);
+        F("Life2EpsX", "Жизнь 2", "Model 2 folding: resonance of gaps (a pocket sees the charge of an excited ligand)", "Свёртка модели 2: резонанс щелей (карман видит заряд возбуждённого лиганда)", 0, 10, 0.1, live: false);
+        F("Life2SigmaX", "Жизнь 2", "Model 2 folding: width of the gap resonance", "Свёртка модели 2: ширина резонанса щелей", 0.1, 10, 0.1, live: false);
+        F("Life2EpsC", "Жизнь 2", "Model 2 folding: weight of the two conformations’ preference (R/T)", "Свёртка модели 2: вес склонности к двум конформациям (R/T)", 0, 10, 0.1, live: false);
+        F("Life2EpsF", "Жизнь 2", "Model 2 folding: stability per unit of hydrophobic core", "Свёртка модели 2: устойчивость на единицу гидрофобного ядра", 0, 5, 0.05, live: false);
+        F("Life2EpsS", "Жизнь 2", "Model 2 folding: entropy of the chain per √length", "Свёртка модели 2: энтропия цепи на √длины", 0, 5, 0.05, live: false);
+        F("Life2WindowShare", "Жизнь 2", "Model 2 folding: share of random pocket–window pairs of chains that bind (sets the free energy binding a tethered window of a chain costs)", "Свёртка модели 2: доля случайных пар карман–окно цепей, которые связываются (задаёт свободную энергию связывания привязанного окна цепи)", 0.0001, 0.5, 0.001, live: false);
+        F("Life2PocketShare", "Жизнь 2", "Model 2 folding: share of random 3-residue windows that bind some molecule (sets the free energy every binding costs, per chemistry)", "Свёртка модели 2: доля случайных окон из 3 остатков, связывающих какую-либо молекулу (задаёт свободную энергию, которой стоит любое связывание, для каждой химии)", 0.0001, 0.5, 0.001, live: false);
+        F("Life2Cut", "Жизнь 2", "Model 2 folding: binding free energy below which a window is a pocket", "Свёртка модели 2: свободная энергия связывания, ниже которой окно — карман", -10, 0, 0.1, live: false);
+        F("Life2Kd0", "Жизнь 2", "Model 2: dissociation constant at zero binding energy (molecules per comfortable room of a cell)", "Модель 2: константа диссоциации при нулевой энергии связывания (молекул на удобную комнату клетки)", 0.01, 100, 0.01);
+        F("Life2TmShare", "Жизнь 2", "Model 2 folding: share of random 7-residue windows hydrophobic enough to cross the membrane (sets the threshold per chemistry)", "Свёртка модели 2: доля случайных окон из 7 остатков, достаточно гидрофобных, чтобы пересечь мембрану (задаёт порог для каждой химии)", 0.0001, 0.5, 0.0005, live: false);
+        F("Life2TmQ", "Жизнь 2", "Model 2 folding: most mean |polarity| (in units of its spread over the letters) of a membrane-crossing window", "Свёртка модели 2: наибольшая средняя |полярность| (в единицах её разброса по буквам) окна, пересекающего мембрану", 0, 4, 0.05, live: false);
+        F("Life2Pair", "Жизнь 2", "Model 2: pairing energy of two complementary residues", "Модель 2: энергия спаривания двух комплементарных остатков", 0, 40, 0.5, live: false);
+        F("Life2Stem", "Жизнь 2", "Model 2: share of the full pairing energy two residues need to hold a hairpin's stem (a terminator)", "Модель 2: доля полной энергии спаривания, нужная двум остаткам, чтобы держать стебель шпильки (терминатор)", 0, 1, 0.05, live: false);
+        F("Life2Tx", "Жизнь 2", "Model 2: copies of a gene per slow step at a fully occupied promoter", "Модель 2: копий гена за медленный шаг при полностью занятом промоторе", 0, 10, 0.05);
+        F("Life2Pol", "Жизнь 2", "Model 2: residues a bound polymerase copies per slow step", "Модель 2: остатков, которые связанная полимераза копирует за медленный шаг", 0, 1000, 1);
+        I("Life2Every", "Жизнь 2", "Model 2: ticks between slow steps (transcription, synthesis, decay, copying, division)", "Модель 2: тиков между медленными шагами (транскрипция, синтез, распад, копирование, деление)", 1, 64, 1);
+        I("Life2MaxGene", "Жизнь 2", "Model 2: longest transcript before the polymerase falls off", "Модель 2: самый длинный транскрипт, после которого полимераза срывается", 8, 1000, 1, live: false);
+        I("Life2Proofread", "Жизнь 2", "Model 2: times a polymerase with a second pocket can take a wrong letter off again (kinetic proofreading)", "Модель 2: сколько раз полимераза со вторым карманом может снять неверную букву (кинетическая корректура)", 0, 10, 1);
+        F("Life2Fidelity", "Жизнь 2", "Model 2: how much a rigid polymerase pocket sharpens the choice of the paired letter", "Модель 2: насколько жёсткий карман полимеразы обостряет выбор парной буквы", 0, 20, 0.1);
+        F("Life2Pump", "Жизнь 2", "Model 2: molecules a pump copy takes in per tick with its ligand and carrier bound (each at model 1's uptake cost)", "Модель 2: молекул, которые копия насоса забирает за тик со связанными лигандом и переносчиком (каждая — по цене поглощения модели 1)", 0, 10, 0.005);
+        F("Life2Leak", "Жизнь 2", "Model 2: permeability of the bare membrane to a fully hydrophobic molecule (scaled by the square of its hydrophobicity)", "Модель 2: проницаемость голой мембраны для полностью гидрофобной молекулы (с множителем квадрата её гидрофобности)", 0, 1, 0.0005);
+        F("Life2Channel", "Жизнь 2", "Model 2: permeability of a channel copy", "Модель 2: проницаемость копии канала", 0, 10, 0.005);
+        F("Life2Motor", "Жизнь 2", "Model 2: cycles per tick of a motor copy with its carrier bound", "Модель 2: циклов за тик копии мотора со связанным переносчиком", 0, 20, 0.05);
+        F("Life2Leg", "Жизнь 2", "Model 2: soluble length over which a motor stroke saturates", "Модель 2: растворимая длина, на которой ход мотора насыщается", 1, 200, 1);
+        F("Life2Turn", "Жизнь 2", "Model 2: torque cycles per tumble (a new heading)", "Модель 2: циклов момента на кувырок (новый курс)", 0.1, 100, 0.1);
+        F("Life2Pigment", "Жизнь 2", "Model 2: photons a pigment copy tries to catch per tick", "Модель 2: фотонов, которые копия пигмента пытается поймать за тик", 0, 2, 0.005);
+        F("Life2Transfer", "Жизнь 2", "Model 2: excitation transfers per tick from a bound carrier to a modification site", "Модель 2: переносов возбуждения за тик со связанного переносчика на место модификации", 0, 10, 0.01);
+        F("Life2ModRelax", "Жизнь 2", "Model 2: chance per tick that an excited residue relaxes (heat)", "Модель 2: шанс за тик, что возбуждённый остаток релаксирует (тепло)", 0, 1, 0.001);
+        F("Life2CatTS", "Жизнь 2", "Model 2: share of binding that stabilises the transition state", "Модель 2: доля связывания, стабилизирующая переходное состояние", 0, 1, 0.01);
+        F("Life2CatMax", "Жизнь 2", "Model 2: most a pocket speeds a reaction up over its spontaneous rate", "Модель 2: во сколько раз карман самое большее ускоряет реакцию против спонтанной", 1, 10000000.0, 100);
+        F("Life2Decay", "Жизнь 2", "Model 2: chance per tick that a protein copy of neutral stability falls apart (at 15 °C; a well folded chain lasts longer)", "Модель 2: шанс за тик, что копия белка средней устойчивости распадётся (при 15 °C; хорошо свёрнутая живёт дольше)", 0, 0.1, 0.0001);
+        F("Life2MembraneTM", "Жизнь 2", "Model 2: membrane area of one crossing of one protein copy", "Модель 2: площадь мембраны на одно пересечение одной копии белка", 0, 10, 0.01);
+        F("Life2MembraneLipid", "Жизнь 2", "Model 2: membrane area per unit of amphiphilicity of a held molecule", "Модель 2: площадь мембраны на единицу амфифильности удерживаемой молекулы", 0, 10, 0.01);
+        F("Life2Divide", "Жизнь 2", "Model 2: membrane area over a sphere of the body volume at which it splits (with two genomes)", "Модель 2: площадь мембраны к площади шара объёма тела, при которой оно делится (с двумя геномами)", 0, 4, 0.01);
         // Chronicle (only what is remembered and shown)
         I("ChronicleCap", "Хроника", "How many ordinary chronicle events to remember (important ones always)", "Сколько обычных событий хроники помнить (важные — всегда)", 100, 200000, 100);
         I("FossilCap", "Хроника", "How many fossils to keep (the least important go first)", "Сколько окаменелостей хранить (лишние — наименее важные)", 10, 20000, 10);

@@ -372,6 +372,43 @@ public static class P
     public static float SolarCycle = 0f, SolarLumAmp = 0.02f, FlareRate = 0.5f, FlareLen = 150f, FlarePowerMin = 1f, FlarePareto = 2f;
     public static float FlareWaterDim = 0.7f, ShieldK = 1f, FlareMutK = 3e-5f, FlareProtK = 0.002f, FlareHarmK = 0.02f, FlareHeatK = 0.01f;
 
+    // Life model 2 (src/Sim/Model2, docs/DESIGN-LIFE-MODEL-2.md): a cell of proteins folded from a polymer
+    // genome. The folding laws (Life2Eps*, Life2Cut, Life2Tm*, Life2Pair, Life2MaxGene, Life2ResidueBits)
+    // shape what a sequence is: a cache of folds per chemistry keeps them, so they take effect in a new world.
+    public static int Life2ResidueBits = 8;      // a residue is 2^−bits of a molecule of its letter (ResidueQ = 2⁻⁸)
+    public static float Life2Link = 1f / 512;    // energy held in the bond of one residue (E_link)
+    public static float Life2LinkEff = 0.5f;     // share of the charge paid for a bond that stays in it (η), the rest is heat
+    public static float Life2EpsB = 1.2f, Life2EpsM = 2f, Life2EpsQ = 0.3f, Life2EpsH = 0.5f, Life2EpsX = 1f, Life2SigmaX = 1.5f;
+    public static float Life2EpsC = 1f, Life2EpsF = 0.4f, Life2EpsS = 0.3f;
+    public static float Life2WindowShare = 0.05f; // share of random pocket–window pairs of chains that bind below Life2Cut (sets the cost of binding a tethered window)
+    public static float Life2PocketShare = 0.02f; // share of random windows that bind some species below Life2Cut (sets what binding costs, per chemistry)
+    public static float Life2Cut = -1f;          // free energy of binding below which a window is a pocket
+    public static float Life2Kd0 = 1f;           // dissociation constant at ΔG 0 (molecules per InvPerCell of room)
+    public static float Life2TmShare = 0.005f, Life2TmQ = 1f;   // share of random 7-residue windows hydrophobic enough to cross the membrane (sets the threshold per chemistry); most mean |polarity| of one
+    public static float Life2Pair = 10f;         // pairing energy of two complementary residues (ε_P)
+    public static float Life2Stem = 0.5f;        // share of Life2Pair a pair of residues needs to hold a hairpin's stem
+    public static float Life2Tx = 2f;            // copies of a gene per slow step at a fully occupied promoter
+    public static float Life2Pol = 40f;          // residues a bound polymerase copies per slow step
+    public static int Life2Every = 8;            // ticks between slow steps (transcription, synthesis, decay, copying, division)
+    public static int Life2MaxGene = 160;        // longest transcript a polymerase makes before it falls off
+    public static int Life2Proofread = 4;        // times a polymerase with a second pocket can take a wrong letter off again
+    public static float Life2Fidelity = 12f;     // how much a rigid polymerase pocket sharpens the choice of the paired letter (D_max)
+    public static float Life2Channel = 0.05f;    // permeability of a channel copy
+    public static float Life2Pump = 0.05f;       // molecules a pump copy takes in per tick with its ligand and carrier bound
+    public static float Life2Leak = 0.01f;       // permeability of the bare membrane to a fully hydrophobic molecule (× its hydrophobicity²)
+    public static float Life2Motor = 1f;         // cycles per tick of a motor copy with its carrier bound
+    public static float Life2Leg = 20f;          // soluble length over which a motor's stroke saturates (ℓ_0)
+    public static float Life2Turn = 4f;          // torque cycles per tumble (a new heading)
+    public static float Life2Pigment = 0.05f;    // photons a pigment copy tries to catch per tick
+    public static float Life2Transfer = 0.2f;    // excitation transfers per tick from a bound carrier to a modification site
+    public static float Life2ModRelax = 0.02f;   // chance per tick that an excited residue relaxes (its energy: heat)
+    public static float Life2CatTS = 0.6f;       // share of binding that stabilises the transition state (η_TS)
+    public static float Life2CatMax = 10000f;    // most a pocket speeds a reaction up over its spontaneous rate
+    public static float Life2MembraneTM = 1f;    // membrane area of one crossing of one protein copy
+    public static float Life2Decay = 0.0005f;    // chance per tick a protein copy of neutral stability falls apart (at 15 °C)
+    public static float Life2MembraneLipid = 0.05f;   // membrane area per unit of amphiphilicity of a held molecule
+    public static float Life2Divide = 0.5f;      // membrane area over the area of a sphere of the body's volume at which it splits (2^(1/3): two spheres)
+
     // Chronicle (observation only: none of these changes what happens in the world)
     public static int ChronicleCap = 10000;     // ordinary events kept (important ones are kept for ever)
     public static int FossilCap = 1000;         // fossils kept; the least important go first

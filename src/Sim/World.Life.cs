@@ -403,13 +403,24 @@ public sealed partial class World
             var e = a.Enz[k];
             if (buried == null) C[e.Material][cell] += e.Matter; else buried[e.Material] += e.Matter;
         }
+        double polyHeat = 0;
+        if (a.Poly != null)   // its polymers fall apart into their residues (World.Polymer.cs); their bonds' energy is heat
+        {
+            for (int s = 0; s < Chemistry.S; s++)
+            {
+                if (a.Poly.M[s].Raw == 0) continue;
+                if (buried == null) C[s][cell] += a.Poly.M[s]; else buried[s] += a.Poly.M[s];
+            }
+            polyHeat = a.Poly.BondEnergy;
+            a.Poly = null;
+        }
         if (PredProbe != null && buried == null)   // observation: the remains on open ground (World.Predation)
         {
             long n = 0; double e = 0, x = 0;
             for (int s = 0; s < Chemistry.S; s++) { double k = a.Inv[s] + a.Pend[s].D; n += a.Inv[s]; e += k * Chem.E[s]; x += k * Chem.Gap[s]; }
             PredProbe.Death(cell, n, e, x, Tick, Temp[cell], Water[cell] + Rain[cell]);
         }
-        double heat = Math.Max(0, a.Energy) + a.HeatHeld;
+        double heat = Math.Max(0, a.Energy) + a.HeatHeld + polyHeat;
         heatIn[cell] += (float)heat;
         var flows = Flows;
         flows[FDeath] += heat;
@@ -498,6 +509,7 @@ public sealed partial class World
             for (int k = 0; k < give[s]; k++) { RemoveMol(a, s); AddMol(child, s); }
         if (MatterLaw) a.LifeKids += (float)(cost + before - Held(a));   // law 1: the charge its molecules took along
         life.InheritState(a, child);
+        life.Divided(this, a, child);
         Born(a, child, to);
         Act(a, ActDivide, to == cell ? -1 : Neighbour4(cell, to));
     }

@@ -93,6 +93,7 @@ public sealed partial class World
         Timed("PopulationRegression", PopulationRegression);
         Timed("LifeModelRegression", LifeModelRegression);
         Timed("OrganRegression", OrganRegression);
+        Timed("Model2Regression", Model2Regression);
         Timed("ChronicleRegression", ChronicleRegression);
         Timed("EvolutionRegression", EvolutionRegression);
         Timed("chemistry, fingerprint, labels, mutation", () =>

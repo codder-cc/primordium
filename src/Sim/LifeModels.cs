@@ -38,6 +38,10 @@ public interface ILifeModel
     (byte[] g, byte[] p) Mutate(byte[] g, byte[] prot, SimRng rng);
     (byte[] g, byte[] p) Cross(Agent a, Agent b, SimRng rng);   // both parents are of this model
     void InheritState(Agent parent, Agent child);               // controller state a newborn starts with
+    // After World.Divide has made `child` (molecules shared, genome from Mutate, InheritState), in the parent's
+    // tick: what else the body holds that only the model knows how to share (model 2: its polymers, through
+    // World.HandPolymer). Random numbers from w.Rng. Default: nothing.
+    void Divided(World w, Agent parent, Agent child) { }
 
     // A splice into the genome by another body or itself (World.Inject, World.Cut): where an inserted piece
     // goes, and what the controller must adjust before the genome is replaced (removed > 0: a cut).
@@ -57,11 +61,16 @@ public interface ILifeModel
 public static class LifeModels
 {
     public const byte Vm = 1;   // model 1: the genome is a stack-machine program (World.Vm.cs)
+    public const byte Chem = Model2.ChemModel.ModelId;   // model 2: a cell of proteins folded from a polymer genome (src/Sim/Model2)
 
     static readonly ILifeModel[] byId = new ILifeModel[256];
     static readonly List<ILifeModel> all = new();
 
-    static LifeModels() => Register(new VmModel());
+    static LifeModels()
+    {
+        Register(new VmModel());
+        Register(new Model2.ChemModel());
+    }
 
     public static void Register(ILifeModel m)
     {
