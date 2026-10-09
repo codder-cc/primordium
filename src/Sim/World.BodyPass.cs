@@ -24,7 +24,7 @@ namespace Primordium;
 // What changes against law 0 (by design): a body's own costs, decay and death come after everybody's turn
 // instead of right after its own (another body may meet it still owing its upkeep, or alive although it is
 // about to starve); its random draws for these come from its own stream; heat reaches the cells in another
-// order. Statistics of evolution: CHANGELOG 2026-10-09 (13).
+// order. Statistics of evolution: CHANGELOG 2026-10-09 (14).
 public sealed partial class World
 {
     const int BodyChunk = 256;

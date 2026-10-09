@@ -15,7 +15,7 @@ namespace Primordium;
 // The reference "boom" save is made, not stored: --make runs the default world of `seed` until it holds
 // `target` bodies (checked every `step` ticks; or until max-ticks) and saves it (under the defaults of
 // 2026-10-09 (11) seed 2 no longer booms — ~100 bodies — while seed 3 reaches 12 430 at tick 16 000,
-// hash 80ef821c8277b012: the default since 2026-10-09 (13)). The save keeps the whole
+// hash 80ef821c8277b012: the default since 2026-10-09 (14)). The save keeps the whole
 // state, so every build continues the same world from it (as long as it reads the save format). Without
 // --make the fixture is loaded `repeat` times; each time `warmup` ticks run unmeasured (JIT, tiered PGO),
 // then `ticks` ticks are measured. Printed in a fixed format (one key per line, invariant numbers; the
