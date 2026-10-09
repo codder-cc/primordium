@@ -26,7 +26,8 @@ namespace Primordium;
 //   reading       OutsideAmount(a, cell, s)  NeighbourCell(cell, d)  AmbientTemp(a, cell)  LightAt(a)
 //                 PhotonsAt(a, cell)  UvSense(a)  Gradient(a, cell, s)  GroundAt(a, cell, d)  Alarm(a, cell)
 //                 Look(a, cell, d, range)  Kinship(a, b)   — and the body's own state on Agent (Inv, Energy,
-//                 Tb, Mass, InvTotal, Enz, Age, Signal of others)
+//                 Tb, Mass, InvTotal, Enz, Age, Signal of others); what it can spend: Avail(a) (P.MatterEnergy 1:
+//                 its charge, World.Charge.cs), what it holds: Held(a), Charge(a), Capacity(a)
 public sealed partial class World
 {
     // Work the controller does itself (thinking, signalling): paid from the body's energy, ends as heat in its

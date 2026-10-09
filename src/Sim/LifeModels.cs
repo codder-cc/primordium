@@ -5,7 +5,8 @@ using System.Linq;
 namespace Primordium;
 
 // Life models: how a body decides what to do. Several live side by side in one world with the same
-// physics: every body is matter (Agent.Inv, Pend, proteins Enz), energy (Agent.Energy, HeatHeld), volume,
+// physics: every body is matter (Agent.Inv, Pend, proteins Enz), energy (Agent.Energy, HeatHeld; with
+// P.MatterEnergy 1 the charge of its molecules — read World.Avail/Held, World.Charge.cs), volume,
 // a place (X, Y, Z, Lift) and a temperature, all shared; it absorbs, excretes, eats and is eaten, dies
 // into the soil, is saved, shown, planted and copied the same way whatever controls it. What differs
 // is only the controller and its genome:

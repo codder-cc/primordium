@@ -9,7 +9,7 @@
 | Общее (физика, не трогать из модели напрямую) | Своё у модели |
 |---|---|
 | `Inv`, `Pend`, `InvTotal`, `Mass`, `Volume`, `Enz` (белки и их субстрат) | что значат байты `Agent.G` |
-| `Energy`, `HeatHeld`, все потоки `Flows` | наследование: `RandomGenome`, `Mutate`, `Cross`, `InheritState` |
+| `Energy`, `HeatHeld`, все потоки `Flows`; при законе `MatterEnergy` 1 — заряд молекул тела и долг за тик `Due` (`World.Charge.cs`: читать `Avail`/`Held`, а не `Energy`) | наследование: `RandomGenome`, `Mutate`, `Cross`, `InheritState` |
 | `X`, `Y`, `Z`, `Lift`, `Vx`/`Vy`/`Vz`, след большого тела | состояние управления между тиками (`Agent.ModelState` и его `SyncState`) |
 | `Tb`, содержание (в том числе `CostLen` за байт генома), износ, мороз и жар, УФ-удары по байтам генома | текст генома для дизайнов и интерфейса: `Describe`, `TryCompile` |
 | `Target` (на кого обращено внимание), `Links`, `Signal` (что слышат другие) | примеры: `DefaultDesigns` |
