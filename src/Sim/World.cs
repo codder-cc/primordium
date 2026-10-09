@@ -62,6 +62,7 @@ public sealed partial class World
         public readonly long[] Mined = new long[6], MinedCat = new long[6];   // molecules torn out of rock by grade (with a protein's help)
         public readonly long[] GeoMined = new long[8];                        // ... by depth (World.Geochem, observation)
         public readonly double[] Organ = new double[OrganStatN];             // sense readings and organ costs (World.Organs, observation)
+        public readonly double[] Fid = new double[FidStatN];                 // copies, proofreading passes and their cost (World.Fidelity, observation)
         public readonly List<int> Dirty = new();
         public readonly List<Agent> Newborn = new();
         public readonly List<Discovery> Firsts = new();

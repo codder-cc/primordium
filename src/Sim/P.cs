@@ -268,6 +268,14 @@ public static class P
     // code"); useful code stays only by selection. Protection fades by ProtDecay per copy either way.
     public static int UsefulCredit = 1;
     public static float ProtCopy = 320f, ProtDelete = 300f, ProtDecay = 0.9f;
+    // PaidFidelity 1 (World.Fidelity): how faithfully a model-1 genome is copied is a property of the body.
+    // The base errors (point, insertion, deletion) are Boltzmann factors of one discrimination energy, read
+    // from MutPoint at TempRef: at body temperature T (kelvin) they are × MutPoint^(T_ref/T − 1) — a warm body
+    // copies worse. A proofreader protein (a kind-3 gene with B & 7 = 2, Enzyme.Proofread) rechecks every
+    // byte: strength g = Σ amount × quality × temperature window passes, each multiplying the errors by
+    // e^(−FidelityDE·T_ref/T) and costing FidelityCost per copied byte (Dissipate). 0: as before.
+    public static int PaidFidelity = 0;
+    public static float FidelityDE = 0.7f, FidelityCost = 0.02f;
 
     // Links between agents
     public static float LinkFlow = 0.02f;       // energy equalisation across a link per tick

@@ -45,6 +45,7 @@ if (Array.IndexOf(args, "--self-test-climate") >= 0) { World.ClimateCyclesRegres
 if (Array.IndexOf(args, "--self-test-region") >= 0) { World.RegionRegression(); return; }   // just the regions test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-life") >= 0) { World.LifeModelRegression(); return; }   // just the life models test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-organs") >= 0) { World.RunOrganRegression(); return; }   // just the organs of sense test (also in --self-test)
+if (Array.IndexOf(args, "--self-test-fidelity") >= 0) { World.RunFidelityRegression(); return; }   // just the paid copy fidelity test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-model2") >= 0) { World.Model2Regression(); return; }   // just life model 2 (also in --self-test)
 if (Array.IndexOf(args, "--list-params") >= 0)
 {
@@ -271,7 +272,7 @@ for (int t = 1; t <= ticks; t++)
     }
     Array.Clear(w.Prof);
     Array.Clear(w.Detail);
-    Console.WriteLine($"   enzymes/body {c.AvgEnz:F1}: bind {c.EnzKind[0]:F2} split {c.EnzKind[1]:F2} photo {c.EnzKind[2]:F2} motor {c.EnzKind[3]:F2}{(World.OrganLaw ? $" receptor {c.EnzKind[4]:F2} photoreceptor {c.EnzKind[5]:F2} mechano {c.EnzKind[6]:F2} thermo {c.EnzKind[7]:F2}" : "")} | protected {c.AvgProt:P1} | Tb {c.AvgTb:F1} | crowded {c.Crowded} linked {c.Linked} | most in one cell {w.Count.Max()}, pushed off full floors {w.Pushed} | big bodies {c.Big}, largest {c.MaxCells} cells");
+    Console.WriteLine($"   enzymes/body {c.AvgEnz:F1}: bind {c.EnzKind[0]:F2} split {c.EnzKind[1]:F2} photo {c.EnzKind[2]:F2} motor {c.EnzKind[3]:F2}{(World.OrganLaw ? $" receptor {c.EnzKind[4]:F2} photoreceptor {c.EnzKind[5]:F2} mechano {c.EnzKind[6]:F2} thermo {c.EnzKind[7]:F2}" : "")}{(World.FidelityLaw ? $" proofreader {c.EnzKind[Enzyme.Proofread]:F2}" : "")} | protected {c.AvgProt:P1} | Tb {c.AvgTb:F1} | crowded {c.Crowded} linked {c.Linked} | most in one cell {w.Count.Max()}, pushed off full floors {w.Pushed} | big bodies {c.Big}, largest {c.MaxCells} cells");
     Console.WriteLine($"t={t} day={w.Day} pop={c.Pop} born={w.Births} died={w.DeathsStarve}/{w.DeathsKilled}/{w.DeathsBroken}/{w.DeathsClimate}/{w.DeathsBuried}/{w.DeathsFlare} spawn={w.Spawns} " +
                       $"gen={w.MaxGen} len={c.AvgLen:F0} E={c.AvgEnergy:F0} age={c.AvgAge:F0} old={c.OldestAge} " +
                       $"| plant={c.Plants} eat={c.Eaters} mine={c.Miners} hunt={c.Hunters} idle={c.Idle} " +

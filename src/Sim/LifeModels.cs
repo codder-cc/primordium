@@ -36,6 +36,9 @@ public interface ILifeModel
     // Heredity. Draw random numbers only from the SimRng given.
     byte[] RandomGenome(SimRng rng);
     (byte[] g, byte[] p) Mutate(byte[] g, byte[] prot, SimRng rng);
+    // The same copy made by a body whose polymerase errs `errorScale` times the base rates (P.PaidFidelity 1:
+    // its temperature and proofreader, World.CopyErrorScale). A model whose copy has its own physics ignores it.
+    (byte[] g, byte[] p) Mutate(byte[] g, byte[] prot, SimRng rng, double errorScale) => Mutate(g, prot, rng);
     (byte[] g, byte[] p) Cross(Agent a, Agent b, SimRng rng);   // both parents are of this model
     void InheritState(Agent parent, Agent child);               // controller state a newborn starts with
     // After World.Divide has made `child` (molecules shared, genome from Mutate, InheritState), in the parent's
@@ -114,6 +117,7 @@ public sealed class VmModel : ILifeModel
 
     public byte[] RandomGenome(SimRng rng) => Genome.Random(rng);
     public (byte[] g, byte[] p) Mutate(byte[] g, byte[] prot, SimRng rng) => Genome.Mutate(g, prot, rng);
+    public (byte[] g, byte[] p) Mutate(byte[] g, byte[] prot, SimRng rng, double errorScale) => Genome.Mutate(g, prot, rng, errorScale);
     public (byte[] g, byte[] p) Cross(Agent a, Agent b, SimRng rng) => Genome.Cross(a, b, rng);
     public void InheritState(Agent parent, Agent child) => Array.Copy(parent.Mem, child.Mem, P.MemSize);
 

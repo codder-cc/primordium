@@ -64,7 +64,7 @@ public sealed partial class World
     void ChronProtein(Agent a, in Enzyme e)
     {
         int ea = e.Kind == Enzyme.Motor ? 0 : e.A, eb = e.Kind == Enzyme.Bind ? e.B : 0;
-        if (e.Kind is Enzyme.Mechano or Enzyme.Thermo) ea = 0;   // no molecule of their own
+        if (e.Kind is Enzyme.Mechano or Enzyme.Thermo or Enzyme.Proofread) ea = 0;   // no molecule of their own
         Propose(EvType.FirstEnzyme, Chronicle.EnzymeKey(e.Kind, ea), a, null, e.Eff, (e.Kind & 3) | ea << 2 | eb << 7 | (e.Kind >> 2) << 12);
     }
 
@@ -161,7 +161,7 @@ public sealed partial class World
         {
             case EvType.FirstEnzyme:
                 {
-                    int kind = (c.Arg & 3) | (c.Arg >> 12 & 1) << 2, ea = c.Arg >> 2 & 31, eb = c.Arg >> 7 & 31;
+                    int kind = (c.Arg & 3) | (c.Arg >> 12 & 3) << 2, ea = c.Arg >> 2 & 31, eb = c.Arg >> 7 & 31;
                     string What(bool en) => kind switch
                     {
                         Enzyme.Bind => $"{Mol(en, ea)} + {Mol(en, eb)}", Enzyme.Motor => en ? "movement" : "движение",
@@ -170,6 +170,7 @@ public sealed partial class World
                         Enzyme.Photoreceptor => (en ? "sight, pigment " : "зрение, пигмент ") + Mol(en, ea),
                         Enzyme.Mechano => en ? "touch" : "осязание",
                         Enzyme.Thermo => en ? "warmth" : "тепло",
+                        Enzyme.Proofread => en ? "faithful copies" : "точные копии",
                         _ => $"{Mol(en, ea)} →",
                     };
                     bool firstOfKind = !AnySeen(Chronicle.SeenEnzyme, kind, c.Key);
@@ -225,7 +226,7 @@ public sealed partial class World
         bool enzyme = table == Chronicle.SeenEnzyme;
         int organ = kind >> 2, from = (enzyme ? kind & 3 : kind) << 10;
         for (int k = from; k < from + (1 << 10); k++)
-            if ((!enzyme || (k & 1) == organ) && Chronicle.Seen[table + k] && table + k != except) return true;
+            if ((!enzyme || (k & 3) == organ) && Chronicle.Seen[table + k] && table + k != except) return true;
         return false;
     }
 

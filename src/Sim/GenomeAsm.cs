@@ -41,6 +41,8 @@ public sealed class GenomeAsmException : Exception
 //                   one (both only to give back exact bytes). With the law off the same bytes make a motor;
 //                   the disassembly follows the law in force. Russian names: рецептор, фоторецептор,
 //                   механорецептор, терморецептор (and соединение, расщепление, свет, мотор).
+//   enzyme proofreader t=T q=Q   a proofreader (P.PaidFidelity 1, World.Fidelity): a motor gene with B & 7 = 2;
+//                   it has no molecule ([a=N], [b=N] as for a mechanoreceptor). Russian: корректор.
 //   byte N …        raw bytes (also for an operand cut off at the end of the genome, which the VM
 //                   reads from the start)
 //   ; // #          comments
@@ -55,15 +57,18 @@ public static class GenomeAsm
     static readonly Dictionary<string, int> baseOps = new(StringComparer.OrdinalIgnoreCase);
     static readonly Dictionary<string, int> variantOps = new(StringComparer.OrdinalIgnoreCase);
     static readonly string[] variantOf = new string[64];
-    public static readonly string[] EnzymeKinds = { "bind", "split", "photo", "motor", "receptor", "photoreceptor", "mechanoreceptor", "thermoreceptor" };
+    public static readonly string[] EnzymeKinds = { "bind", "split", "photo", "motor", "receptor", "photoreceptor", "mechanoreceptor", "thermoreceptor", "proofreader" };
     static readonly Dictionary<string, int> kinds = new(StringComparer.OrdinalIgnoreCase)
     {
         ["bind"] = Enzyme.Bind, ["split"] = Enzyme.Split, ["photo"] = Enzyme.Photo, ["motor"] = Enzyme.Motor,
         ["receptor"] = Enzyme.Receptor, ["photoreceptor"] = Enzyme.Photoreceptor, ["mechanoreceptor"] = Enzyme.Mechano, ["thermoreceptor"] = Enzyme.Thermo,
         ["соединение"] = Enzyme.Bind, ["расщепление"] = Enzyme.Split, ["свет"] = Enzyme.Photo, ["мотор"] = Enzyme.Motor,
         ["рецептор"] = Enzyme.Receptor, ["фоторецептор"] = Enzyme.Photoreceptor, ["механорецептор"] = Enzyme.Mechano, ["терморецептор"] = Enzyme.Thermo,
+        ["proofreader"] = Enzyme.Proofread, ["корректор"] = Enzyme.Proofread,
     };
-    static bool HasMolecule(int kind) => kind is not (Enzyme.Mechano or Enzyme.Thermo);
+    static bool HasMolecule(int kind) => kind is not (Enzyme.Mechano or Enzyme.Thermo or Enzyme.Proofread);
+    // What a motor gene with this B makes, for checking b=N: an organ by Transducer, a proofreader by ProofB.
+    static bool Makes(int b, int kind) => kind == Enzyme.Proofread ? (b & 7) == Enzyme.ProofB : Enzyme.Transducer(b) == kind;
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
     static GenomeAsm()
@@ -296,8 +301,8 @@ public static class GenomeAsm
         }
         if (t.Length < 2 || !kinds.TryGetValue(t[1], out int kind))
             throw new FormatException(t.Length < 2 ? Loc.T("expected 'enzyme bind|split|photo|motor A B t=T q=Q'", "ожидается «enzyme bind|split|photo|motor A B t=T q=Q»")
-                : Loc.T($"unknown protein kind '{t[1]}' (bind, split, photo, motor, receptor, photoreceptor, mechanoreceptor, thermoreceptor)",
-                        $"неизвестный вид белка «{t[1]}» (bind, split, photo, motor, receptor, photoreceptor, mechanoreceptor, thermoreceptor — или по-русски)"));
+                : Loc.T($"unknown protein kind '{t[1]}' (bind, split, photo, motor, receptor, photoreceptor, mechanoreceptor, thermoreceptor, proofreader)",
+                        $"неизвестный вид белка «{t[1]}» (bind, split, photo, motor, receptor, photoreceptor, mechanoreceptor, thermoreceptor, proofreader — или по-русски)"));
         bool organ = kind > Enzyme.Motor;
         int need = !organ ? 4 : HasMolecule(kind) ? 3 : 2;   // tokens before the options
         if (t.Length < need)
@@ -322,7 +327,7 @@ public static class GenomeAsm
                 case "a" when organ && !HasMolecule(kind): a = Number(val, 0, Chemistry.S - 1, "a"); break;
                 case "b" when organ:
                     b = Number(val, 0, Chemistry.S - 1, "b");
-                    if (Enzyme.Transducer(b) != kind) throw new FormatException(Loc.T($"b={b} does not make a {EnzymeKinds[kind]} (b & 7 decides)", $"b={b} не даёт {EnzymeKinds[kind]} (решает b & 7)"));
+                    if (!Makes(b, kind)) throw new FormatException(Loc.T($"b={b} does not make a {EnzymeKinds[kind]} (b & 7 decides)", $"b={b} не даёт {EnzymeKinds[kind]} (решает b & 7)"));
                     break;
                 default: throw new FormatException(Loc.T($"unexpected '{tok}' (t=…, q=…, alt=…)", $"лишнее «{tok}» (t=…, q=…, alt=…)"));
             }

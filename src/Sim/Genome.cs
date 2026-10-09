@@ -53,8 +53,8 @@ public static class Genome
 
     public static string SlotName(int slot) => slot < 64 ? Names[slot] : VariantNames[slot - 64];
 
-    public static readonly string[] EnzymeKindEn = { "binding", "splitting", "light capture", "motor", "receptor", "photoreceptor", "mechanoreceptor", "thermoreceptor" };
-    public static readonly string[] EnzymeKindRu = { "соединение", "расщепление", "захват света", "мотор", "рецептор", "фоторецептор", "механорецептор", "терморецептор" };
+    public static readonly string[] EnzymeKindEn = { "binding", "splitting", "light capture", "motor", "receptor", "photoreceptor", "mechanoreceptor", "thermoreceptor", "proofreader" };
+    public static readonly string[] EnzymeKindRu = { "соединение", "расщепление", "захват света", "мотор", "рецептор", "фоторецептор", "механорецептор", "терморецептор", "корректор" };
     public static string[] EnzymeKind => Loc.T(EnzymeKindEn, EnzymeKindRu);
 
     public static bool HasImm(int op) => op is Push or Label or Jmp or Jz or Jnz or Call;
@@ -67,12 +67,13 @@ public static class Genome
     }
 
     // The protein a gene (three bytes) makes. With P.Organs 1 a kind-3 gene makes the transducer its B
-    // names (Enzyme.Transducer): a motor or an organ of sense (World.Organs).
+    // names (Enzyme.Transducer): a motor or an organ of sense (World.Organs); with P.PaidFidelity 1 one with
+    // B & 7 = Enzyme.ProofB makes a proofreader (World.Fidelity).
     public static Enzyme Decode(byte b1, byte b2, byte b3)
     {
         uint h = Hash32.U((uint)(b1 | b2 << 8 | b3 << 16));
         int kind = b1 & 3;
-        if (kind == Enzyme.Motor && P.Organs != 0) kind = Enzyme.Transducer(b3 % Chemistry.S);
+        if (kind == Enzyme.Motor && (P.Organs != 0 || P.PaidFidelity != 0)) kind = Enzyme.OfMotorGene(b3 % Chemistry.S);
         return new Enzyme
         {
             Kind = (byte)kind,
@@ -92,27 +93,33 @@ public static class Genome
     [ThreadStatic] static byte[] scratchG, scratchP;
 
     // The copy-error rates (P, "Copy errors"), read once per copy. With UsefulCredit 0 protection
-    // changes nothing (copy and deletion as for an unprotected byte).
+    // changes nothing (copy and deletion as for an unprotected byte). `scale` multiplies the polymerase's
+    // errors — point changes, insertions, deletions — for the body that copies (P.PaidFidelity 1: its
+    // temperature and its proofreader, World.CopyErrorScale); duplication is a slip of the strand, not a
+    // misread byte, and keeps its rate. scale 1 is exactly the old rates.
     readonly struct Rates
     {
-        public readonly double Point, Insert, Delete, DeleteMax, DeleteLen, Dup, Copy, Resist;
+        public readonly double Point, Insert, Delete, DeleteMax, DeleteLen, Dup, Copy, Resist, Scale;
         public readonly float Decay;
         public readonly int DupMin, DupMax;
         public readonly bool Credit;
-        public Rates(int _)
+        public Rates(double scale)
         {
-            Point = P.Dec(P.MutPoint); Insert = P.Dec(P.MutInsert); Delete = P.Dec(P.MutDelete); DeleteMax = P.Dec(P.MutDeleteMax);
+            Point = P.Dec(P.MutPoint) * scale; Insert = P.Dec(P.MutInsert) * scale; Delete = P.Dec(P.MutDelete); DeleteMax = P.Dec(P.MutDeleteMax);
             DeleteLen = P.Dec(P.MutDeleteLen); Dup = P.Dec(P.MutDup); Copy = P.Dec(P.ProtCopy); Resist = P.Dec(P.ProtDelete);
             Decay = P.ProtDecay; DupMin = Math.Max(1, P.MutDupMin); DupMax = Math.Max(DupMin, P.MutDupMax);
-            Credit = P.UsefulCredit != 0;
+            Credit = P.UsefulCredit != 0; Scale = scale;
         }
         public double PointAt(byte prot) => Credit ? Point * (1 - prot / Copy) : Point;
         public bool Kept(byte prot, SimRng r) => Credit && r.NextDouble() < prot / Resist;
+        public double DeleteAt(int n) => (Delete + Math.Min(DeleteMax, n / DeleteLen)) * Scale;
     }
 
-    public static (byte[] g, byte[] p) Mutate(byte[] src, byte[] prot, SimRng r)
+    public static (byte[] g, byte[] p) Mutate(byte[] src, byte[] prot, SimRng r) => Mutate(src, prot, r, 1.0);
+
+    public static (byte[] g, byte[] p) Mutate(byte[] src, byte[] prot, SimRng r, double scale)
     {
-        var k = new Rates(0);
+        var k = new Rates(scale);
         int n = src.Length;
         var g = scratchG ??= new byte[MaxLen + 32];
         var p = scratchP ??= new byte[MaxLen + 32];
@@ -129,7 +136,7 @@ public static class Genome
             p[at] = 0;
             n++;
         }
-        if (r.NextDouble() < k.Delete + Math.Min(k.DeleteMax, n / k.DeleteLen) && n > MinLen)
+        if (r.NextDouble() < k.DeleteAt(n) && n > MinLen)
         {
             int at = r.Next(n);
             if (!k.Kept(p[at], r))
@@ -153,7 +160,7 @@ public static class Genome
     // The list-based original, kept as the reference for the regression test.
     public static (byte[] g, byte[] p) MutateReference(byte[] src, byte[] prot, SimRng r)
     {
-        var k = new Rates(0);
+        var k = new Rates(1.0);
         int n = src.Length;
         var g = new List<byte>(src);
         var p = new List<byte>(n);

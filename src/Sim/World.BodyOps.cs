@@ -108,7 +108,8 @@ public sealed partial class World
         spec.Amount = 1; spec.Matter = 1; spec.Material = (byte)m; spec.Src = site;
         a.Enz[slot] = spec;
         // Bits 0–3 the first protein of kinds 0–3, bit 4 the first catalysed reaction, bits 5–7 the organs of
-        // sense (P.Organs 1: receptor, photoreceptor, mechano- and thermoreceptor sharing bit 7).
+        // sense (P.Organs 1: receptor, photoreceptor, mechano- and thermoreceptor sharing bit 7, with the
+        // proofreader of P.PaidFidelity 1).
         int seen = spec.Kind < 4 ? 1 << spec.Kind : 1 << Math.Min(7, spec.Kind + 1);
         if (a.Bio != null && (a.BioSeen & seen) == 0)
         {

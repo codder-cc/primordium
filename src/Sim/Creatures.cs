@@ -237,16 +237,19 @@ public static class CreatureExamples
     // swimmer relax one excited molecule and remember (memory 0) whether their energy rose. With the energy
     // as a number (MatterEnergy 0) relaxing is how light becomes energy; with the energy in the molecules (1)
     // it only loses CaptureHeat, and they stop. Their organs (Organs 1, World.Organs) are genes like any
-    // protein's; with the law off the same genes make a motor protein that the code never uses.
+    // protein's; with the law off the same genes make a motor protein that the code never uses. So is the
+    // proofreader of the leaf and the swimmer (P.PaidFidelity 1, World.Fidelity): the mole, which rarely
+    // rebuilds its proteins, copies at the base rate.
     static readonly Spec LeafSpec = new("Листок", "Leaf",
-        "A minimal photosynthesizer: catches a photon with molecule 0 (a lone atom A exists in every world). First it tries whether relaxing the excitation 1 → 0 gives it energy (it does when energy is a number in the body; when energy is the molecules' own excitation, the excited 1 already is its energy and relaxing only loses heat) and does so only if it pays. Now and then it drinks the matter around, rarely rebuilds its proteins, divides when fed. It reads nothing, so it needs no organ of sense.",
-        "Минимальный фотосинтетик: ловит фотон молекулой 0 (одиночный атом A есть в каждом мире). Сначала пробует, даёт ли энергию снятие возбуждения 1 → 0 (даёт, когда энергия — число в теле; когда энергия — возбуждение самих молекул, возбуждённая 1 уже и есть энергия, а снятие только теряет тепло), и снимает, только если выгодно. Иногда пьёт вещество вокруг, изредка заново собирает белки, сытый делится. Ничего не читает — органы чувств ему не нужны.",
+        "A minimal photosynthesizer: catches a photon with molecule 0 (a lone atom A exists in every world). First it tries whether relaxing the excitation 1 → 0 gives it energy (it does when energy is a number in the body; when energy is the molecules' own excitation, the excited 1 already is its energy and relaxing only loses heat) and does so only if it pays. Now and then it drinks the matter around, rarely rebuilds its proteins, divides when fed. It reads nothing, so it needs no organ of sense. With the paid fidelity law it makes a proofreader, so its children inherit its genome nearly intact (each division pays for the check).",
+        "Минимальный фотосинтетик: ловит фотон молекулой 0 (одиночный атом A есть в каждом мире). Сначала пробует, даёт ли энергию снятие возбуждения 1 → 0 (даёт, когда энергия — число в теле; когда энергия — возбуждение самих молекул, возбуждённая 1 уже и есть энергия, а снятие только теряет тепло), и снимает, только если выгодно. Иногда пьёт вещество вокруг, изредка заново собирает белки, сытый делится. Ничего не читает — органы чувств ему не нужны. При законе оплаченной точности делает корректор: дети наследуют геном почти без ошибок (каждое деление платит за проверку).",
         new() { ["0"] = 10, ["any"] = 4 }, 40, 0.33f, 0.8f, 0.9f, new (string, string, string)[]
         {
             ("", "; Leaf — a minimal photosynthesizer", "; Листок — минимальный фотосинтетик"),
             ("label 1", null, null),
             ("enzyme photo 0 0 t=15.0", "light protein for molecule 0", "белок света для молекулы 0"),
             ("enzyme split 1 0 t=15.0", "protein that relaxes the excitation 1 → 0", "белок, снимающий возбуждение 1 → 0"),
+            ("enzyme proofreader t=15.0", "proofreader: faithful copies (paid fidelity law)", "корректор: точные копии (закон оплаченной точности)"),
             ("push 0", null, null),
             ("photo", "a photon first, then the test:", "сначала фотон, потом проба:"),
             ("energy", "energy before", "энергия до"),
@@ -322,8 +325,8 @@ public static class CreatureExamples
         });
 
     static readonly Spec SwimmerSpec = new("Пловец", "Swimmer",
-        "Holds a gas bubble and takes energy from light, like the leaf (and tests the same way whether relaxing the excitation pays). Now and then, if its photoreceptor finds the light dim, it strokes toward the surface; sometimes it pushes with its motor; divides when well fed. Every stroke is costly: stroke too often and it starves. Without the organ law the eye is free; with it a swimmer without the photoreceptor would never see the light dim and never stroke.",
-        "Держит пузырь газа и берёт энергию светом, как листок (и так же проверяет, выгодно ли снимать возбуждение). Изредка, если фоторецептор видит, что свет тускл, гребёт к поверхности; иногда толкается мотором; сытый делится. Каждый гребок дорог: часто грести — умереть с голоду. Без закона органов глаз бесплатен; с ним пловец без фоторецептора не увидит, что свет тускл, и грести не будет.",
+        "Holds a gas bubble and takes energy from light, like the leaf (and tests the same way whether relaxing the excitation pays). Now and then, if its photoreceptor finds the light dim, it strokes toward the surface; sometimes it pushes with its motor; divides when well fed. Every stroke is costly: stroke too often and it starves. Without the organ law the eye is free; with it a swimmer without the photoreceptor would never see the light dim and never stroke. With the paid fidelity law it proofreads its copies, like the leaf.",
+        "Держит пузырь газа и берёт энергию светом, как листок (и так же проверяет, выгодно ли снимать возбуждение). Изредка, если фоторецептор видит, что свет тускл, гребёт к поверхности; иногда толкается мотором; сытый делится. Каждый гребок дорог: часто грести — умереть с голоду. Без закона органов глаз бесплатен; с ним пловец без фоторецептора не увидит, что свет тускл, и грести не будет. При законе оплаченной точности проверяет свои копии, как листок.",
         new() { ["0"] = 8, ["gas"] = 3, ["any"] = 3 }, 40, 0.58f, 0.85f, 0.95f, new (string, string, string)[]
         {
             ("", "; Swimmer — a gas bubble, a motor, an eye and light", "; Пловец — пузырь газа, мотор, глаз и свет"),
@@ -332,6 +335,7 @@ public static class CreatureExamples
             ("enzyme photo 0 0 t=15.0", null, null),
             ("enzyme split 1 0 t=15.0", null, null),
             ("enzyme photoreceptor 0 t=15.0", "eye: pigment 0 (organ law)", "глаз: пигмент 0 (закон органов)"),
+            ("enzyme proofreader t=15.0", "proofreader: faithful copies (paid fidelity law)", "корректор: точные копии (закон оплаченной точности)"),
             ("push 0", null, null),
             ("photo", "a photon, then the test (as the leaf)", "фотон, потом проба (как у листка)"),
             ("energy", null, null),

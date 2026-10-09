@@ -42,7 +42,7 @@ public static class GenomeHelp
         ["hurt"] = "→ ticks since the last attack here (−1: quiet); the attacker becomes the target (Organs 1: mechanoreceptor)",
         ["kin"] = "→ kinship with the selected (Organs 1: receptor)", ["ngene"] = "i → genome byte of the selected (Organs 1: receptor)", ["gene"] = "i → own genome byte", ["glen"] = "→ genome length",
         ["listen"] = "→ signal of the selected (Organs 1: mechanoreceptor)", ["emit"] = "s →: set own signal",
-        ["enzyme"] = "protein gene: enzyme kind A B t=… q=… (kind: bind, split, photo, motor); organs of sense (Organs 1): enzyme receptor A, photoreceptor A, mechanoreceptor, thermoreceptor",
+        ["enzyme"] = "protein gene: enzyme kind A B t=… q=… (kind: bind, split, photo, motor); organs of sense (Organs 1): enzyme receptor A, photoreceptor A, mechanoreceptor, thermoreceptor; enzyme proofreader (PaidFidelity 1)",
         ["intake"] = "m →: take in molecule m from the cell", ["drink"] = "a sip of everything around (or of soft organics underfoot)",
         ["expel"] = "m d →: expel molecule m toward d (recoil)", ["thrust"] = "d →: motor push toward d (needs a motor protein)",
         ["bind"] = "a b →: bind molecules a and b (pays if the product is poorer)", ["digest"] = "split a random molecule of the body",
@@ -89,7 +89,7 @@ public static class GenomeHelp
         ["hurt"] = "→ тиков с последней атаки здесь (−1 — тихо); напавший становится целью (Organs 1: механорецептор)",
         ["kin"] = "→ родство с выбранным (Organs 1: рецептор)", ["ngene"] = "i → байт генома выбранного (Organs 1: рецептор)", ["gene"] = "i → свой байт генома", ["glen"] = "→ длина генома",
         ["listen"] = "→ сигнал выбранного (Organs 1: механорецептор)", ["emit"] = "s →: выставить свой сигнал",
-        ["enzyme"] = "ген белка: enzyme вид A B t=… q=… (вид: bind, split, photo, motor); органы чувств (Organs 1): enzyme рецептор A, фоторецептор A, механорецептор, терморецептор",
+        ["enzyme"] = "ген белка: enzyme вид A B t=… q=… (вид: bind, split, photo, motor); органы чувств (Organs 1): enzyme рецептор A, фоторецептор A, механорецептор, терморецептор; enzyme корректор (PaidFidelity 1)",
         ["intake"] = "m →: втянуть молекулу m из клетки", ["drink"] = "глоток всего вокруг (или мягкой органики под ногами)",
         ["expel"] = "m d →: выбросить молекулу m в сторону d (отдача)", ["thrust"] = "d →: толчок мотором в сторону d (нужен белок-мотор)",
         ["bind"] = "a b →: соединить молекулы a и b (выгодно, если продукт беднее)", ["digest"] = "расщепить случайную молекулу тела",
@@ -155,7 +155,7 @@ public static class GenomeHelp
         };
         foreach (var (name, op, _) in Mnemonics()) h.AddKeywordColor(name, OpColor(op));
         foreach (var k in GenomeAsm.EnzymeKinds) h.AddMemberKeywordColor(k, new Color(0.6f, 1f, 0.75f));
-        foreach (var k in new[] { "up", "down", "raw", "t", "q", "alt", "a", "b", "рецептор", "фоторецептор", "механорецептор", "терморецептор", "соединение", "расщепление", "свет", "мотор" }) h.AddMemberKeywordColor(k, new Color(0.6f, 1f, 0.75f));
+        foreach (var k in new[] { "up", "down", "raw", "t", "q", "alt", "a", "b", "рецептор", "фоторецептор", "механорецептор", "терморецептор", "корректор", "соединение", "расщепление", "свет", "мотор" }) h.AddMemberKeywordColor(k, new Color(0.6f, 1f, 0.75f));
         h.AddKeywordColor("byte", new Color(0.8f, 0.8f, 0.8f));
         h.AddKeywordColor("db", new Color(0.8f, 0.8f, 0.8f));
         var comment = new Color(0.45f, 0.5f, 0.55f);
@@ -202,7 +202,12 @@ public static class GenomeHelp
                 "and must be excitable by light; it sees by its excitation (stronger for a bigger gap). look needs several of them (LookMin) and reaches LookPerUnit cells per unit; it costs more with range.\n" +
                 "[code]enzyme mechanoreceptor[/code]: touch — count, hurt, ground, feel, listen (caught with the chance of its strength).\n" +
                 "[code]enzyme thermoreceptor t=20[/code]: temp and btemp, accurate near its best temperature.\n" +
-                "A motor pushes with all its copies: a full push of a heavy body needs more of them (MotorLoad). Organ genes are motor genes by their B: with the law off they make a motor.\n",
+                "A motor pushes with all its copies: a full push of a heavy body needs more of them (MotorLoad). Organ genes are motor genes by their B: with the law off they make a motor.\n" +
+                "\n[b]Proofreader[/b] (the law PaidFidelity 1)\n[code]enzyme proofreader t=15[/code]: rechecks the genome as it is copied, at divide and mate. " +
+                "Its strength (amount × quality × closeness to its best temperature) is the number of passes; each pass divides the copy errors (point changes, insertions, deletions) by e^FidelityDE " +
+                "(about 2) and costs FidelityCost per copied byte: a long genome and a strong proofreader make a dear child, and a body that cannot pay does not divide. " +
+                "A warm body errs more (and its proofreader discriminates less well); UV and flares still damage the genome. Nothing protects 'useful' code for you: " +
+                "with UsefulCredit 0 how faithfully a line copies itself is only what its genome makes and pays for. A proofreader is a motor gene with B & 7 = 2: with the law off it makes a motor.\n",
                 "\n[b]Белок[/b]\n[code]enzyme photo 0 0 t=15.0 q=0.9[/code] — вид (bind соединение, split расщепление, photo захват света, motor мотор), " +
                 "молекулы A и B, лучшая температура (−15…35,4 °C) и желаемое качество 0,35–1. Белок стоит энергии и одну молекулу тела.\n" +
                 "\n[b]Органы чувств[/b] (закон Organs 1)\nПри законе чувство — белок, который делает геном, а не готовая способность: без органа чтение даёт 0 " +
@@ -214,7 +219,12 @@ public static class GenomeHelp
                 "и свет должен её возбуждать; видит по своему возбуждению (сильнее при большей щели). look нужно несколько таких (LookMin), дальность LookPerUnit клеток на единицу, цена растёт с дальностью.\n" +
                 "[code]enzyme механорецептор[/code] — осязание: count, hurt, ground, feel, listen (ловит с вероятностью своей силы).\n" +
                 "[code]enzyme терморецептор t=20[/code] — temp и btemp, точен около своей лучшей температуры.\n" +
-                "Мотор толкает всеми копиями: полный толчок тяжёлого тела требует их больше (MotorLoad). Гены органов — это гены мотора по их B: без закона из них выходит мотор.\n"))
+                "Мотор толкает всеми копиями: полный толчок тяжёлого тела требует их больше (MotorLoad). Гены органов — это гены мотора по их B: без закона из них выходит мотор.\n" +
+                "\n[b]Корректор[/b] (закон PaidFidelity 1)\n[code]enzyme корректор t=15[/code] — перепроверяет геном, пока тот копируется, при divide и mate. " +
+                "Его сила (количество × качество × близость к лучшей температуре) — число проходов; каждый проход делит ошибки копии (замены, вставки, потери) на e^FidelityDE " +
+                "(около 2) и стоит FidelityCost за скопированный байт: длинный геном и сильный корректор — дорогой ребёнок, а тело, которому нечем платить, не делится. " +
+                "Тёплое тело ошибается чаще (и его корректор различает хуже); УФ и вспышки по-прежнему портят геном. «Полезный» код никто не бережёт за вас: " +
+                "при UsefulCredit 0 точность копии линии — только то, что её геном делает и оплачивает. Корректор — ген мотора с B & 7 = 2: без закона из него выходит мотор.\n"))
           .Append(Loc.T("\n[b]Bytes[/b]\n[code]byte 12 200[/code]: raw bytes.\n", "\n[b]Байты[/b]\n[code]byte 12 200[/code] — сырые байты.\n"));
         return sb.ToString();
     }

@@ -648,11 +648,15 @@ public partial class Hud : Control
         }
         T(x, y + 29, Loc.T($"distinct proteins {c.AvgEnz:0.0} · genome conserved {c.AvgProt:P0} · body {c.AvgTb:+0;-0} °C · large bodies {c.Big:N0} (up to {c.MaxCells} cells)",
                            $"разных белков {c.AvgEnz:0.0} · закреплено генома {c.AvgProt:P0} · тело {c.AvgTb:+0;-0} °C · больших тел {c.Big:N0} (до {c.MaxCells} клеток)"), Dim, 12);
-        if (!World.OrganLaw) return y + 12 + 2 * 17 + 8;
+        int rows = 2;
         // P.Organs 1: the organs of sense (World.Organs), per body (mean).
-        T(x, y + 46, Loc.T($"senses: receptor {c.EnzKind[Enzyme.Receptor]:0.0} · photoreceptor {c.EnzKind[Enzyme.Photoreceptor]:0.0} · mechano {c.EnzKind[Enzyme.Mechano]:0.0} · thermo {c.EnzKind[Enzyme.Thermo]:0.0}",
-                           $"чувства: рецептор {c.EnzKind[Enzyme.Receptor]:0.0} · фоторецептор {c.EnzKind[Enzyme.Photoreceptor]:0.0} · механо {c.EnzKind[Enzyme.Mechano]:0.0} · термо {c.EnzKind[Enzyme.Thermo]:0.0}"), Dim, 12);
-        return y + 12 + 3 * 17 + 8;
+        if (World.OrganLaw)
+            T(x, y + 12 + 17 * rows++, Loc.T($"senses: receptor {c.EnzKind[Enzyme.Receptor]:0.0} · photoreceptor {c.EnzKind[Enzyme.Photoreceptor]:0.0} · mechano {c.EnzKind[Enzyme.Mechano]:0.0} · thermo {c.EnzKind[Enzyme.Thermo]:0.0}",
+                               $"чувства: рецептор {c.EnzKind[Enzyme.Receptor]:0.0} · фоторецептор {c.EnzKind[Enzyme.Photoreceptor]:0.0} · механо {c.EnzKind[Enzyme.Mechano]:0.0} · термо {c.EnzKind[Enzyme.Thermo]:0.0}"), Dim, 12);
+        // P.PaidFidelity 1: the proofreader (World.Fidelity), per body (mean).
+        if (World.FidelityLaw)
+            T(x, y + 12 + 17 * rows++, Loc.T($"proofreader {c.EnzKind[Enzyme.Proofread]:0.0} (faithful copies, paid per byte)", $"корректор {c.EnzKind[Enzyme.Proofread]:0.0} (точные копии, оплата за байт)"), Dim, 12);
+        return y + 12 + rows * 17 + 8;
     }
 
     float Lineages(float x, float y, float cw)

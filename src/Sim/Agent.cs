@@ -8,15 +8,20 @@ namespace Primordium;
 // With P.Organs 1 a motor gene (kind 3) is one of a family of transducers, by the low bits of B
 // (Genome.Decode): a motor, or an organ of sense — a receptor for molecule A, a photoreceptor with pigment
 // A, a mechanoreceptor, a thermoreceptor (World.Organs). With the law off there are only kinds 0–3.
+// With P.PaidFidelity 1 a kind-3 gene with B & 7 = ProofB makes a proofreader instead (World.Fidelity),
+// whatever P.Organs says: it rechecks the genome as it is copied.
 public struct Enzyme
 {
     public const int Bind = 0, Split = 1, Photo = 2, Motor = 3;
-    public const int Receptor = 4, Photoreceptor = 5, Mechano = 6, Thermo = 7, Kinds = 8;
+    public const int Receptor = 4, Photoreceptor = 5, Mechano = 6, Thermo = 7, Proofread = 8, Kinds = 9;
+    public const int ProofB = 2;   // B & 7 of a proofreader gene (one of the three motor values of Transducer)
     // P.Organs 1: which transducer a kind-3 gene makes, by B & 7 (0–2 motor, 3–4 receptor, 5 photoreceptor,
     // 6 mechanoreceptor, 7 thermoreceptor), and the B a gene of each kind is written with (GenomeAsm).
     public static int Transducer(int b) => (b & 7) switch { < 3 => Motor, < 5 => Receptor, 5 => Photoreceptor, 6 => Mechano, _ => Thermo };
-    public static int CanonicalB(int kind) => kind switch { Receptor => 3, Photoreceptor => 5, Mechano => 6, Thermo => 7, _ => 0 };
-    public static bool IsOrgan(int kind) => kind >= Motor;   // the motor and the senses (World.Organs: upkeep with P.Organs 1)
+    public static int CanonicalB(int kind) => kind switch { Receptor => 3, Photoreceptor => 5, Mechano => 6, Thermo => 7, Proofread => ProofB, _ => 0 };
+    public static bool IsOrgan(int kind) => kind >= Motor && kind <= Thermo;   // the motor and the senses (World.Organs: upkeep with P.Organs 1)
+    // What a kind-3 gene with this B makes under the laws in force (Genome.Decode).
+    public static int OfMotorGene(int b) => P.PaidFidelity != 0 && (b & 7) == ProofB ? Proofread : P.Organs != 0 ? Transducer(b) : Motor;
     public byte Kind, A, B;
     public float Topt, Eff, Amount;
     public byte Material;

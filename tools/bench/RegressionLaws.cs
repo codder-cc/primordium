@@ -428,7 +428,8 @@ public sealed partial class World
             (200, "ArrheniusDecay", 1), (500, "DecayWetK", 4), (700, "ArrheniusDecay", 0), (900, "ArrheniusDecay", 1),   // one decay law (World.Decay) on and off
             // Every species in the air by its volatility, hardness without a solid class, the uphill chance by
             // k·T, copying without credit for useful code — on and off mid-run.
-            (100, "Volatility", 1), (380, "ContinuousHardness", 1), (460, "UphillKT", 1), (560, "UsefulCredit", 0), (750, "Volatility", 0), (950, "Volatility", 1) };
+            (100, "Volatility", 1), (380, "ContinuousHardness", 1), (460, "UphillKT", 1), (560, "UsefulCredit", 0), (750, "Volatility", 0), (950, "Volatility", 1),
+            (480, "PaidFidelity", 1) };   // copy fidelity paid by the body (World.Fidelity), on from then
         string notes = "";
         for (int t = 1; t <= 1000; t++)
         {

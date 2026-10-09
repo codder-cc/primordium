@@ -477,7 +477,10 @@ public sealed partial class World
     {
         float cost = P.DivCostBase + P.DivCostByte * a.G.Length;
         Interlocked.Increment(ref DivFail[0]);
-        if (Avail(a) < P.DivMinEnergy + cost) { Interlocked.Increment(ref DivFail[1]); return; }
+        // P.PaidFidelity 1 (World.Fidelity): the copy is proofread by the body's own proteins, paid per byte
+        // and pass with the division (it must afford both); its errors follow its temperature.
+        double proof = FidelityLaw ? ProofCost(ProofStrength(a), a.G.Length) : 0;
+        if (Avail(a) < P.DivMinEnergy + cost + proof) { Interlocked.Increment(ref DivFail[1]); return; }
         int poly = PolymerUnits(a);   // a body of polymers (life model 2) counts their matter too; 0 for every other
         if (a.InvTotal + poly < P.DivMinBody) { Interlocked.Increment(ref DivFail[2]); return; }
         float frac = f <= 0 ? 0.5f : Math.Clamp(f, 16, 240) / 256f;
@@ -495,20 +498,23 @@ public sealed partial class World
         }
         if (tot + poly / 2 < P.MinBody || a.InvTotal - tot + poly / 2 < P.MinBody) { Interlocked.Increment(ref DivFail[4]); return; }
 
+        double scale = 1;
+        if (FidelityLaw) (scale, proof) = Fidelity(a, a.G.Length);
         Dissipate(a, cost);
+        if (proof > 0) Dissipate(a, proof);
         Settle(a);   // law 1: paid from what it holds before the child takes its share (with its charge)
         if (MatterLaw) for (int s = 0; s < Chemistry.S; s++) give[s] = Math.Min(give[s], a.Inv[s]);   // settling may have relaxed some
         var life = LifeModels.Get(a.Model);
-        var (g, p) = life.Mutate(a.G, a.Prot, Rng);
+        var (g, p) = FidelityLaw ? life.Mutate(a.G, a.Prot, Rng, scale) : life.Mutate(a.G, a.Prot, Rng);
         var child = new Agent(NewId(), a.Lineage, a.Gen + 1, g, p, a.Model) { Tb = a.Tb };
         Looks.Inherit(child, a, Rng);
         double before = Held(a);
         child.Energy = a.Energy > 0 ? a.Energy * frac : 0;   // law 1: a legacy remainder (0 for bodies born under it)
         a.Energy -= child.Energy;
-        if (!MatterLaw) a.LifeKids += (float)(cost + child.Energy);
+        if (!MatterLaw) a.LifeKids += (float)(cost + proof + child.Energy);
         for (int s = 0; s < Chemistry.S; s++)
             for (int k = 0; k < give[s]; k++) { RemoveMol(a, s); AddMol(child, s); }
-        if (MatterLaw) a.LifeKids += (float)(cost + before - Held(a));   // law 1: the charge its molecules took along
+        if (MatterLaw) a.LifeKids += (float)(cost + proof + before - Held(a));   // law 1: the charge its molecules took along
         life.InheritState(a, child);
         life.Divided(this, a, child);
         Born(a, child, to);
@@ -544,7 +550,14 @@ public sealed partial class World
         Settle(a);   // law 1: paid from what it holds before it gives its share
         var life = LifeModels.Get(a.Model);
         var (g0, p0) = life.Cross(a, t, Rng);
-        var (g, p) = life.Mutate(g0, p0, Rng);
+        double scale = 1;
+        if (FidelityLaw)
+        {
+            // P.PaidFidelity 1: the one who mates copies the joined genome with its own proofreader (World.Fidelity).
+            (scale, double proof) = Fidelity(a, g0.Length);
+            if (proof > 0) { Dissipate(a, proof); Settle(a); a.LifeKids += (float)proof; }
+        }
+        var (g, p) = FidelityLaw ? life.Mutate(g0, p0, Rng, scale) : life.Mutate(g0, p0, Rng);
         var child = new Agent(NewId(), a.Lineage, Math.Max(a.Gen, t.Gen) + 1, g, p, a.Model) { Tb = a.Tb };
         Looks.Inherit(child, Rng.NextDouble() < 0.5 ? a : t, Rng);
         foreach (var parent in new[] { a, t })
