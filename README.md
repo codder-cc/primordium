@@ -25,7 +25,7 @@ Every world is grown from a seed: its own artificial elements, its own molecules
 - 🌦 **Living climate and sky.** Seasons, day length by latitude, Milankovitch-style cycles (obliquity, precession, eccentricity), ice ages, eclipses, solar flares, volcanoes, cave microclimates.
 - 📈 **Open-endedness metrics.** Bedau-style neutral shadow, novelty, complexity, ecology, tempo and phylogeny tracks, with an honest "progressing / stagnating / regressing" hint.
 - 📜 **A chronicle of the world.** First proteins, first swimmers, the first predator, speciation and extinction, plus fossils you can resurrect.
-- 🛠 **Play god, carefully.** Tune the 213 world laws live, design your own creatures in genome assembly, trigger catastrophes, save and load. Nothing appears for free: whatever you add is booked in the ledger.
+- 🛠 **Play god, carefully.** Tune the 221 world laws live, design your own creatures in genome assembly, trigger catastrophes, save and load. Nothing appears for free: whatever you add is booked in the ledger.
 - ⚙️ **Deterministic and fast.** Multithreaded checkerboard stepping with a reproducible trajectory: the same seed and laws give the same world on any run. A headless bench runs long experiments and statistical comparisons.
 
 ## Screenshots
@@ -97,7 +97,7 @@ dotnet run -c Release --project tools/bench -- --self-test                 # con
 dotnet run -c Release --project tools/bench -- --self-test-one RubbleRegression   # one part of it, timed
 dotnet run -c Release --project tools/bench -- --seed 1 --size 64x64x64 --ticks 6000   # a small world (WxHxL; default 256x160x192)
 dotnet run -c Release --project tools/bench -- --seed 1 --ticks 10000 --every 1000 --audit
-dotnet run -c Release --project tools/bench -- --list-params               # all 213 world laws
+dotnet run -c Release --project tools/bench -- --list-params               # all 221 world laws
 dotnet run -c Release --project tools/bench -- --batch --seeds 1-16 --reps 3 --ticks 6000 --out runs/base
 dotnet run -c Release --project tools/bench -- --compare runs/base/runs.csv runs/try/runs.csv
 dotnet run -c Release --project tools/bench -- --batch ... --resume                  # after a crash: only the unfinished runs
@@ -105,6 +105,8 @@ dotnet run -c Release --project tools/bench -- --batch ... --shard 1/2 --machine
 dotnet run -c Release --project tools/bench -- --merge runs/all runs/a runs/b        # one runs.csv; hashes checked across machines
 dotnet run -c Release --project tools/bench -- --punctuated runs/ice --control runs/ctrl   # tempo after catastrophes vs the same worlds without
 dotnet run -c Release --project tools/bench -- --invade my_design.json --seeds 1-6   # plant a creature-designer file, follow its lineage
+dotnet run -c Release --project tools/bench -- --design-probe --set Organs=1      # each example design alone in small worlds, by the laws given
+dotnet run -c Release --project tools/bench -- --cave-probe --set Organs=1        # photoreceptors in the light and under a roof (the blind cavefish)
 dotnet run -c Release --project tools/bench -- --seed 3 --ticks 2000 --copy-population pop.json         # copy the biggest lineage at the end
 dotnet run -c Release --project tools/bench -- --seed 5 --plant-population pop.json --at 100,60 --audit   # paste it first (another chemistry is mapped); --local, --local-energy
 dotnet run -c Release --project tools/bench -- --tournament --seed 2 --ticks 8000    # ancestors vs moderns in a copy of the world
