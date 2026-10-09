@@ -192,7 +192,9 @@ public sealed partial class World
         if ((a.Age & 7) == 0) ChronLive(a);   // the chronicle looks: depth, caves, water (observation only)
 
         // Wear: unstable molecules fall apart (faster when warm), sunlight damages the genome.
-        float pDecay = a.Unstable * P.DecayK * TempFactor(a.Tb);
+        // (P.ArrheniusDecay 1: the one law of World.Decay, its own count of molecules, instead of DecayK.)
+        float pDecay = ArrheniusLaw ? 0f : a.Unstable * P.DecayK * TempFactor(a.Tb);
+        if (ArrheniusLaw) BodyDecayArrhenius(a, cell);
         float pUv = P.UvK * AgentLight(a) * a.G.Length, pSun = pUv;
         if (dose > 0) pUv += P.FlareMutK * dose * a.G.Length;   // a flare: the same path, more often
         double u = Rng.NextDouble();

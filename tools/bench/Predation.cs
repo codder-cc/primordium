@@ -139,7 +139,8 @@ public sealed partial class World
 // its decay rate k = −ln(x/x0)/age at the last look, and τ = 1/median k, by the cell's temperature and wetness
 // (water + rain) at the death. Whatever takes the excitation away counts: relaxation and decay on the ground,
 // bodies taking it in, leaching; whatever adds to it (other deaths, vents) slows it. The expectation from the
-// decay law alone is EnvEvery/(LooseDecayK·TempFactor(T)), whatever the wetness.
+// decay law alone is EnvEvery/(LooseDecayK·TempFactor(T)), whatever the wetness; with ArrheniusDecay 1, 1/k of the
+// law for the excited species of median barrier, dry and fully wet.
 public sealed class RemainsLife
 {
     public const int Every = 25, Horizon = 3000, Max = 4000;
@@ -149,6 +150,7 @@ public sealed class RemainsLife
 
     public void Update(World w)
     {
+        this.w = w;
         var p = w.PredProbe;
         while (p.Deceased.TryDequeue(out var d))
         {
@@ -167,6 +169,17 @@ public sealed class RemainsLife
     }
     readonly Dictionary<(int, long), (float temp, float wet, double k)> current = new();
 
+    // ArrheniusDecay 1: the law's lifetime at tC for the excited species of median barrier, dry / fully wet.
+    static string ArrheniusExpect(World w, float tC)
+    {
+        var d = w.Decay;
+        var ex = d.List.Where(s => w.Chem.Gap[s] > 0).OrderBy(s => d.Barrier[s]).ToList();
+        if (ex.Count == 0) return "-";
+        int s = ex[ex.Count / 2];
+        return string.Create(Inv, $"{1 / w.DecayRate(s, tC, 0):F0} dry / {1 / w.DecayRate(s, tC, 1):F0} wet");
+    }
+
+    World w;
     public IEnumerable<string> Report()
     {
         var all = rates.Concat(current.Values).ToList();
@@ -185,8 +198,8 @@ public sealed class RemainsLife
             var bin = all.Where(r => r.temp >= lo && r.temp < hi).ToList();
             if (bin.Count == 0) continue;
             float mid = Math.Clamp((lo + hi) / 2, -5, 30);
-            double expect = P.EnvEvery / (P.LooseDecayK * World.TempFactor(mid));
-            parts.Add(string.Create(Inv, $"{name}: τ {Tau(bin.Select(r => r.k))} (n {bin.Count}; dry {Tau(bin.Where(r => r.wet <= 0).Select(r => r.k))}, wet {Tau(bin.Where(r => r.wet > 0).Select(r => r.k))}; decay law alone {expect:F0})"));
+            string expect = World.ArrheniusLaw ? ArrheniusExpect(w, mid) : (P.EnvEvery / (P.LooseDecayK * World.TempFactor(mid))).ToString("F0", Inv);
+            parts.Add(string.Create(Inv, $"{name}: τ {Tau(bin.Select(r => r.k))} (n {bin.Count}; dry {Tau(bin.Where(r => r.wet <= 0).Select(r => r.k))}, wet {Tau(bin.Where(r => r.wet > 0).Select(r => r.k))}; wet ≥ 0.5 {Tau(bin.Where(r => r.wet >= 0.5f).Select(r => r.k))}; decay law alone {expect})"));
         }
         yield return Loc.T("remains' excitation on open ground, lifetime in ticks by temperature: ", "возбуждение останков на открытой земле, время жизни в тиках по температуре: ") + string.Join("; ", parts);
     }

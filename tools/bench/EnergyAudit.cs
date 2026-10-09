@@ -389,6 +389,7 @@ public sealed partial class World
             var f0 = w.EnergyFlows();
             int births0 = w.Births, spawns0 = w.Spawns, deaths0 = w.Deaths;
             long t0 = w.Tick;
+            double bur0 = w.BurialDecayHeat, blk0 = w.BlockDecayHeat;
             var line2 = new List<string>();
             for (int t = 1; t <= ticks; t++)
             {
@@ -417,6 +418,17 @@ public sealed partial class World
                 Console.WriteLine("  " + Loc.T(
                     $"battery (loose + top burials + top blocks): R {G(battery)}, E {G(batteryE)}; bodies release {G(release)}/d, take in R {G(takenR)}/d, spend {G(upkeep)}/d -> R lasts {F(battery / release, 1)} days at the release rate, {F(battery / upkeep, 1)} at the spending rate; reachable (loose + top burials + top blocks that pay to gnaw) R {G(accessible)} = {F(accessible / release, 1)} days; loose alone {F((g.LooseR + g.BurTopR) / Math.Max(1e-9, looseTaken), 1)} days at the uptake rate; loose decay drains {G((f1[FLooseDecay] - f0[FLooseDecay]) / days)}/d",
                     $"батарея (россыпь + верхние захоронения + верхние блоки): R {G(battery)}, E {G(batteryE)}; тела высвобождают {G(release)}/д, поглощают R {G(takenR)}/д, тратят {G(upkeep)}/д -> R хватит на {F(battery / release, 1)} дней по высвобождению, {F(battery / upkeep, 1)} по тратам; доступно (россыпь + верхние захоронения + окупаемые верхние блоки) R {G(accessible)} = {F(accessible / release, 1)} дней; одной россыпи {F((g.LooseR + g.BurTopR) / Math.Max(1e-9, looseTaken), 1)} дней по поглощению; распад на грунте уносит {G((f1[FLooseDecay] - f0[FLooseDecay]) / days)}/д"));
+                {
+                    // Ground decay by pool (ArrheniusDecay 1 adds burials and blocks; the flow `loose decay` holds all three)
+                    // and the excitation lying loose (Σ C·Gap over the surface): "dead soil" away from where energy flows in.
+                    double bur = (w.BurialDecayHeat - bur0) / days, blk = (w.BlockDecayHeat - blk0) / days;
+                    double all = (f1[FLooseDecay] - f0[FLooseDecay]) / days, looseX = 0;
+                    for (int c = 0; c < w.N; c++) looseX += w.LooseExcitation(c);
+                    Console.WriteLine("  " + Loc.T(
+                        $"ground decay per day by pool: loose {G(all - bur - blk)}, burials {G(bur)}, blocks {G(blk)}; loose excitation now {G(looseX)} ({F(looseX / w.N, 3)} per cell)",
+                        $"распад в грунте за день по запасам: россыпь {G(all - bur - blk)}, захоронения {G(bur)}, блоки {G(blk)}; возбуждение россыпи сейчас {G(looseX)} ({F(looseX / w.N, 3)} на клетку)"));
+                    bur0 = w.BurialDecayHeat; blk0 = w.BlockDecayHeat;
+                }
                 f0 = f1; births0 = w.Births; spawns0 = w.Spawns; deaths0 = w.Deaths; t0 = w.Tick;
                 w.EnergyProbe.Clear(); pp.Clear();
             }

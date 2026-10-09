@@ -418,7 +418,8 @@ public sealed partial class World
         };
         // Body energy as matter switched on and off (P.MatterEnergy, World.Charge): the stores become a legacy
         // remainder, then fill again; charge stays in the molecules either way.
-        var switches = new (int tick, string name, double value)[] { (300, "MatterEnergy", 1), (420, "CaptureHeat", 0.15), (600, "MatterEnergy", 0), (850, "MatterEnergy", 1) };
+        var switches = new (int tick, string name, double value)[] { (300, "MatterEnergy", 1), (420, "CaptureHeat", 0.15), (600, "MatterEnergy", 0), (850, "MatterEnergy", 1),
+            (200, "ArrheniusDecay", 1), (500, "DecayWetK", 4), (700, "ArrheniusDecay", 0), (900, "ArrheniusDecay", 1) };   // one decay law (World.Decay) on and off
         string notes = "";
         for (int t = 1; t <= 1000; t++)
         {

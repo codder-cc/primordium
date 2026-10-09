@@ -344,6 +344,13 @@ public static class P
     // parts with chance LooseDecayK · TempFactor per environment step; the top block of a column loses a
     // molecule to weathering with chance WeatherK · TempFactor · (1 + water + rain) / (0.1 + cohesion).
     public static float LooseDecayK = 0.0005f, WeatherK = 0.0002f;
+    // Spontaneous decay by one Arrhenius law (World.Decay): ArrheniusDecay 1 — every molecule with a
+    // downhill path (exothermic split, or an excited compound's relaxation, whichever releases more), in
+    // every pool (loose, burials, blocks, bodies), at k = 10^DecayLogA · exp(−Ea/(T + 273.15))
+    // · (1 + DecayWetK·wet) per tick, Ea = (DecayEa + DecayBondEa·Bond/mean Bond) · (1 + order × lattice
+    // bond / mean Bond); 0 — the old separate laws (LooseDecayK on the ground, DecayK in bodies; none below).
+    public static int ArrheniusDecay = 0;
+    public static float DecayLogA = 2.4f, DecayEa = 4000f, DecayBondEa = 1000f, DecayWetK = 2f;
 
     // Space
     public static int StrikeMin = 2500, StrikeMax = 8000;   // ticks between mutagenic strikes

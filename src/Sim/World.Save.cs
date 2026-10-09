@@ -261,6 +261,7 @@ public sealed partial class World
         (nameof(P.ChemEnergyModel), 0),
         (nameof(P.AbioModel), 0),
         (nameof(P.MatterEnergy), 0),
+        (nameof(P.ArrheniusDecay), 0),
     };
 
     static void WriteLaws(BinaryWriter w, Dictionary<string, double> laws)

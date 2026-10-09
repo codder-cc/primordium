@@ -160,6 +160,7 @@ public sealed partial class World
         Timed("ReactRegression", ReactRegression);
         Timed("MatterLibraryRegression", MatterLibraryRegression);
         Timed("LeachRegression", LeachRegression);
+        Timed("DecayRegression", DecayRegression);
         Timed("VolumeRegression", VolumeRegression);
         Timed("FaceRegression", FaceRegression);
         Timed("WaterRegression", WaterRegression);

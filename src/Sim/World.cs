@@ -232,6 +232,8 @@ public sealed partial class World
         for (int k = 0; k < Tiles; k++) ctxs[k] = new Ctx { Rng = new SimRng(seed ^ life, 1 + k), Slot = k };
         paramsSeen = ParamRegistry.Version;   // the tables built below use the laws as they are now
         Chem = new Chemistry(seed, chemModel >= 0 ? chemModel : P.ChemEnergyModel);
+        Decay = new DecayPaths(Chem);   // World.Decay: each species' downhill path and barrier (P.ArrheniusDecay)
+        decayRows = new List<int>[H];
         tiles = new List<Agent>[Tiles];
         for (int k = 0; k < Tiles; k++) tiles[k] = new List<Agent>();
         for (int i = 0; i < N; i++)
@@ -320,6 +322,7 @@ public sealed partial class World
         prof.Restart();
         LapStart();
         Tick++;
+        if (ArrheniusLaw) RefreshDecayA();   // World.Decay: A = 10^DecayLogA for the parallel phases
         ResMark(-1);   // the resource probe (World.Resources, observation): start of the tick
         StepClimateCycles();   // World.ClimateCycles: is anything of the non-stationary climate running
         if (TranspLaw && (!transpValid || Tick % (P.LightEvery * 8) == 0)) UpdateTransparency();
@@ -359,6 +362,7 @@ public sealed partial class World
         }
         LapStart();
         if (Tick % P.MetamorphEvery == 0) Metamorphose();   // laps DMetamorph itself
+        if (ArrheniusLaw && Tick % P.MetamorphEvery == 0) DeepDecay();   // World.Decay: burials and blocks
         Lap(DBurials);
         Prof[7] += prof.Elapsed.TotalMilliseconds - checkpoint;
         Prof[0] += prof.Elapsed.TotalMilliseconds; prof.Restart();
@@ -665,12 +669,14 @@ public sealed partial class World
     {
         float f = TempFactor(Temp[i]), total = 0;
         int gas = Chem.Gas;
+        bool arrhenius = ArrheniusLaw;   // World.Decay: one law for every pool instead of LooseDecayK
+        if (arrhenius) LooseDecayArrhenius(i, row);
         for (int s = 0; s < Chemistry.S; s++)
         {
             float amount = C[s][i].F;
             if (amount <= 0) continue;
             if (s != gas) total += amount * Chem.Volume[s];
-            if (Chem.SplitExo[s])
+            if (!arrhenius && Chem.SplitExo[s])
             {
                 Qty m = amount * P.LooseDecayK * f;   // one molecule s → A + B, exactly the same amount each
                 C[s][i] -= m; C[Chem.SplitA[s]][i] += m;
