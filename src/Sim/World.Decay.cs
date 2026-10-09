@@ -290,6 +290,9 @@ public sealed partial class World
     float DepthWet(int c, int z) => z >= Height[c] - 2 ? CellWet(c) : 0f;
 
     readonly List<int>[] decayRows;
+    const int BurialChunk = 2048;
+    List<double>[] burialHeat = Array.Empty<List<double>>();
+    List<(int k, int n, bool changed)>[] burialDone = Array.Empty<List<(int k, int n, bool changed)>>();
     const int BlockStride = 8, BurialStride = 4;   // per row: block voxels with something that decays (filled in parallel)
 
     void DeepDecay()
@@ -305,34 +308,61 @@ public sealed partial class World
         burialOrder.Sort();
         double burialDt = dt * BurialStride;
         int weakest = d.List.Length == 0 ? -1 : d.Weakest;
-        for (int k = 0; k < burialOrder.Count; k++)
+        // Each burial decays on its own (its matter, its stats, the climate at its depth — nothing another
+        // burial's decay changes), so the burials are worked in parallel by chunks of the voxel order; what
+        // they share (the heat into the cells, the sum, the marks for the support solver) is then applied in
+        // voxel order, the same operations in the same order as one pass.
+        int count = burialOrder.Count, chunks = (count + BurialChunk - 1) / BurialChunk;
+        if (burialHeat.Length < chunks) { Array.Resize(ref burialHeat, chunks); Array.Resize(ref burialDone, chunks); }
+        Parallel.For(0, chunks, ch =>
         {
-            if ((k + pass) % BurialStride != 0) continue;
-            int v = burialOrder[k];
-            var b = Buried[v];
-            int c = v / Z, z = v % Z;
-            UpdateBurialStats(b);
-            float lattice = b.Units > 0 ? b.Order * b.Bonds / b.Units : 0;
-            float t = LocalTempDeep(c, z), wet = DepthWet(c, z);
-            // The fastest species here bounds every other's share: pools it could not move a 2⁻³² unit of are skipped.
-            double most = weakest < 0 ? 0 : DecayShare(DecayRateWith(A, weakest, t, wet, lattice), burialDt);
-            if (most * long.MaxValue < 1) continue;
-            bool changed = false;
-            foreach (int s in d.List)
+            var heats = burialHeat[ch] ??= new List<double>();
+            var done = burialDone[ch] ??= new List<(int k, int n, bool changed)>();
+            heats.Clear(); done.Clear();
+            for (int k = ch * BurialChunk, end = Math.Min(count, k + BurialChunk); k < end; k++)
             {
-                var pool = b.Matter[s];
-                if (pool.Raw <= 0 || pool.Raw * most < 1) continue;
-                double share = DecayShare(DecayRateWith(A, s, t, wet, lattice), burialDt);
-                Qty m = Qty.FromRaw(Math.Min(pool.Raw, (long)(pool.Raw * share)));
-                if (m.Raw <= 0) continue;
-                b.Matter[s] = pool - m; b.Matter[d.To1[s]] += m;
-                if (d.To2[s] >= 0) b.Matter[d.To2[s]] += m;
-                double h = m * d.Heat[s];
-                heatIn[c] += (float)h;
-                heatBurial += h;
-                changed = true;
+                if ((k + pass) % BurialStride != 0) continue;
+                int v = burialOrder[k];
+                var b = Buried[v];
+                int c = v / Z, z = v % Z;
+                UpdateBurialStats(b);
+                float lattice = b.Units > 0 ? b.Order * b.Bonds / b.Units : 0;
+                float t = LocalTempDeep(c, z), wet = DepthWet(c, z);
+                // The fastest species here bounds every other's share: pools it could not move a 2⁻³² unit of are skipped.
+                double most = weakest < 0 ? 0 : DecayShare(DecayRateWith(A, weakest, t, wet, lattice), burialDt);
+                if (most * long.MaxValue < 1) continue;
+                bool changed = false;
+                int n0 = heats.Count;
+                foreach (int s in d.List)
+                {
+                    var pool = b.Matter[s];
+                    if (pool.Raw <= 0 || pool.Raw * most < 1) continue;
+                    double share = DecayShare(DecayRateWith(A, s, t, wet, lattice), burialDt);
+                    Qty m = Qty.FromRaw(Math.Min(pool.Raw, (long)(pool.Raw * share)));
+                    if (m.Raw <= 0) continue;
+                    b.Matter[s] = pool - m; b.Matter[d.To1[s]] += m;
+                    if (d.To2[s] >= 0) b.Matter[d.To2[s]] += m;
+                    heats.Add(m * d.Heat[s]);
+                    changed = true;
+                }
+                if (heats.Count > n0 || changed) done.Add((k, heats.Count - n0, changed));
             }
-            if (changed) { b.Dirty = true; MassChanged(v); }
+        });
+        for (int ch = 0; ch < chunks; ch++)
+        {
+            var heats = burialHeat[ch];
+            int at = 0;
+            foreach (var (k, n, changed) in burialDone[ch])
+            {
+                int v = burialOrder[k], c = v / Z;
+                for (int j = 0; j < n; j++)
+                {
+                    double h = heats[at++];
+                    heatIn[c] += (float)h;
+                    heatBurial += h;
+                }
+                if (changed) { Buried[v].Dirty = true; MassChanged(v); }
+            }
         }
         // Blocks: find candidates by rows in parallel (read only), then take whole molecules in voxel order. Rock
         // decays ~10⁷ times slower than litter: each pass looks at every BlockStride-th row (in turn, by the pass
