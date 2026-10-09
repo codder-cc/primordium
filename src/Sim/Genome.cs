@@ -42,7 +42,17 @@ public static class Genome
     static readonly string[] VariantNames = { "photo", "push", "mate", "gnaw", "grow", "count", "drink", "digest", "hurt", "btemp", "photons", "swim" };
     public static readonly int OpSlots = 64 + Variants.Length;
 
-    public static int Slot(int b)
+    // Slot of every byte, looked up (the VM counts one per instruction).
+    static readonly byte[] SlotOf = MakeSlots();
+    static byte[] MakeSlots()
+    {
+        var t = new byte[256];
+        for (int b = 0; b < 256; b++) t[b] = (byte)SlotCompute(b);
+        return t;
+    }
+    public static int Slot(int b) => SlotOf[b & 255];
+
+    static int SlotCompute(int b)
     {
         int op = b & 63;
         if (b >> 6 >= 2)
