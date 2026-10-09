@@ -112,12 +112,11 @@ public sealed partial class World
         int best = a.Y * W + a.X;
         if (a.Cells == 1) return best;
         float bv = -1;
+        Span<float> each = stackalloc float[Chemistry.S];
         for (int k = 0; k < a.Cells; k++)
         {
             int c = FootCell(a, k);
-            float t = 0;
-            var fb = FloorBurial(a, c);
-            for (int s = 0; s < Chemistry.S; s++) t += Loose(a, c, fb, s);
+            float t = LooseAll(a, c, FloorBurial(a, c), each);
             if (t > bv) { bv = t; best = c; }
         }
         return best;

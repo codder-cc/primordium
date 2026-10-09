@@ -515,10 +515,8 @@ public sealed partial class World
     public void Drink(Agent a, int cell)
     {
         cell = FullestCell(a);
-        float total = 0;
-        var fb = FloorBurial(a, cell);
         Span<float> lying = stackalloc float[Chemistry.S];   // each species read once (Loose only reads)
-        for (int s = 0; s < Chemistry.S; s++) total += lying[s] = Loose(a, cell, fb, s);
+        float total = LooseAll(a, cell, FloorBurial(a, cell), lying);
         if (total < 0.5f)
         {
             Dissipate(a, P.CostIntake * (1 + a.Packing * a.Packing));

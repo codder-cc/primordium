@@ -372,6 +372,24 @@ public sealed partial class World
         return lying > 0 && InWater(cell, a.Z) ? lying * Exposure(a, cell, s) : lying;   // in water: only what it reaches (World.Water)
     }
 
+    // Loose(a, cell, b, s) of every species into `lying`, and their sum (in species order): what is the same
+    // for every species (the floor, the water) is looked at once.
+    float LooseAll(Agent a, int cell, Burial b, Span<float> lying)
+    {
+        bool top = a.Z >= Height[cell];
+        bool caveGas = P.CaveGasK > 0 && !top, wet = InWater(cell, a.Z);
+        int gas = Chem.Gas;
+        var matter = b?.Matter;
+        float total = 0;
+        for (int s = 0; s < Chemistry.S; s++)
+        {
+            float l = (float)((top ? C[s][cell] : Qty.Zero) + (matter != null ? matter[s] : Qty.Zero));
+            if (s == gas && caveGas) l += (float)CaveGas(cell, a.Z);
+            total += lying[s] = l > 0 && wet ? l * Exposure(a, cell, s) : l;
+        }
+        return total;
+    }
+
     void ChangeLoose(Agent a, int cell, int s, Qty amount) => ChangeLooseAt(cell, a.Z, s, amount);
 
     // Loose matter on the floor at `level` of `cell` (the surface or a cave floor).
