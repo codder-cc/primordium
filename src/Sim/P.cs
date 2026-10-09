@@ -442,7 +442,7 @@ public static class P
     // Life model 2 (src/Sim/Model2, docs/DESIGN-LIFE-MODEL-2.md): a cell of proteins folded from a polymer
     // genome. The folding laws (Life2Eps*, Life2Cut, Life2Tm*, Life2Pair, Life2MaxGene, Life2ResidueBits)
     // shape what a sequence is: a cache of folds per chemistry keeps them, so they take effect in a new world.
-    public static int Life2ResidueBits = 8;      // a residue is 2^−bits of a molecule of its letter (ResidueQ = 2⁻⁸)
+    public static int Life2ResidueBits = 9;      // a residue is 2^−bits of a molecule of its letter (ResidueQ = 2⁻⁹)
     public static float Life2Link = 1f / 512;    // energy held in the bond of one residue (E_link)
     public static float Life2LinkEff = 0.5f;     // share of the charge paid for a bond that stays in it (η), the rest is heat
     public static float Life2EpsB = 1.2f, Life2EpsM = 2f, Life2EpsQ = 0.3f, Life2EpsH = 0.5f, Life2EpsX = 1f, Life2SigmaX = 1.5f;
@@ -454,15 +454,23 @@ public static class P
     public static float Life2TmShare = 0.005f, Life2TmQ = 1f;   // share of random 7-residue windows hydrophobic enough to cross the membrane (sets the threshold per chemistry); most mean |polarity| of one
     public static float Life2Pair = 10f;         // pairing energy of two complementary residues (ε_P)
     public static float Life2Stem = 0.5f;        // share of Life2Pair a pair of residues needs to hold a hairpin's stem
-    public static float Life2Tx = 2f;            // copies of a gene per slow step at a fully occupied promoter
+    // The pairing law: 1 — sockets: atom e of one residue faces atom mirror(e) of the other (the same sockets a pocket
+    // has), each facing pair holding half by fit and half by its Pauling ionic resonance ChemIonicK·(χe − χmirror(e))²
+    // (scaled to its mean over the elements), every atom without its partner costing Life2PairMiss; 0 — the
+    // prototype's polarity and size complement (exp of (q_a + q_b)² and (v_a + v_b − 2v̄)²).
+    public static int Life2PairLaw = 1;
+    public static float Life2PairMiss = 0.5f;    // pairing lost per unmatched atom (share of Life2Pair, law 1)
+    public static float Life2Tx = 4f;            // copies of a gene per slow step at a fully occupied promoter
     public static float Life2Pol = 40f;          // residues a bound polymerase copies per slow step
     public static int Life2Every = 8;            // ticks between slow steps (transcription, synthesis, decay, copying, division)
     public static int Life2MaxGene = 160;        // longest transcript a polymerase makes before it falls off
-    public static int Life2Proofread = 4;        // times a polymerase with a second pocket can take a wrong letter off again
+    public static int Life2Proofread = 4;        // proofreading passes of a polymerase with a second pocket (each checks every letter again)
+    public static float Life2ProofCost = 0.25f;  // share of a bond's charge one proofreading check of a letter takes (right or wrong)
     public static float Life2Fidelity = 12f;     // how much a rigid polymerase pocket sharpens the choice of the paired letter (D_max)
     public static float Life2Channel = 0.05f;    // permeability of a channel copy
-    public static float Life2Pump = 0.05f;       // molecules a pump copy takes in per tick with its ligand and carrier bound
-    public static float Life2Leak = 0.01f;       // permeability of the bare membrane to a fully hydrophobic molecule (× its hydrophobicity²)
+    public static float Life2Pump = 5f;          // molecules a pump copy takes in per tick with its ligand and carrier bound
+    public static float Life2Leak = 0.1f;        // permeability of the bare membrane to a fully hydrophobic molecule (× its hydrophobicity²)
+    public static int Life2Dilute = 1;           // 1: what lies on a floor is spread over its voxel's free space (VoxelSpace) for a membrane; 0: per room, as in the prototype
     public static float Life2Motor = 1f;         // cycles per tick of a motor copy with its carrier bound
     public static float Life2Leg = 20f;          // soluble length over which a motor's stroke saturates (ℓ_0)
     public static float Life2Turn = 4f;          // torque cycles per tumble (a new heading)

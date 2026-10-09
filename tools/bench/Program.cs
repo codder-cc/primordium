@@ -68,6 +68,7 @@ catch (Exception e) when (e is ArgumentException || e is System.IO.IOException |
 }
 if (Array.IndexOf(args, "--fold-stats") >= 0) { Model2Fold.Stats(args); return; }   // what random chains of life model 2 fold into (Model2Fold.cs)
 if (Array.IndexOf(args, "--model2-compile") >= 0) { World.Model2Compile(args); return; }   // the seeded cells of model 2 per seed (Model2Demo.cs)
+if (Array.IndexOf(args, "--model2-fidelity") >= 0) { World.Model2Fidelity(args); return; }   // how faithfully model 2 copies its genome per seed and pairing law (Model2Fidelity.cs)
 if (Array.IndexOf(args, "--model2-demo") >= 0) { World.Model2Demo(args); return; }   // model 2 on tiny worlds: K1–K3, speed (Model2Demo.cs)
 if (Array.IndexOf(args, "--long-test") >= 0) { World.RunLongTest(args); return; }
 if (Array.IndexOf(args, "--batch") >= 0) { Batch.Run(args, laws); return; }

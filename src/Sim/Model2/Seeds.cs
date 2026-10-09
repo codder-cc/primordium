@@ -32,6 +32,7 @@ public sealed class SeedSet
     public CreatureDesign PhototrophDesign, HeterotrophDesign, KnockoutDesign;
     public string Report;
     public double Total;   // how far the genes are from their specs (0: all met)
+    public double CarrierH;   // the ground carrier's hydrophobicity (how fast it leaks out through the bare membrane)
 }
 
 public static class Seeds
@@ -49,11 +50,15 @@ public static class Seeds
         {
             var s = CompileFor(chem, effort, rank);
             if (s == null) break;
-            if (best == null || s.Total < best.Total) best = s;
-            if (best.Total < 0.5) break;
+            if (best == null || Cost(s) < Cost(best)) best = s;
+            if (Cost(best) < 0.5) break;
         }
         return best;
     }
+
+    // How far a set is from its specs, and how leaky its carrier is: a spent carrier crosses the bare membrane by its
+    // hydrophobicity (Life2Leak·h²) and a cell that loses its carriers loses where its charge is kept.
+    static double Cost(SeedSet s) => s.Total + 2 * s.CarrierH * s.CarrierH;
 
     static SeedSet CompileFor(Chemistry chem, int effort, int rank)
     {
@@ -78,23 +83,26 @@ public static class Seeds
         // bigger gap holds more.
         var carriers = Enumerable.Range(0, Chem2.L).Select(f => 2 * f).Where(s => s != chem.Gas && chem.PhotoUp[s] == s + 1 && chem.Gap[s + 1] > 0)
             .OrderByDescending(s => (share[s] > 0 && share[s + 1] > 0 ? 2 : 0) + (chem.AtomCount(s) == 1 ? 1 : 0))
-            .ThenByDescending(s => Math.Min(share[s], share[s + 1]) * 100 + share[s + 1] * 20 + 0.05 * chem.Gap[s + 1]).ThenBy(s => s).ToList();
+            .ThenByDescending(s => Math.Min(share[s], share[s + 1]) * 100 + share[s + 1] * 20 + 0.05 * chem.Gap[s + 1] - 3 * c.LigH[s] * c.LigH[s]).ThenBy(s => s).ToList();   // a hydrophobic ground carrier leaks out through the bare membrane (Life2Leak·h²) once spent
         if (rank >= carriers.Count) return null;
         int g = carriers[rank];
-        set.Carrier = g; set.Food = g + 1;
+        set.Carrier = g; set.Food = g + 1; set.CarrierH = c.LigH[g];
         var count = new double[Chem2.L];
         foreach (var (q, w) in windows)
         {
             double bg = Math.Min(c.BindSpecies(w, g), c.BindSpecies(w, g + 1));
             if (bg < P.Life2Cut) foreach (var f in q) count[f] += 1;
         }
-        // The alphabet: of the 8 letters most often lining windows that hold the carrier (with the most hydrophobic,
-        // for crossings, and the most polar, for soluble chains; not the gas, not the carrier's own letter — the cell
-        // keeps its carriers to hold its charge), the 5 that copy most faithfully among themselves and their
-        // complements (the pairing law); the carrier-binders break ties.
-        var letters = Enumerable.Range(0, Chem2.L).Where(f => 2 * f != chem.Gas && 2 * f != g).ToList();
+        // The alphabet: of the 8 letters most often lining windows that hold the carrier (with the lone atoms — they
+        // never fall apart and are the commonest matter of every world —, the most hydrophobic, for crossings, and the
+        // most polar, for soluble chains; no monomer that falls apart by itself, which would litter the pool with its
+        // parts), the 5 that copy most faithfully among themselves and their complements (the pairing law), also among
+        // stray monomers; not the carrier's own letter (a cell keeps its carriers to hold its charge); the carrier-binders
+        // and lone atoms break ties.
+        var letters = Enumerable.Range(0, Chem2.L).Where(f => !chem.SplitExo[2 * f] && 2 * f != g).ToList();
         int hyd = letters.OrderByDescending(f => c.H[f]).ThenBy(f => f).First(), polar = letters.OrderBy(f => c.H[f]).ThenBy(f => f).First();
         var cand = letters.OrderByDescending(f => count[f]).ThenBy(f => f).Take(8).ToList();
+        foreach (var f in letters.Where(f => chem.AtomCount(2 * f) == 1)) if (!cand.Contains(f)) cand.Add(f);
         if (!cand.Contains(hyd)) cand.Add(hyd);
         if (!cand.Contains(polar)) cand.Add(polar);
         var alphabet = new List<int>();
@@ -102,13 +110,25 @@ public static class Seeds
         double beta25 = Chem2.Beta(Chem2.Level(25));
         int nc = cand.Count;
         double total = Math.Max(1, count.Sum());
+        var allLetters = Enumerable.Range(0, Chem2.L).Select(f => (byte)f).ToArray();
         for (int mask = 0; mask < 1 << nc; mask++)
         {
             if (System.Numerics.BitOperations.PopCount((uint)mask) != 5) continue;
             var pick = Enumerable.Range(0, nc).Where(i => (mask >> i & 1) != 0).Select(i => (byte)cand[i]).ToArray();
-            if (!pick.Any(f => c.H[f] >= c.TmH - 0.05) || !pick.Any(f => c.H[f] < 0.5)) continue;   // crossings and soluble chains possible
+            if (!pick.Any(f => c.H[f] >= c.TmH - 0.05) || !pick.Any(f => c.H[f] < c.TmH - 0.1)) continue;   // crossings and soluble chains possible
             var pool = pick.Concat(pick.Select(f => (byte)c.Comp[f])).Append((byte)(g / 2)).Distinct().ToArray();
-            double err = c.CopyError(pick, pool, 3, beta25) - 0.05 * pick.Sum(f => count[f]) / total;
+            double err = c.CopyError(pick, pool, 3, beta25) + 0.2 * c.CopyError(pick, allLetters, 5, beta25) - 0.05 * pick.Sum(f => count[f]) / total;   // robust also among stray monomers
+            // Its windows must be able to hold the charged carrier (the polymerase's and the motor's pocket) and the
+            // ground one (the pigment's partner); every monomer more to gather (complements outside it) costs a little.
+            double holds = double.MaxValue, holdsG = double.MaxValue;
+            Span<byte> win = stackalloc byte[3];
+            foreach (var x in pick) foreach (var y in pick) foreach (var z in pick)
+            {
+                win[0] = x; win[1] = y; win[2] = z;
+                var pw = c.PocketOf(win, 0);
+                holds = Math.Min(holds, c.BindSpecies(pw, g + 1)); holdsG = Math.Min(holdsG, c.BindSpecies(pw, g));
+            }
+            err += Math.Max(0, holds + 2) + Math.Max(0, holdsG + 2) + 0.01 * (pool.Length - pick.Length) - 0.05 * pool.Average(f => c.H[f] * c.H[f]) - 0.03 * pool.Count(f => chem.AtomCount(2 * f) == 1) + 0.05 * pick.Count(f => 2 * c.Comp[f] == g) + 0.3 * pool.Where(f => 2 * f != g).Sum(f => Math.Max(0, 0.36 - c.H[f] * c.H[f]));   // hydrophobic letters come in through the bare membrane faster; lone atoms are everywhere
             if (err < bestErr) { bestErr = err; alphabet = pick.Select(f => (int)f).ToList(); }
         }
         if (alphabet.Count == 0) { alphabet = cand.Take(4).ToList(); if (!alphabet.Contains(hyd)) alphabet.Add(hyd); if (!alphabet.Contains(polar)) alphabet.Add(polar); }
@@ -118,11 +138,16 @@ public static class Seeds
         string Name(int s) => chem.NameEn[s];
 
 
+        ProteinType polBinder = null;   // the compiled polymerase (for the genes after it)
         byte[] Gene(string name, GeneSpec spec, long seed, byte[] letters = null, int mult = 1)
         {
             if (!spec.Needs.Any(x => x.Kind == Need.Kinds.Stable)) spec.Needs.Add(new Need { Kind = Need.Kinds.Stable, Strength = 4, Weight = 0.5 });   // well folded: lasts
             // a pocket for the charged carrier that took it apart would only make heat of the charge
             if (!spec.Needs.Any(x => x.Kind == Need.Kinds.NoSplit)) spec.Needs.Add(new Need { Kind = Need.Kinds.NoSplit, Species = set.Food, Weight = 0.5 });
+            // a pigment with no carrier to take its photon would only warm the cell (and take photons from the real one)
+            if (!spec.Needs.Any(x => x.Kind == Need.Kinds.NoBarePigment)) spec.Needs.Add(new Need { Kind = Need.Kinds.NoBarePigment, Weight = 0.5 });
+            // the polymerase must not sit on the transcript's start (it would repress the gene)
+            if (polBinder != null && !spec.Needs.Any(x => x.Kind == Need.Kinds.Unblocked)) spec.Needs.Add(new Need { Kind = Need.Kinds.Unblocked, Binder = polBinder });
             var s = Compiler.Compile(c, spec, letters ?? A, seed, effort * mult, out double score);
             set.Genes[name] = s; set.Scores[name] = score;
             report.Add($"{name}: score {score.ToString("0.00", CultureInfo.InvariantCulture)} [{Compiler.Explain(c, new ProteinType(c, s), spec)}] {new ProteinType(c, s).Detail(chem)}");
@@ -131,10 +156,13 @@ public static class Seeds
 
         var pol = new GeneSpec("Pol", 48);
         pol.Needs.Add(new Need { Kind = Need.Kinds.Soluble, Weight = 3 });
-        pol.Needs.Add(new Need { Kind = Need.Kinds.Polymerase, Alphabet = A, Strength = -1.5 });
+        pol.Needs.Add(new Need { Kind = Need.Kinds.Polymerase, Alphabet = A, Strength = -3 });
         pol.Needs.Add(Need.Pocket(ProteinType.In, set.Food));
         pol.Needs.Add(new Need { Kind = Need.Kinds.NoBarePigment, Weight = 0.5 });
+        pol.Needs.Add(new Need { Kind = Need.Kinds.Unblocked });   // its own pockets must not sit on its transcript's start
         Gene("Pol", pol, 11, null, 3);   // the hardest: more search
+        var polType = new ProteinType(c, set.Genes["Pol"]);
+        polBinder = polType;
         // The promoter: the window of the alphabet the polymerase binds best.
         byte[] promoter = null;
         {
@@ -161,11 +189,10 @@ public static class Seeds
         pg.Needs.Add(new Need { Kind = Need.Kinds.NoBarePigment, Weight = 0.5 });
         Gene("Pg", pg, 12);
 
-        // Pumps for the letters (two a gene), so the cell can gather its monomers; letters no pocket binds come in
-        // only through the bare membrane (Life2Leak).
+        // A pump for the ground carrier: what lies around is dilute (Life2Dilute), and the cell gathers what holds its
+        // charge up to e^{β·gap} the outside. The letters come in through the bare membrane (Life2Leak, the more
+        // hydrophobic the faster): pockets of most chemistries hold few species, rarely its letters.
         var chans = new List<string>();
-        // A pump for the ground carrier (the cell gathers what holds its charge); the letters come in through the bare
-        // membrane (Life2Leak).
         var pumped = new List<int> { g };
         for (int k = 0; k < pumped.Count; k += 2)
         {
@@ -218,8 +245,8 @@ public static class Seeds
             double beta = Chem2.Beta(Chem2.Level(25));
             report.Insert(0, $"copy error per residue at 25 °C (D 1 / 3 / 5): alphabet {c.CopyError(A, pool, 1, beta):0.000} / {c.CopyError(A, pool, 3, beta):0.000} / {c.CopyError(A, pool, 5, beta):0.000}; all letters {c.CopyError(all, all, 1, beta):0.000} / {c.CopyError(all, all, 3, beta):0.000} / {c.CopyError(all, all, 5, beta):0.000}");
         }
-        report.Insert(0, "pairs: " + string.Join(" ", Enumerable.Range(0, Chem2.L).Select(f => $"{f:x}→{c.Comp[f]:x}({c.Pair[f, c.Comp[f]].ToString("0.0", CultureInfo.InvariantCulture)})")) + "; alphabet letters " + string.Concat(A.Select(f => "0123456789abcdef"[f])));
-        report.Insert(0, $"chemistry {chem.Model}: carrier {Name(g)} (g* {Name(set.Food)}, gap {chem.Gap[set.Food]}), alphabet {string.Join(",", A.Select(f => Name(2 * f)))}, promoter {string.Concat(promoter.Select(f => "0123456789abcdef"[f]))}, binding cost {c.Eps0.ToString("0.00", CultureInfo.InvariantCulture)}, crossing h ≥ {c.TmH.ToString("0.00", CultureInfo.InvariantCulture)}");
+        report.Insert(0, "pairs (and h): " + string.Join(" ", Enumerable.Range(0, Chem2.L).Select(f => $"{f:x}[{c.H[f].ToString("0.00", CultureInfo.InvariantCulture)}]→{c.Comp[f]:x}({c.Pair[f, c.Comp[f]].ToString("0.0", CultureInfo.InvariantCulture)})")) + "; alphabet letters " + string.Concat(A.Select(f => "0123456789abcdef"[f])));
+        report.Insert(0, $"chemistry {chem.Model}: carrier {Name(g)} (g* {Name(set.Food)}, gap {chem.Gap[set.Food]}, h {c.LigH[g].ToString("0.00", CultureInfo.InvariantCulture)}), alphabet {string.Join(",", A.Select(f => Name(2 * f)))}, promoter {string.Concat(promoter.Select(f => "0123456789abcdef"[f]))}, binding cost {c.Eps0.ToString("0.00", CultureInfo.InvariantCulture)}, crossing h ≥ {c.TmH.ToString("0.00", CultureInfo.InvariantCulture)}");
         foreach (var (label, gen) in new[] { ("F-1", set.Phototroph), ("E-1", set.Heterotroph), ("E-1Δ", set.Knockout) })
         {
             var units = GeneTable.Parse(c, gen);

@@ -135,7 +135,7 @@ public sealed class ChemModel : ILifeModel
     {
         var chem = c.Chem;
         int level = Chem2.Level(a.Tb);
-        double kspont = P.DecayK * World.TempFactor(a.Tb), room = Room(a);
+        double kspont = P.DecayK * World.TempFactor(a.Tb), room = Room(a), beta = Chem2.Beta(level);
         Concentrations(w, a, cell, st);
         Leak(w, a, cell, c, st, room);
         var slots = st.Slots;
@@ -177,7 +177,11 @@ public sealed class ChemModel : ILifeModel
                         double j = perm * dc, cap = Math.Abs(dc) * room / 2;
                         if (Math.Abs(j) > cap) j = Math.Sign(j) * cap;
                         var moved = w.Exchange(a, cell, s, Qty.Of(j));
-                        if (moved.Raw != 0) { cIn[s] = World.HaveRaw(a, s) / Qty.One / room; st.Uptake += moved.D; }
+                        if (moved.Raw != 0)
+                        {
+                            cIn[s] = World.HaveRaw(a, s) / Qty.One / room; st.Uptake += moved.D;
+                            if (chem.Gap[s] > 0) st.Ledger[moved.Raw > 0 ? Cell.LChargeIn : Cell.LChargeOut] += Math.Abs(moved.D) * chem.Gap[s];
+                        }
                         break;
                     }
                     case ProteinType.ActKind.Split:
@@ -192,7 +196,7 @@ public sealed class ChemModel : ILifeModel
                             long have = World.HaveRaw(a, s);
                             if (have <= 0) break;
                             var r = new World.Coupled { A = s, B = -1, P1 = chem.SplitA[s], P2 = chem.SplitB[s], Carrier = -1, M = Qty.FromRaw(Math.Min(have, 1L << Qty.Bits)) };
-                            if (act.Couple >= 0 && w.Rng.NextDouble() < Occupied(slot, k, act.Couple, act.CoupleLig, lv, b, nR, nT, w, a, cell)) { r.Carrier = act.CoupleSpecies; r.Up = true; if (!w.React(a, r)) r.Carrier = -1; else { st.Reactions++; continue; } }
+                            if (act.Couple >= 0 && w.Rng.NextDouble() < Occupied(slot, k, act.Couple, act.CoupleLig, lv, b, nR, nT, w, a, cell)) { r.Carrier = act.CoupleSpecies; r.Up = true; if (!w.React(a, r)) r.Carrier = -1; else { st.Reactions++; st.Ledger[Cell.LCapture] += r.M.D * chem.Gap[chem.PhotoUp[r.Carrier]]; continue; } }
                             if (w.React(a, r)) st.Reactions++;
                         }
                         cIn[s] = World.HaveRaw(a, s) / Qty.One / room;
@@ -216,7 +220,7 @@ public sealed class ChemModel : ILifeModel
                             var r = new World.Coupled { A = s1, B = s2, P1 = prod, P2 = -1, Carrier = -1, M = Qty.FromRaw(m) };
                             bool coupled = act.Couple >= 0 && (de < 0 || w.Rng.NextDouble() < Occupied(slot, k, act.Couple, act.CoupleLig, lv, b, nR, nT, w, a, cell));
                             if (coupled) { r.Carrier = act.CoupleSpecies; r.Up = de > 0; }
-                            if (w.React(a, r)) st.Reactions++;
+                            if (w.React(a, r)) { st.Reactions++; if (coupled && de > 0) st.Ledger[Cell.LCapture] += r.M.D * chem.Gap[chem.PhotoUp[r.Carrier]]; }
                             else if (coupled && de > 0) { r.Carrier = -1; if (w.React(a, r)) st.Reactions++; }
                         }
                         cIn[s1] = World.HaveRaw(a, s1) / Qty.One / room; cIn[s2] = World.HaveRaw(a, s2) / Qty.One / room;
@@ -230,13 +234,23 @@ public sealed class ChemModel : ILifeModel
                         int s = act.Species;
                         double o = Out(w, a, cell, s);
                         if (o <= 0) break;
+                        // Loaded from outside, unloaded inside, driven by the carrier's discharge: the net flux runs
+                        // while the inside is less than e^{β·gap} the outside (the carrier's gap bounds the work of a
+                        // cycle), and the pore loads from inside too — the back flux.
+                        double back = cIn[s] * DetMath.Exp(-beta * chem.Gap[act.CoupleSpecies]);
+                        if (o <= back) break;
                         double carrier = Occupied(slot, k, act.Couple, act.CoupleLig, lv, b, nR, nT, w, a, cell);
-                        double conc = 0.5 * (o + cIn[s]);
-                        double held = nR * conc * kr / (1 + xr[b + p]) + nT * conc * kt / (1 + xt[b + p]);
-                        int n = Round(w, P.Life2Pump * held * carrier);
-                        long had = World.HaveRaw(a, s);
-                        for (int e = 0; e < n; e++) w.Intake(a, cell, s);
-                        if (n > 0) { cIn[s] = World.HaveRaw(a, s) / Qty.One / room; cOut[s] = double.NaN; st.Uptake += (World.HaveRaw(a, s) - had) / Qty.One; }
+                        double held = nR * kr / (1 + xr[b + p]) + nT * kt / (1 + xt[b + p]);
+                        double j = Math.Min(P.Life2Pump * held * carrier * (o - back), (o - back) * room / 2);
+                        if (!(j > 0)) break;
+                        double pay = P.CostIntake * (1 + a.Packing * a.Packing);
+                        var moved = w.Pump(a, cell, s, Qty.Of(j));
+                        if (moved.Raw > 0)
+                        {
+                            cIn[s] = World.HaveRaw(a, s) / Qty.One / room; cOut[s] = double.NaN; st.Uptake += moved.D;
+                            st.Ledger[Cell.LPump] += pay * moved.D;
+                            if (chem.Gap[s] > 0) st.Ledger[Cell.LChargeIn] += moved.D * chem.Gap[s];
+                        }
                         break;
                     }
                     case ProteinType.ActKind.Motor:
@@ -257,10 +271,11 @@ public sealed class ChemModel : ILifeModel
             }
         }
         if (pigment > 0) Light(w, a, cell, st, Round(w, pigment), pigment);
-        if (thrust > 0) { w.Thrust(a, cosH[st.Heading], sinH[st.Heading], thrust); st.Thrusts++; }
+        if (thrust > 0) { w.Thrust(a, cosH[st.Heading], sinH[st.Heading], thrust); st.Thrusts++; st.Ledger[Cell.LMotor] += thrust; }
         if (torque > 0)
         {
             w.Spend(a, torque);   // turning the body in the medium: work that ends as heat
+            st.Ledger[Cell.LTurn] += torque;
             if (w.Rng.NextDouble() < 1 - DetMath.Exp(-tumbles / P.Life2Turn)) { st.Heading = w.Rng.Next(256); st.Tumbles++; }
         }
     }
@@ -322,8 +337,9 @@ public sealed class ChemModel : ILifeModel
             if (slot == null) continue;
             int photon = (int)act.Work;
             st.Photons++;
-            if (act.Couple >= 0 && w.PhotoCharge(a, act.CoupleSpecies, photon)) continue;
+            if (act.Couple >= 0 && w.PhotoCharge(a, act.CoupleSpecies, photon)) { st.Ledger[Cell.LPhoto] += chem.Gap[chem.PhotoUp[act.CoupleSpecies]]; continue; }
             w.PhotoHeat(a, photon);
+            st.Ledger[Cell.LPhotoHeat] += photon;
         }
     }
 
@@ -355,6 +371,7 @@ public sealed class ChemModel : ILifeModel
             for (int e = 0; e < n; e++)
             {
                 if (!w.ExciteResidue(a, carrier, gap)) break;
+                st.Ledger[Cell.LModify] += st.C.Chem.Gap[carrier] * (double)World.ResidueRaw / Qty.One;
                 slot.N[s]--; slot.N[s | bit]++;
             }
         }
@@ -465,12 +482,14 @@ public sealed class ChemModel : ILifeModel
             double xall = Occupancy(table.Promoter[u], st, types, shareR, beta, room, false);
             double xb = Occupancy(table.Block[u], st, types, shareR, beta, room, false);
             double tau = st.Genomes * P.Life2Tx * xp / (1 + xall) * (1 - xb / (1 + xb));   // every genome copy is a template
+            if (u == 0) { st.DiagXp = xp; st.DiagXall = xall; st.DiagTau = tau; }
             st.Acc[u] += tau;
             var unit = table.Units[u];
             while (st.Acc[u] >= 1)
             {
-                if (!w.BuildPolymer(a, unit.Type.Letters, unit.Type.Len)) { st.Acc[u] = Math.Min(st.Acc[u], 1); break; }
+                if (!w.BuildPolymer(a, unit.Type.Letters, unit.Type.Len)) { st.Stalls[Monomers(w, a, unit.Type.Letters, st) ? 1 : 0]++; st.Acc[u] = Math.Min(st.Acc[u], 1); break; }
                 Add(st, unit.Type, 1);
+                st.Ledger[Cell.LSynth] += World.PolymerCost(unit.Type.Len);
                 st.Acc[u] -= 1;
                 st.Synth++;
             }
@@ -516,30 +535,40 @@ public sealed class ChemModel : ILifeModel
                 foreach (var p in types[bd.Type].Pockets) if (p.Side != ProteinType.Tm) held++;
                 if (held >= 2) proofread = true;
             }
-        double d = 1 + P.Life2Fidelity * Math.Min(1, rho / c.BondMax);
+        double d = c.Discrimination(rho);
+        int passes = proofread ? Math.Max(0, P.Life2Proofread) : 0;
+        double checks = 0;
         Span<double> wgt = stackalloc double[Chem2.L];
         double sum = 0;
-        for (int f = 0; f < Chem2.L; f++) { wgt[f] = World.HaveRaw(a, 2 * f) / Qty.One; sum += wgt[f]; }
+        for (int f = 0; f < Chem2.L; f++) { wgt[f] = (World.HaveRaw(a, 2 * f) + World.HaveRaw(a, 2 * f + 1)) / (double)Qty.One; sum += wgt[f]; }   // a monomer at hand, ground or excited (BuildPolymer takes both)
         if (sum <= 0) return;
         int fork = st.Fork;
         Span<int> need = stackalloc int[Chem2.L];
         Span<double> cum = stackalloc double[Chem2.L];
+        double perRoom = Qty.One / (double)World.ResidueRaw / room;   // monomers as residues per room
         for (int k = 0; k < steps && fork < n; k++)
         {
             int t = GeneTable.At(a.G, fork);
-            double z = 0;
-            for (int b = 0; b < Chem2.L; b++) { z += wgt[b] / sum * DetMath.Exp(beta * d * c.Pair[t, b]); cum[b] = z; }
+            double z = 0, top = c.Pair[t, c.Comp[t]];
+            for (int b = 0; b < Chem2.L; b++) { z += wgt[b] * perRoom * DetMath.Exp(beta * d * (c.Pair[t, b] - top)); cum[b] = z; }
             if (z <= 0) break;
+            // A step inserts a letter only if a monomer arrives and holds: the chance grows with the monomers at hand
+            // weighed by how well they pair (z in units of a perfect partner, against Life2Kd0) — short of the
+            // right one, the polymerase mostly waits.
+            if (w.Rng.NextDouble() >= z / (P.Life2Kd0 + z)) continue;
             double r = w.Rng.NextDouble() * z;
             int pick = 0;
             while (pick < Chem2.L - 1 && r >= cum[pick]) pick++;
-            // Kinetic proofreading (Hopfield): a wrong letter is taken off again with 1 − e^{−βD·Δε} and a new one
-            // drawn; the discarded insertion's charge is heat.
-            for (int pass = 0; proofread && pass < P.Life2Proofread && pick != c.Comp[t]; pass++)
+            // Kinetic proofreading (Hopfield): every pass checks the letter in place again (a check takes
+            // Life2ProofCost of a bond's charge, right letter or wrong) and takes a wrong one off with 1 − e^{−βD·Δε}, a
+            // new one drawn; the discarded insertion's charge is heat. Each pass multiplies the error by ~e^{−βD·Δε}.
+            for (int pass = 0; pass < passes; pass++)
             {
+                checks += P.Life2ProofCost;
+                if (pick == c.Comp[t]) continue;
                 double de = c.Pair[t, c.Comp[t]] - c.Pair[t, pick];
-                if (w.Rng.NextDouble() >= 1 - DetMath.Exp(-beta * d * Math.Max(0, de))) break;
-                w.Spend(a, World.PolymerCost(1));
+                if (w.Rng.NextDouble() >= 1 - DetMath.Exp(-beta * d * Math.Max(0, de))) continue;
+                checks += 1;
                 r = w.Rng.NextDouble() * z;
                 pick = 0;
                 while (pick < Chem2.L - 1 && r >= cum[pick]) pick++;
@@ -547,10 +576,19 @@ public sealed class ChemModel : ILifeModel
             int letter = pick == c.Comp[t] ? t : pick;   // the paired letter copies the template; any other is a substitution
             need.Clear();
             need[letter]++; need[c.Comp[letter]]++;
-            if (!w.BuildPolymer(a, need, 2)) break;
+            if (!w.BuildPolymer(a, need, 2)) { st.Stalls[Monomers(w, a, need, st) ? 3 : 2]++; break; }
+            st.Ledger[Cell.LCopy] += World.PolymerCost(2);
+            st.CopyDone++;
+            if (letter != t) st.CopyErrors++;
             st.Replica[fork] = (byte)letter;
             st.ReplicaLetters[letter]++; st.ReplicaLetters[c.Comp[letter]]++;
             fork++;
+        }
+        if (checks > 0)
+        {
+            double cost = checks * World.PolymerCost(1);
+            w.Spend(a, cost);
+            st.Ledger[Cell.LProof] += cost;
         }
         st.Fork = fork;
         if (fork >= n) st.Genomes = 2;
@@ -674,6 +712,7 @@ public sealed class ChemModel : ILifeModel
         cs.Heading = w.Rng.Next(256);
         cs.C = ps.C;
         Scratch();
+        w.HandFractions(parent, child, 0.5);   // its monomers are mostly fractions of molecules: half of them too
         if (ps.Genomes == 2)
         {
             w.HandPolymer(parent, child, ps.ReplicaLetters, Sum(ps.ReplicaLetters) * World.LinkRaw);
@@ -704,6 +743,15 @@ public sealed class ChemModel : ILifeModel
         }
         ps.Slots.RemoveAll(s => s.Total == 0);
         cs.Acc = (double[])ps.Acc.Clone();
+    }
+
+    // Does the body hold the monomers for these letters (ground or excited)? (Diagnostics: why a build stalled.)
+    static bool Monomers(World w, Agent a, ReadOnlySpan<int> letters, Cell st)
+    {
+        bool all = true;
+        for (int f = 0; f < Chem2.L && f < letters.Length; f++)
+            if (letters[f] > 0 && World.HaveRaw(a, 2 * f) + World.HaveRaw(a, 2 * f + 1) < letters[f] * World.ResidueRaw) { st.StallLetter[f]++; all = false; }
+        return all;
     }
 
     static long Sum(int[] x) { long s = 0; foreach (var v in x) s += v; return s; }

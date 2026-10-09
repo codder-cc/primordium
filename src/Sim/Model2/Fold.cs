@@ -244,11 +244,12 @@ public sealed class ProteinType
                 int s = p.Lig(l);
                 if (p.Side == Tm)
                 {
-                    Acts.Add(new Act { Kind = ActKind.Channel, Pocket = k, Lig = l, Species = s, Couple = -1 });
-                    // A pump: the channel's chain also holds an excited carrier inside, near it — the carrier's
-                    // turnover drives the molecule in against the gradient.
+                    // A pump: the chain also holds an excited carrier inside, near the pore — the carrier's turnover
+                    // drives the molecule in against the gradient, and the pore opens to one side at a time
+                    // (alternating access), so it is no open channel. Otherwise the pore is a channel.
                     var pump = new Act { Kind = ActKind.Pump, Pocket = k, Lig = l, Species = s, Couple = -1, CoupleSpecies = -1 };
                     if (FindCouple(c, k, 1, false, ref pump)) Acts.Add(pump);
+                    else Acts.Add(new Act { Kind = ActKind.Channel, Pocket = k, Lig = l, Species = s, Couple = -1 });
                     continue;
                 }
                 if (p.Side != In) continue;

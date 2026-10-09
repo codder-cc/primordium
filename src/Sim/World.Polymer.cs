@@ -135,6 +135,20 @@ public sealed partial class World
         to.Bond += energy;
     }
 
+    // A share of the fractional matter of body `a` (its Pend: what is less than a whole molecule of each kind) goes
+    // to body `b` — at division the whole molecules are split by World.Divide, this splits the rest. Exact (Qty),
+    // with mass and room; an excited fraction carries its excitation.
+    public void HandFractions(Agent a, Agent b, double share)
+    {
+        for (int s = 0; s < Chemistry.S; s++)
+        {
+            long raw = a.Pend[s].Raw;
+            if (raw <= 0) continue;
+            long m = (long)(raw * Math.Clamp(share, 0, 1));
+            if (m > 0) Hand(a, b, s, Qty.FromRaw(m));
+        }
+    }
+
     // Excitation transfer from a carrier to a residue of one of the body's polymers ("phosphorylation"): a
     // residue's worth (ResidueRaw) of the excited carrier relaxes, the residue takes `gap` × ResidueRaw of
     // energy into the pool, the difference is heat. Only downhill (the carrier's gap ≥ the residue's).
@@ -181,9 +195,38 @@ public sealed partial class World
 
     // ---- membrane ----
 
-    // Loose molecules of kind s at the body's floor per comfortable room of a cell (P.InvPerCell): the
-    // concentration a membrane protein facing out meets.
-    public double ConcentrationOutside(Agent a, int cell, int s) => LooseAmount(a, cell, s) / (double)P.InvPerCell;
+    // The concentration a membrane protein facing out meets, in the units of the inside (molecules per comfortable
+    // room of a cell, P.InvPerCell): law Life2Dilute 1 — the floor's loose molecules of kind s are spread over the
+    // free space of its voxel (P.VoxelSpace of molecular volume) and a room is InvPerCell molecules of the mean
+    // volume, so a body that only lets molecules through holds about InvPerCell·v̄/VoxelSpace of what lies
+    // around it; 0 — the floor's amount per room, as if the voxel were one body's room (the prototype).
+    public double ConcentrationOutside(Agent a, int cell, int s) =>
+        P.Life2Dilute != 0 ? LooseAmount(a, cell, s) * MeanMoleculeVolume / P.VoxelSpace : LooseAmount(a, cell, s) / (double)P.InvPerCell;
+
+    double meanMolVolume;
+    // The mean room of a ground molecule of this chemistry (Chemistry.Volume).
+    public double MeanMoleculeVolume
+    {
+        get
+        {
+            if (meanMolVolume > 0) return meanMolVolume;
+            double v = 0;
+            for (int s = 0; s < Chemistry.S; s += 2) v += Chem.Volume[s] / (Chemistry.S / 2);
+            return meanMolVolume = v;   // a race writes the same value
+        }
+    }
+
+    // Active transport: up to m of kind s from the body's floor into it, against the gradient, at the membrane
+    // work of uptake (P.CostIntake a molecule, more when crammed — the price of Intake, here for an exact
+    // amount). Returns what moved.
+    public Qty Pump(Agent a, int cell, int s, Qty m)
+    {
+        if (m.Raw <= 0) return Qty.Zero;
+        float packing = a.Packing;
+        var moved = Exchange(a, cell, s, m);
+        if (moved.Raw > 0) Dissipate(a, P.CostIntake * (1 + packing * packing) * moved.D);
+        return moved;
+    }
 
     // Passive transport through the membrane: m > 0 of kind s from the body's floor into it, m < 0 out onto
     // the floor — at most what is there. No cost (it runs down the gradient the caller computed). Returns

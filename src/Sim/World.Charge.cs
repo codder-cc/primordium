@@ -88,13 +88,24 @@ public sealed partial class World
     public double Held(Agent a) => !MatterLaw ? a.Energy : Math.Max(0, a.Energy) + Charge(a);
 
     // Law 1: whole molecules as a body counts them, with the fractional parts of its kinds (a molecule
-    // half relaxed is split between two kinds' fractions; it is still there). Law 0: InvTotal.
+    // half relaxed is split between two kinds' fractions; it is still there), and the matter of its polymers
+    // (Agent.Poly: a genome and proteins are the body too). Law 0: InvTotal.
     public int BodyUnits(Agent a)
     {
         if (!MatterLaw) return a.InvTotal;
         long f = 0;
         for (int s = 0; s < Chemistry.S; s++) f += a.Pend[s].Raw;
-        return a.InvTotal + (int)(f >> Qty.Bits);
+        return a.InvTotal + (int)(f >> Qty.Bits) + PolymerUnits(a);
+    }
+
+    // Whole molecules' worth of matter in its polymers (0 without any).
+    public static int PolymerUnits(Agent a)
+    {
+        var p = a.Poly;
+        if (p == null) return 0;
+        long f = 0;
+        for (int s = 0; s < Chemistry.S; s++) f += p.M[s].Raw;
+        return (int)(f >> Qty.Bits);
     }
 
     // Has it run out (the end of its tick, a fall)? Law 0: no energy left; law 1: a debt it could not settle.

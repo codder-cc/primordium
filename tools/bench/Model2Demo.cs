@@ -42,20 +42,34 @@ public sealed partial class World
     {
         int seed = int.Parse(Arg2(args, "--seed", "1"));
         var ks = Arg2(args, "--k", "1,2,3,perf").Split(',');
-        CarrierLitter = double.Parse(Arg2(args, "--carrier", "6"), Inv2);
+        CarrierLitter = double.Parse(Arg2(args, "--carrier", "16"), Inv2);
         Generated = Array.IndexOf(args, "--generated") >= 0;
+        BandY = int.Parse(Arg2(args, "--band-y", Generated ? "-1" : (TinySide * 18 / 64).ToString(Inv2)));
         int law = P.MatterEnergy;
         P.MatterEnergy = 1;
+        // The light chamber (unless --open, or a law named with --set): a bright sun (PhotonK 0.6) on short days (DayLen
+        // 400) without seasons (Tilt 0) — the band at row 18 of 64 stays at 15–35 °C; without it the flat bedrock at the
+        // equator warms to 45 °C and the seasons move the hot band (both models lose bodies to heat there).
+        var keep = (P.PhotonK, P.DayLen, P.Tilt);
+        bool Named(string n) => args.Any(x => x.StartsWith(n + "=", StringComparison.OrdinalIgnoreCase));
+        if (Array.IndexOf(args, "--open") < 0)
+        {
+            if (!Named("PhotonK")) P.PhotonK = 0.6f;
+            if (!Named("DayLen")) P.DayLen = 400;
+            if (!Named("Tilt")) P.Tilt = 0;
+            Console.WriteLine(string.Create(Inv2, $"light chamber: PhotonK {P.PhotonK}, DayLen {P.DayLen}, Tilt {P.Tilt}; carrier litter {CarrierLitter}, band at row {BandY}"));
+        }
         try
         {
             var set = Seeds.For(new World(TinySettings(seed)).Chem, int.Parse(Arg2(args, "--effort", "6000")));
+            CarrierOf = set.Carrier;
             Console.WriteLine(set.Report);
             if (ks.Contains("1")) K1(args, seed, set);
             if (ks.Contains("2")) K2(args, seed, set);
             if (ks.Contains("3")) K3(args, seed, set);
             if (ks.Contains("perf")) Model2Perf(args, seed, set);
         }
-        finally { P.MatterEnergy = law; }
+        finally { P.MatterEnergy = law; (P.PhotonK, P.DayLen, P.Tilt) = keep; }
     }
 
     // A flat lit world with the seed cells' letters lying as litter (`perCell` molecules of each in every cell).
@@ -79,10 +93,15 @@ public sealed partial class World
         for (int k = 0; k < groups; k++)
         {
             int m = n / groups + (k < n % groups ? 1 : 0);
-            if (m > 0) all.AddRange(Plant(w, d, m, (k * w.W) / groups + w.W / (2 * groups), w.H / 2, band));
+            if (m > 0) all.AddRange(Plant(w, d, m, (k * w.W) / groups + w.W / (2 * groups), BandY >= 0 ? BandY : w.H / 2, band));
         }
         return all;
     }
+    static int BandY = -1;   // --band-y: the row the band is centred on (−1: the equator)
+
+    // Mean ground temperature by row now, for reports.
+    static string TempRows(World w) =>
+        string.Join(" ", Enumerable.Range(0, w.H).Where(y => y % 8 == 0 || y == w.H / 2).Select(y => string.Create(Inv2, $"y{y}:{Enumerable.Range(0, w.W).Average(x => w.Temp[y * w.W + x]):0.0}")));
 
     // Mean light by row (the sun's average over a day), for reports.
     static string LightRows(World w)
@@ -142,10 +161,11 @@ public sealed partial class World
     sealed class Census2
     {
         public int Bodies, Genomes0, Copies, Divisions, Thrusts, Tumbles, Photons, Synth, Genotypes;
-        public double Charge, Inv, Mass, Membrane;
-        public override string ToString() => string.Create(Inv2, $"{Bodies} cells ({Genotypes} genotypes, no genome {Genomes0}), copies {Copies / (double)Math.Max(1, Bodies):0.0}/cell, charge {Charge / Math.Max(1, Bodies):0.0}, molecules {Inv / Math.Max(1, Bodies):0.0}, mass {Mass / Math.Max(1, Bodies):0.0}, membrane excess {Membrane / Math.Max(1, Bodies):0.00}; divisions {Divisions}, photons {Photons}, syntheses {Synth}, pushes {Thrusts}, tumbles {Tumbles}");
+        public double Charge, Inv, Mass, Membrane, Ground, Excited, Poly;
+        public override string ToString() => string.Create(Inv2, $"{Bodies} cells ({Genotypes} genotypes, no genome {Genomes0}), copies {Copies / (double)Math.Max(1, Bodies):0.0}/cell, charge {Charge / Math.Max(1, Bodies):0.0}, molecules {Inv / Math.Max(1, Bodies):0.0} (carrier {Ground / Math.Max(1, Bodies):0.00} + {Excited / Math.Max(1, Bodies):0.00} charged; polymer {Poly / Math.Max(1, Bodies):0.00}), mass {Mass / Math.Max(1, Bodies):0.0}, membrane excess {Membrane / Math.Max(1, Bodies):0.00}; divisions {Divisions}, photons {Photons}, syntheses {Synth}, pushes {Thrusts}, tumbles {Tumbles}");
     }
 
+    static int CarrierOf = -1;   // the seeded cells' ground carrier (for the census)
     static Census2 Count2(World w, Func<Agent, bool> which = null)
     {
         var c = new Census2();
@@ -159,10 +179,34 @@ public sealed partial class World
             if (st.Genomes == 0) c.Genomes0++;
             foreach (var s in st.Slots) c.Copies += s.Total;
             c.Charge += w.Charge(a); c.Inv += a.InvTotal; c.Mass += a.Mass;
+            if (CarrierOf >= 0) { c.Ground += HaveRaw(a, CarrierOf) / (double)Qty.One; c.Excited += HaveRaw(a, CarrierOf + 1) / (double)Qty.One; }
+            if (a.Poly != null) for (int s = 0; s < Chemistry.S; s++) c.Poly += a.Poly.M[s].D;
             c.Membrane += ChemModel.MembraneExcess(a, st, c2);
             c.Divisions += (int)st.Divisions; c.Thrusts += (int)st.Thrusts; c.Tumbles += (int)st.Tumbles; c.Photons += (int)st.Photons; c.Synth += (int)st.Synth;
         }
         return c;
+    }
+
+    // Where model 2's energy goes, per cell and tick over the living cells (their ledgers over their ages), with
+    // the body's own upkeep and harm, its temperature and the ground's.
+    static string LedgerLine(World w, Func<Agent, bool> which = null)
+    {
+        var sum = new double[Cell.LedgerN];
+        double age = 0, upkeep = 0, harm = 0, tb = 0, ground = 0;
+        long done = 0, errors = 0;
+        var stalls = new long[4];
+        int n = 0;
+        foreach (var a in w.Agents)
+        {
+            if (a.Dead || a.ModelState is not Cell st || (which != null && !which(a))) continue;
+            for (int k = 0; k < Cell.LedgerN; k++) sum[k] += st.Ledger[k];
+            for (int k = 0; k < 4; k++) stalls[k] += st.Stalls[k];
+            done += st.CopyDone; errors += st.CopyErrors;
+            age += Math.Max(1, a.Age); upkeep += a.LifeUpkeep; harm += a.LifeHarm; tb += a.Tb; ground += w.Temp[a.Y * w.W + a.X]; n++;
+        }
+        if (n == 0) return "ledger: no cells";
+        var parts = Enumerable.Range(0, Cell.LedgerN).Where(k => sum[k] != 0).Select(k => Cell.LedgerNames[k] + " " + (sum[k] / age).ToString("0.0000", Inv2));
+        return "ledger per cell-tick: " + string.Join(", ", parts) + string.Create(Inv2, $"; upkeep {upkeep / age:0.0000}, harm {harm / age:0.0000}; Tb {tb / n:0.0} C on ground {ground / n:0.0} C; stalls synth monomer/charge {stalls[0]}/{stalls[1]}, copy {stalls[2]}/{stalls[3]}; copied {done} residues, error {(done > 0 ? errors / (double)done : 0):0.00000}");
     }
 
     // ---- K1: the phototroph lives and divides, the books balance ----
@@ -190,7 +234,7 @@ public sealed partial class World
             w.Step();
             if (trace && watch.Dead && !dumped) { dumped = true; Console.WriteLine($"    #{watch.Id} died at {t}, cause {watch.Cause}:"); foreach (var line in ring) if (line != null) Console.WriteLine(line); }
             if (trace && (t % 25 == 0 || t > 0) && !watch.Dead && watch.ModelState is Cell ws)
-                ring[t % ring.Length] = (string.Create(Inv2, $"    #{watch.Id} t{t}: photo-in {watch.GainPhoto:0.0} upkeep {watch.LifeUpkeep:0.0} charge {w.Charge(watch):0.00} cap {w.Capacity(watch):0.0} mol {watch.InvTotal} mass {watch.Mass:0.0} Tb {watch.Tb:0.0} light {w.LightAt(watch):0.00} photon {w.Photon[watch.Y * w.W + watch.X]:0.00} caught {ws.Photons} inv {string.Join(",", Enumerable.Range(0, 32).Where(s => watch.Inv[s] > 0).Select(s => s + ":" + watch.Inv[s]))} due {watch.Due:0.00} copies {string.Join("/", ws.Slots.Select(s => s.Total))} synth {ws.Synth} decayed {ws.Decayed} genomes {ws.Genomes} fork {ws.Fork} membrane {ChemModel.MembraneExcess(watch, ws, Chem2.Of(w.Chem)):0.00}"));
+                ring[t % ring.Length] = (string.Create(Inv2, $"    #{watch.Id} t{t}: photo-in {watch.GainPhoto:0.0} upkeep {watch.LifeUpkeep:0.0} charge {w.Charge(watch):0.00} cap {w.Capacity(watch):0.0} mol {watch.InvTotal} mass {watch.Mass:0.0} Tb {watch.Tb:0.0} light {w.LightAt(watch):0.00} photon {w.Photon[watch.Y * w.W + watch.X]:0.00} caught {ws.Photons} have {string.Join(",", Enumerable.Range(0, 32).Where(s => HaveRaw(watch, s) > 0).Select(s => s + ":" + (HaveRaw(watch, s) / (double)Qty.One).ToString("0.00", Inv2)))} loose {string.Join(",", SeedLetters(set).Select(s => s + ":" + w.ConcentrationOutside(watch, watch.Y * w.W + watch.X, s).ToString("0.000", Inv2)))} due {watch.Due:0.00} copies {string.Join("/", ws.Slots.Select(s => s.Total))} synth {ws.Synth} decayed {ws.Decayed} genomes {ws.Genomes} fork {ws.Fork} membrane {ChemModel.MembraneExcess(watch, ws, Chem2.Of(w.Chem)):0.00} xp {ws.DiagXp:0.000} xall {ws.DiagXall:0.000} tau {ws.DiagTau:0.000} acc {string.Join("/", ws.Acc.Select(x => x.ToString("0.00", Inv2)))}"));
             if (trace && t % 50 == 0 && ring[t % ring.Length] != null && !watch.Dead) Console.WriteLine(ring[t % ring.Length]);
             if (t % every == 0 || t == 50)
             {
@@ -198,6 +242,14 @@ public sealed partial class World
                 BudgetEqual(atoms0, Inputs(w, atoms0), $"K1 tick {t}: atoms", 1e-6);
                 var e = w.AuditEnergy();
                 Console.WriteLine($"  tick {t}: {Count2(w)}; births {w.Births - births0}; energy drift {EnergyAudit.Drift(e0, e):F4} (tol {EnergyAudit.Tolerance(e0, e):F2})");
+                Console.WriteLine("    " + LedgerLine(w));
+                {
+                    // What lies where the cells are (molecules on their floors) and over the whole world, by species.
+                    var cells2 = w.Agents.Where(a => !a.Dead && a.ModelState is Cell).ToList();
+                    if (cells2.Count > 0)
+                        Console.WriteLine("    loose at the cells / world mean: " + string.Join(" ", SeedLetters(set).Select(s => string.Create(Inv2, $"{s}:{cells2.Average(a => w.ConcentrationOutside(a, a.Y * w.W + a.X, s)) * P.VoxelSpace / w.MeanMoleculeVolume:0.00}/{Enumerable.Range(0, w.N).Average(c => w.C[s][c].D):0.00} in {cells2.Average(a => (HaveRaw(a, s) + HaveRaw(a, s + 1)) / (double)Qty.One):0.00}"))) + "; stalls by letter " + string.Join(" ", Enumerable.Range(0, Chem2.L).Where(f => cells2.Sum(a => ((Cell)a.ModelState).StallLetter[f]) > 0).Select(f => $"{f:x}:{cells2.Sum(a => ((Cell)a.ModelState).StallLetter[f])}")));
+                }
+                if (Array.IndexOf(args, "--temps") >= 0) Console.WriteLine("    ground by row: " + TempRows(w));
             }
         }
         string energy = EnergyWorldCheck(w, e0, "K1");

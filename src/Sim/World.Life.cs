@@ -478,7 +478,8 @@ public sealed partial class World
         float cost = P.DivCostBase + P.DivCostByte * a.G.Length;
         Interlocked.Increment(ref DivFail[0]);
         if (Avail(a) < P.DivMinEnergy + cost) { Interlocked.Increment(ref DivFail[1]); return; }
-        if (a.InvTotal < P.DivMinBody) { Interlocked.Increment(ref DivFail[2]); return; }
+        int poly = PolymerUnits(a);   // a body of polymers (life model 2) counts their matter too; 0 for every other
+        if (a.InvTotal + poly < P.DivMinBody) { Interlocked.Increment(ref DivFail[2]); return; }
         float frac = f <= 0 ? 0.5f : Math.Clamp(f, 16, 240) / 256f;
         int to = Nursery(a, cell, d, a.Volume * frac);
         if (to < 0) { Interlocked.Increment(ref DivFail[3]); return; }
@@ -492,7 +493,7 @@ public sealed partial class World
             give[s] = Math.Min(a.Inv[s], (int)(a.Inv[s] * frac + Rng.NextDouble()));
             tot += give[s];
         }
-        if (tot < P.MinBody || a.InvTotal - tot < P.MinBody) { Interlocked.Increment(ref DivFail[4]); return; }
+        if (tot + poly / 2 < P.MinBody || a.InvTotal - tot + poly / 2 < P.MinBody) { Interlocked.Increment(ref DivFail[4]); return; }
 
         Dissipate(a, cost);
         Settle(a);   // law 1: paid from what it holds before the child takes its share (with its charge)

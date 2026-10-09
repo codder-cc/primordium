@@ -134,19 +134,54 @@ public sealed class Chem2
             int top = Math.Clamp(samples - 1 - (int)(P.Life2TmShare * samples), 0, samples - 1);
             TmH = hs[top] > double.MinValue ? hs[top] + 1e-12 : double.MaxValue;
         }
-        double sq = 0.5, sv = 0.25 * VMean;
+        PairLaw = P.Life2PairLaw;
+        if (PairLaw == 0)
+        {
+            double sq = 0.5, sv = 0.25 * VMean;
+            for (int a = 0; a < L; a++)
+                for (int b = 0; b < L; b++)
+                {
+                    double dq = Q[a] + Q[b], dv = V[a] + V[b] - 2 * VMean;
+                    Pair[a, b] = P.Life2Pair * DetMath.Exp(-dq * dq / (sq * sq)) * DetMath.Exp(-dv * dv / (sv * sv));
+                }
+        }
+        else
+        {
+            // Sockets: atom e faces atom mirror(e) (an involution, so the law is symmetric). A facing pair holds half
+            // by fit and half by its ionic resonance (Pauling, the bond-energy model of the chemistry), in units of
+            // the mean over the elements; an atom without its partner costs Life2PairMiss; per atom of the larger.
+            var ion = new double[E];
+            double ionMean = 0;
+            for (int e = 0; e < E; e++)
+            {
+                double d = c.Affinity[e] - c.Affinity[Mirror[e]];
+                ion[e] = P.ChemIonicK * d * d; ionMean += ion[e] / E;
+            }
+            for (int e = 0; e < E; e++) SocketWeight[e] = ionMean > 1e-9 ? 0.5 * (1 + ion[e] / ionMean) : 1;
+            for (int a = 0; a < L; a++)
+                for (int b = 0; b < L; b++)
+                {
+                    double m = 0, x = 0;
+                    int na = 0, nb = 0;
+                    for (int e = 0; e < E; e++)
+                    {
+                        int ca = Atoms[a, e], cb = Atoms[b, Mirror[e]];
+                        m += Math.Min(ca, cb) * SocketWeight[e]; x += Math.Abs(ca - cb);
+                        na += ca; nb += cb;
+                    }
+                    Pair[a, b] = P.Life2Pair * (m - P.Life2PairMiss * x / 2) / Math.Max(1, Math.Max(na, nb));
+                }
+        }
         for (int a = 0; a < L; a++)
         {
             int best = 0;
-            for (int b = 0; b < L; b++)
-            {
-                double dq = Q[a] + Q[b], dv = V[a] + V[b] - 2 * VMean;
-                Pair[a, b] = P.Life2Pair * DetMath.Exp(-dq * dq / (sq * sq)) * DetMath.Exp(-dv * dv / (sv * sv));
-                if (Pair[a, b] > Pair[a, best]) best = b;
-            }
+            for (int b = 1; b < L; b++) if (Pair[a, b] > Pair[a, best]) best = b;
             Comp[a] = best;
         }
     }
+
+    public readonly int PairLaw;
+    public readonly double[] SocketWeight = new double[E];   // law 1: what a facing atom pair e–mirror(e) holds (mean 1)
 
     // β(T) = 0.5·288/(273 + T): the thermal scale of model 1's Boltzmann factor, sharper in the cold.
     // Temperature levels: whole degrees −40…+80 °C (a body's temperature is rounded to one).
@@ -211,17 +246,43 @@ public sealed class Chem2
 
     // The chance a copy puts a wrong letter opposite a template letter, averaged over `templates`, with the
     // monomers `pool` equally at hand, discrimination d and thermal scale beta (the pairing law, ChemModel.Copy).
-    public double CopyError(ReadOnlySpan<byte> templates, ReadOnlySpan<byte> pool, double d, double beta)
+    public double CopyError(ReadOnlySpan<byte> templates, ReadOnlySpan<byte> pool, double d, double beta, int passes = 0)
     {
+        Span<double> w = stackalloc double[L];
+        foreach (var b in pool) w[b] = 1;
         double err = 0;
-        foreach (var t in templates)
-        {
-            double z = 0, ok = 0;
-            foreach (var b in pool) { double p = DetMath.Exp(beta * d * Pair[t, b]); z += p; if (b == Comp[t]) ok += p; }
-            err += z > 0 ? 1 - ok / z : 1;
-        }
+        foreach (var t in templates) err += CopyError(t, w, d, beta, passes);
         return templates.Length > 0 ? err / templates.Length : 0;
     }
+
+    // The chance a copy ends with a wrong letter opposite template letter t, with monomers at hand in proportions w
+    // (by letter), discrimination d, thermal scale beta and `passes` of kinetic proofreading (Hopfield): every pass
+    // checks the letter in place again and takes a wrong one off with 1 − e^{−β·d·Δε}, a new one then drawn by the
+    // same law — each pass multiplies the error by about e^{−β·d·Δε} (ChemModel.Copy does exactly this, by draws).
+    public double CopyError(int t, ReadOnlySpan<double> w, double d, double beta, int passes)
+    {
+        Span<double> p = stackalloc double[L], q = stackalloc double[L];
+        double z = 0;
+        for (int b = 0; b < L; b++) { p[b] = w[b] > 0 ? w[b] * DetMath.Exp(beta * d * Pair[t, b]) : 0; z += p[b]; }
+        if (z <= 0) return 1;
+        int c = Comp[t];
+        for (int b = 0; b < L; b++) q[b] = p[b] /= z;
+        for (int pass = 0; pass < passes; pass++)
+        {
+            double off = 0;
+            for (int b = 0; b < L; b++)
+            {
+                if (b == c || q[b] == 0) continue;
+                double r = 1 - DetMath.Exp(-beta * d * Math.Max(0, Pair[t, c] - Pair[t, b]));
+                off += q[b] * r; q[b] *= 1 - r;
+            }
+            for (int b = 0; b < L; b++) q[b] += off * p[b];
+        }
+        return Math.Clamp(1 - q[c], 0, 1);
+    }
+
+    // The discrimination a polymerase pocket of rigidity rho gives (1: a copy without an enzyme).
+    public double Discrimination(double rho) => 1 + P.Life2Fidelity * Math.Min(1, rho / BondMax);
 
     // Two residues pair strongly enough to hold a stem (a terminator's hairpin).
     public bool Pairs(int a, int b) => Pair[a, b] >= P.Life2Stem * P.Life2Pair;

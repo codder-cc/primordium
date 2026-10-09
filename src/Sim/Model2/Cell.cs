@@ -22,6 +22,14 @@ public sealed class Cell
     public double[] Acc = Array.Empty<double>();               // synthesis owed by unit of the gene table
     public long Thrusts, Tumbles, Synth, Decayed, Photons, Reactions, Divisions;   // what it did (inspection, tests; saved)
     public double Uptake;           // molecules it took in from outside (leak, channels, pumps), less what it lost (saved)
+    // Where its energy went, by path (observation only: not saved, it never changes what the cell does). See Ledger*.
+    public readonly double[] Ledger = new double[LedgerN];
+    public long CopyDone, CopyErrors;   // residues copied and substitutions among them (observation only, not saved)
+    public readonly long[] StallLetter = new long[Chem2.L];   // which letter was short when a build stalled for monomers (observation)
+    public double DiagXp, DiagXall, DiagTau;   // the first gene's promoter: polymerase occupancy (charged), all binders, synthesis per step (observation)
+    public readonly long[] Stalls = new long[4];   // builds that stalled: synthesis for monomers, for charge; copy for monomers, for charge (observation)
+    public const int LPhoto = 0, LPhotoHeat = 1, LCapture = 2, LPump = 3, LChargeIn = 4, LChargeOut = 5, LSynth = 6, LCopy = 7, LMotor = 8, LTurn = 9, LModify = 10, LProof = 11, LedgerN = 12;
+    public static readonly string[] LedgerNames = { "photo", "photo heat", "captured", "pumps", "charge in", "charge out", "synthesis", "copy", "motor", "turn", "modify", "proofread" };
 
     // Derived (not saved: functions of the genome and the slots).
     internal GeneTable Table;

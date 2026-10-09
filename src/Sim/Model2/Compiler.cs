@@ -11,7 +11,7 @@ namespace Primordium.Model2;
 // crossing, a coupled pigment…), never a function picked from a table.
 public sealed class Need
 {
-    public enum Kinds { Membrane, Soluble, Pocket, Channel, Pigment, Motor, Polymerase, NoChannel, NoPocket, NoMotor, Pump, Stable, NoBarePigment, NoSplit }
+    public enum Kinds { Membrane, Soluble, Pocket, Channel, Pigment, Motor, Polymerase, NoChannel, NoPocket, NoMotor, Pump, Stable, NoBarePigment, NoSplit, Unblocked }
     public Kinds Kind;
     public int Side = -1;          // Pocket: ProteinType.In/Out/Tm (−1 any)
     public int Species = -1;       // Pocket, Channel, Motor: the molecule; Pigment: the ground carrier it charges
@@ -20,6 +20,7 @@ public sealed class Need
     public double Strength = -1.5; // Pocket, Polymerase: ΔG at least this strong (in its better conformation)
     public byte[] Window;          // Polymerase: the promoter window it must bind (null: any window of Alphabet)
     public byte[] Alphabet;
+    public ProteinType Binder;     // Unblocked: the polymerase whose pockets must not hold the transcript's start (null: the chain itself)
     public double Weight = 1;
     public static Need Pocket(int side, int s, int prefer = 0, double strength = -1.5) => new() { Kind = Kinds.Pocket, Side = side, Species = s, Prefer = prefer, Strength = strength };
 }
@@ -102,6 +103,19 @@ public static class Compiler
                 return bad;
             }
             case Need.Kinds.Stable: return Math.Max(0, n.Strength - t.DgFold) * 0.1;   // Strength: the folding energy wanted
+            case Need.Kinds.Unblocked:   // the polymerase bound to the transcript's first windows would stand in its own way (GeneTable.Block)
+            {
+                var pol = n.Binder ?? t;
+                double bad = 0;
+                for (int at = 0; at < Math.Min(t.Len - Chem2.K, GeneTable.BlockSpan); at++)
+                    foreach (var p in pol.Pockets)
+                    {
+                        if (p.Side == ProteinType.Tm) continue;
+                        double g = Math.Min(c.BindWindow(p.R, t.Seq, at), c.BindWindow(p.T, t.Seq, at));
+                        if (g < P.Life2Cut + 1) bad += 0.5 + Math.Max(0, P.Life2Cut + 1 - g) * 0.25;
+                    }
+                return bad;
+            }
             case Need.Kinds.NoMotor:
             {
                 double bad = 0;
@@ -121,7 +135,12 @@ public static class Compiler
             }
             case Need.Kinds.Pigment:
             {
-                foreach (var a in t.Acts) if (a.Kind == ProteinType.ActKind.Pigment && a.CoupleSpecies == n.Species) return 0;
+                // Met; what its photon has beyond the carrier's gap is heat (a pigment matched to the carrier wastes less).
+                double waste = double.MaxValue;
+                foreach (var a in t.Acts)
+                    if (a.Kind == ProteinType.ActKind.Pigment && a.CoupleSpecies == n.Species)
+                        waste = Math.Min(waste, Math.Max(0, a.Work - chem.Gap[chem.PhotoUp[n.Species]]) / Math.Max(1, chem.Gap[chem.PhotoUp[n.Species]]));
+                if (waste < double.MaxValue) return 0.3 * waste;
                 bool pig = false, holds = false;
                 foreach (var a in t.Acts) if (a.Kind == ProteinType.ActKind.Pigment) pig = true;
                 foreach (var p in t.Pockets) for (int l = 0; l < p.N; l++) if (p.Lig(l) == n.Species && p.Side != ProteinType.Out) holds = true;
