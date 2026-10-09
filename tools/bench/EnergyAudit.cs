@@ -423,10 +423,32 @@ public sealed partial class World
                     // and the excitation lying loose (Σ C·Gap over the surface): "dead soil" away from where energy flows in.
                     double bur = (w.BurialDecayHeat - bur0) / days, blk = (w.BlockDecayHeat - blk0) / days;
                     double all = (f1[FLooseDecay] - f0[FLooseDecay]) / days, looseX = 0;
-                    for (int c = 0; c < w.N; c++) looseX += w.LooseExcitation(c);
+                    var xs = new double[w.N];
+                    for (int c = 0; c < w.N; c++) looseX += xs[c] = w.LooseExcitation(c);
+                    // Where it lies: the richest 1 % of cells, cells within 6 of a vent, cells where bodies died lately
+                    // (DeathMap > 0.05: a death within ~4 env-step half-lives), and the mean of the rest ("dead soil").
+                    var near = new bool[w.N]; var dead = new bool[w.N];
+                    foreach (var vent in w.Vents)
+                        for (int dy = -6; dy <= 6; dy++)
+                            for (int dx = -6; dx <= 6; dx++)
+                            {
+                                int y = vent.Y + dy; if (y < 0 || y >= w.H || dx * dx + dy * dy > 36) continue;
+                                near[y * w.W + ((vent.X + dx) % w.W + w.W) % w.W] = true;
+                            }
+                    double xNear = 0, xDead = 0, xRest = 0; int nNear = 0, nDead = 0, nRest = 0;
+                    for (int c = 0; c < w.N; c++)
+                    {
+                        dead[c] = w.DeathMap[c] > 0.05f;
+                        if (near[c]) { xNear += xs[c]; nNear++; }
+                        else if (dead[c]) { xDead += xs[c]; nDead++; }
+                        else { xRest += xs[c]; nRest++; }
+                    }
+                    var sorted = xs.OrderByDescending(x => x).ToArray();
+                    double top = 0; for (int k = 0; k < Math.Max(1, w.N / 100); k++) top += sorted[k];
+                    double Sh(double x) => looseX > 0 ? x / looseX : 0;
                     Console.WriteLine("  " + Loc.T(
-                        $"ground decay per day by pool: loose {G(all - bur - blk)}, burials {G(bur)}, blocks {G(blk)}; loose excitation now {G(looseX)} ({F(looseX / w.N, 3)} per cell)",
-                        $"распад в грунте за день по запасам: россыпь {G(all - bur - blk)}, захоронения {G(bur)}, блоки {G(blk)}; возбуждение россыпи сейчас {G(looseX)} ({F(looseX / w.N, 3)} на клетку)"));
+                        $"ground decay per day by pool: loose {G(all - bur - blk)}, burials {G(bur)}, blocks {G(blk)}; loose excitation now {G(looseX)} ({F(looseX / w.N, 3)} per cell): richest 1 % of cells {F(Sh(top), 3)}, near vents {F(Sh(xNear), 3)} ({F(nNear / (double)w.N, 3)} of cells, {F(xNear / Math.Max(1, nNear), 2)} per cell), recent deaths {F(Sh(xDead), 3)} ({F(nDead / (double)w.N, 3)} of cells, {F(xDead / Math.Max(1, nDead), 2)} per cell), the rest {F(xRest / Math.Max(1, nRest), 2)} per cell",
+                        $"распад в грунте за день по запасам: россыпь {G(all - bur - blk)}, захоронения {G(bur)}, блоки {G(blk)}; возбуждение россыпи сейчас {G(looseX)} ({F(looseX / w.N, 3)} на клетку): самые богатые 1 % клеток {F(Sh(top), 3)}, у вулканов {F(Sh(xNear), 3)} ({F(nNear / (double)w.N, 3)} клеток, {F(xNear / Math.Max(1, nNear), 2)} на клетку), недавние смерти {F(Sh(xDead), 3)} ({F(nDead / (double)w.N, 3)} клеток, {F(xDead / Math.Max(1, nDead), 2)} на клетку), остальное {F(xRest / Math.Max(1, nRest), 2)} на клетку"));
                     bur0 = w.BurialDecayHeat; blk0 = w.BlockDecayHeat;
                 }
                 f0 = f1; births0 = w.Births; spawns0 = w.Spawns; deaths0 = w.Deaths; t0 = w.Tick;
