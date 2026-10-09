@@ -129,7 +129,7 @@ public sealed class SimStats
             cs.InWater += c.InWater; cs.Afloat += c.Afloat; cs.AtSurface += c.AtSurface;
             cs.AvgLen += c.AvgLen; cs.AvgEnergy += c.AvgEnergy; cs.AvgAge += c.AvgAge; cs.AvgCycles += c.AvgCycles;
             cs.AvgEnz += c.AvgEnz; cs.AvgProt += c.AvgProt; cs.AvgTb += c.AvgTb;
-            for (int k = 0; k < 4; k++) cs.EnzKind[k] += c.EnzKind[k];
+            for (int k = 0; k < Enzyme.Kinds; k++) cs.EnzKind[k] += c.EnzKind[k];
             for (int r = 0; r < R; r++)
                 if (p.BestA[r] != null && p.Best[r] > best[r]) { best[r] = p.Best[r]; bestA[r] = p.BestA[r]; }
             foreach (var (k, l) in p.Lin)
@@ -144,7 +144,7 @@ public sealed class SimStats
         {
             cs.AvgLen /= cs.Pop; cs.AvgEnergy /= cs.Pop; cs.AvgAge /= cs.Pop; cs.AvgCycles /= cs.Pop;
             cs.AvgTb /= cs.Pop; cs.AvgEnz /= cs.Pop; cs.AvgProt /= cs.Pop;
-            for (int k = 0; k < 4; k++) cs.EnzKind[k] /= cs.Pop;
+            for (int k = 0; k < Enzyme.Kinds; k++) cs.EnzKind[k] /= cs.Pop;
         }
         s.Lineages = lin.OrderByDescending(t => t.Value.n).ThenBy(t => t.Value.first).Take(5)
             .Select(t => (t.Key, t.Value.n, t.Value.gen, t.Value.rep)).ToList();

@@ -53,8 +53,8 @@ public static class Genome
 
     public static string SlotName(int slot) => slot < 64 ? Names[slot] : VariantNames[slot - 64];
 
-    public static readonly string[] EnzymeKindEn = { "binding", "splitting", "light capture", "motor" };
-    public static readonly string[] EnzymeKindRu = { "соединение", "расщепление", "захват света", "мотор" };
+    public static readonly string[] EnzymeKindEn = { "binding", "splitting", "light capture", "motor", "receptor", "photoreceptor", "mechanoreceptor", "thermoreceptor" };
+    public static readonly string[] EnzymeKindRu = { "соединение", "расщепление", "захват света", "мотор", "рецептор", "фоторецептор", "механорецептор", "терморецептор" };
     public static string[] EnzymeKind => Loc.T(EnzymeKindEn, EnzymeKindRu);
 
     public static bool HasImm(int op) => op is Push or Label or Jmp or Jz or Jnz or Call;
@@ -66,13 +66,16 @@ public static class Genome
         return g;
     }
 
-    // The protein a gene (three bytes) makes.
+    // The protein a gene (three bytes) makes. With P.Organs 1 a kind-3 gene makes the transducer its B
+    // names (Enzyme.Transducer): a motor or an organ of sense (World.Organs).
     public static Enzyme Decode(byte b1, byte b2, byte b3)
     {
         uint h = Hash32.U((uint)(b1 | b2 << 8 | b3 << 16));
+        int kind = b1 & 3;
+        if (kind == Enzyme.Motor && P.Organs != 0) kind = Enzyme.Transducer(b3 % Chemistry.S);
         return new Enzyme
         {
-            Kind = (byte)(b1 & 3),
+            Kind = (byte)kind,
             Topt = -15f + ((b1 >> 2) & 63) * 0.8f,
             A = (byte)(b2 % Chemistry.S),
             B = (byte)(b3 % Chemistry.S),
@@ -303,6 +306,8 @@ public static class Genome
             Enzyme.Bind => $"{e.A}+{e.B}",
             Enzyme.Split => $"{e.A}→",
             Enzyme.Photo => Loc.T($"light+{e.A}", $"свет+{e.A}"),
+            Enzyme.Receptor => $"{e.A}",
+            Enzyme.Photoreceptor => Loc.T($"pigment {e.A}", $"пигмент {e.A}"),
             _ => "",
         };
         return $"enzyme {EnzymeKind[e.Kind]} {what} {e.Topt:0}° q{e.Eff * 100:0}";

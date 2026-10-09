@@ -78,6 +78,19 @@ public static class P
     public static float EnzDecay = 0.002f;      // fraction lost per tick: proteins must be remade
     public static float Spont = 0.5f;           // chance a reaction goes without its enzyme (at 15 °C)
     public static float EnzWidth = 14f;         // °C around its best temperature where an enzyme works
+    // Organs (World.Organs). 0 — the senses and the motor are what they were: free readings, a motor push
+    // by its best protein. 1 — every sense needs an organ the body made (a protein from a kind-3 gene,
+    // Genome.Decode): what it reads, how well and how far follows from that protein's spec, its amount and
+    // the molecules it is made of; every reading costs (SenseTry, more by the organ's strength: SenseDrive),
+    // every unit of organ protein costs OrganUpkeep a tick, a motor's push grows with all its motor copies.
+    public static int Organs = 0;
+    public static float SenseTry = 0.0005f;     // Organs 1: a sense instruction, with or without an organ
+    public static float SenseDrive = 0.0005f;   // Organs 1: per unit of the organ's strength a reading drives
+    public static float OrganUpkeep = 0.0005f;  // Organs 1: per unit of organ protein (motor and senses) per tick
+    public static float SenseNoise = 0.5f;      // Organs 1: a reading's relative noise, divided by (1 + organ strength)
+    public static float LookMin = 3f;           // Organs 1: photoreceptor strength sight needs at all
+    public static float LookPerUnit = 2f;       // Organs 1: cells of sight per unit of photoreceptor strength (≤ 16)
+    public static float MotorLoad = 0.05f;      // Organs 1: motor strength a full push needs per unit of (1 + body mass)
 
     // Light: each cell catches a trickle of photons that everybody in it shares.
     public static float PhotonK = 0.13f;        // photons per tick at full light (0.06 before the cosine law and the transparency: see World.Sky)

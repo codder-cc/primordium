@@ -64,7 +64,8 @@ public sealed partial class World
     void ChronProtein(Agent a, in Enzyme e)
     {
         int ea = e.Kind == Enzyme.Motor ? 0 : e.A, eb = e.Kind == Enzyme.Bind ? e.B : 0;
-        Propose(EvType.FirstEnzyme, Chronicle.EnzymeKey(e.Kind, ea), a, null, e.Eff, e.Kind | ea << 2 | eb << 7);
+        if (e.Kind is Enzyme.Mechano or Enzyme.Thermo) ea = 0;   // no molecule of their own
+        Propose(EvType.FirstEnzyme, Chronicle.EnzymeKey(e.Kind, ea), a, null, e.Eff, (e.Kind & 3) | ea << 2 | eb << 7 | (e.Kind >> 2) << 12);
     }
 
     // A reaction a protein drove (slot ≥ 0).
@@ -160,11 +161,16 @@ public sealed partial class World
         {
             case EvType.FirstEnzyme:
                 {
-                    int kind = c.Arg & 3, ea = c.Arg >> 2 & 31, eb = c.Arg >> 7 & 31;
+                    int kind = (c.Arg & 3) | (c.Arg >> 12 & 1) << 2, ea = c.Arg >> 2 & 31, eb = c.Arg >> 7 & 31;
                     string What(bool en) => kind switch
                     {
                         Enzyme.Bind => $"{Mol(en, ea)} + {Mol(en, eb)}", Enzyme.Motor => en ? "movement" : "движение",
-                        Enzyme.Photo => (en ? "light + " : "свет + ") + Mol(en, ea), _ => $"{Mol(en, ea)} →",
+                        Enzyme.Photo => (en ? "light + " : "свет + ") + Mol(en, ea),
+                        Enzyme.Receptor => (en ? "smell of " : "чует ") + Mol(en, ea),
+                        Enzyme.Photoreceptor => (en ? "sight, pigment " : "зрение, пигмент ") + Mol(en, ea),
+                        Enzyme.Mechano => en ? "touch" : "осязание",
+                        Enzyme.Thermo => en ? "warmth" : "тепло",
+                        _ => $"{Mol(en, ea)} →",
                     };
                     bool firstOfKind = !AnySeen(Chronicle.SeenEnzyme, kind, c.Key);
                     Add(EvType.FirstEnzyme, Loc.Both($"first protein “{Genome.EnzymeKindEn[kind]}” ({What(true)}) — #{a.Id}, lineage #{a.Lineage}",
@@ -213,9 +219,13 @@ public sealed partial class World
     }
 
     // Was anything of this protein kind seen before (other than `except`)?
+    // Kinds 4–7 (the organs, P.Organs 1) share the key range of kind − 4 with bit 0 set (Chronicle.EnzymeKey).
     bool AnySeen(int table, int kind, int except)
     {
-        for (int k = kind << 10; k < (kind + 1) << 10; k++) if (Chronicle.Seen[table + k] && table + k != except) return true;
+        bool enzyme = table == Chronicle.SeenEnzyme;
+        int organ = kind >> 2, from = (enzyme ? kind & 3 : kind) << 10;
+        for (int k = from; k < from + (1 << 10); k++)
+            if ((!enzyme || (k & 1) == organ) && Chronicle.Seen[table + k] && table + k != except) return true;
         return false;
     }
 

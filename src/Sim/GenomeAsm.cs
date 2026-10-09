@@ -34,6 +34,13 @@ public sealed class GenomeAsmException : Exception
 //                   molecules (0–31); T its best temperature (−15…35.4 °C in steps of 0.8); Q the wanted
 //                   quality 0.35–1 (the closest the gene can give); alt=K (0–63) picks one of the 64 byte
 //                   triples with that kind, A, B and T explicitly. `enzyme raw b1 b2 b3` gives the bytes.
+//   enzyme receptor A t=T q=Q, enzyme photoreceptor A …, enzyme mechanoreceptor …, enzyme thermoreceptor …
+//                   organs of sense (P.Organs 1, World.Organs): a motor gene whose B names the organ
+//                   (Enzyme.Transducer); A the molecule a receptor binds or a photoreceptor's pigment.
+//                   [a=N] the A of a mechano- or thermoreceptor, [b=N] a B other than the organ's usual
+//                   one (both only to give back exact bytes). With the law off the same bytes make a motor;
+//                   the disassembly follows the law in force. Russian names: рецептор, фоторецептор,
+//                   механорецептор, терморецептор (and соединение, расщепление, свет, мотор).
 //   byte N …        raw bytes (also for an operand cut off at the end of the genome, which the VM
 //                   reads from the start)
 //   ; // #          comments
@@ -48,12 +55,15 @@ public static class GenomeAsm
     static readonly Dictionary<string, int> baseOps = new(StringComparer.OrdinalIgnoreCase);
     static readonly Dictionary<string, int> variantOps = new(StringComparer.OrdinalIgnoreCase);
     static readonly string[] variantOf = new string[64];
-    public static readonly string[] EnzymeKinds = { "bind", "split", "photo", "motor" };
+    public static readonly string[] EnzymeKinds = { "bind", "split", "photo", "motor", "receptor", "photoreceptor", "mechanoreceptor", "thermoreceptor" };
     static readonly Dictionary<string, int> kinds = new(StringComparer.OrdinalIgnoreCase)
     {
         ["bind"] = Enzyme.Bind, ["split"] = Enzyme.Split, ["photo"] = Enzyme.Photo, ["motor"] = Enzyme.Motor,
+        ["receptor"] = Enzyme.Receptor, ["photoreceptor"] = Enzyme.Photoreceptor, ["mechanoreceptor"] = Enzyme.Mechano, ["thermoreceptor"] = Enzyme.Thermo,
         ["соединение"] = Enzyme.Bind, ["расщепление"] = Enzyme.Split, ["свет"] = Enzyme.Photo, ["мотор"] = Enzyme.Motor,
+        ["рецептор"] = Enzyme.Receptor, ["фоторецептор"] = Enzyme.Photoreceptor, ["механорецептор"] = Enzyme.Mechano, ["терморецептор"] = Enzyme.Thermo,
     };
+    static bool HasMolecule(int kind) => kind is not (Enzyme.Mechano or Enzyme.Thermo);
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
     static GenomeAsm()
@@ -114,7 +124,15 @@ public static class GenomeAsm
     {
         var e = Genome.Decode(b1, b2, b3);
         string q = e.Eff.ToString("0.000", Inv);
-        string text = $"{EnzymeKinds[e.Kind]} {e.A} {e.B} t={e.Topt.ToString("0.0", Inv)} q={q}";
+        string text;
+        if (e.Kind <= Enzyme.Motor) text = $"{EnzymeKinds[e.Kind]} {e.A} {e.B} t={e.Topt.ToString("0.0", Inv)} q={q}";
+        else
+        {
+            // An organ of sense (P.Organs 1): its molecule if it has one, its B only if not the usual.
+            text = EnzymeKinds[e.Kind] + (HasMolecule(e.Kind) ? $" {e.A}" : "") + $" t={e.Topt.ToString("0.0", Inv)} q={q}";
+            if (!HasMolecule(e.Kind) && e.A != 0) text += $" a={e.A}";
+            if (e.B != Enzyme.CanonicalB(e.Kind)) text += $" b={e.B}";
+        }
         int alt = (b2 >> 5) * 8 + (b3 >> 5);
         if (ClosestAlt(b1, e.A, e.B, double.Parse(q, Inv)) != alt) text += $" alt={alt}";
         return text;
@@ -139,7 +157,7 @@ public static class GenomeAsm
     public static (byte b1, byte b2, byte b3) EnzymeBytes(int kind, int a, int b, float topt, double quality = 1, int alt = -1)
     {
         int t = Math.Clamp((int)MathF.Round((topt + 15f) / 0.8f), 0, 63);
-        byte b1 = (byte)(kind & 3 | t << 2);
+        byte b1 = (byte)(Math.Min(kind, Enzyme.Motor) | t << 2);   // an organ of sense is a motor gene by its B
         if (alt < 0) alt = ClosestAlt(b1, a & 31, b & 31, quality);
         var (b2, b3) = AltBytes(a & 31, b & 31, alt);
         return (b1, b2, b3);
@@ -276,12 +294,21 @@ public static class GenomeAsm
             Args(t, 4, "enzyme raw b1 b2 b3");
             return ((byte)Number(t[2], 0, 255, "b1"), (byte)Number(t[3], 0, 255, "b2"), (byte)Number(t[4], 0, 255, "b3"));
         }
-        if (t.Length < 4) throw new FormatException(Loc.T("expected 'enzyme bind|split|photo|motor A B t=T q=Q'", "ожидается «enzyme bind|split|photo|motor A B t=T q=Q»"));
-        if (!kinds.TryGetValue(t[1], out int kind)) throw new FormatException(Loc.T($"unknown protein kind '{t[1]}' (bind, split, photo, motor)", $"неизвестный вид белка «{t[1]}» (bind, split, photo, motor)"));
-        int a = Number(t[2], 0, Chemistry.S - 1, Loc.T("molecule A", "молекула A")), b = Number(t[3], 0, Chemistry.S - 1, Loc.T("molecule B", "молекула B"));
+        if (t.Length < 2 || !kinds.TryGetValue(t[1], out int kind))
+            throw new FormatException(t.Length < 2 ? Loc.T("expected 'enzyme bind|split|photo|motor A B t=T q=Q'", "ожидается «enzyme bind|split|photo|motor A B t=T q=Q»")
+                : Loc.T($"unknown protein kind '{t[1]}' (bind, split, photo, motor, receptor, photoreceptor, mechanoreceptor, thermoreceptor)",
+                        $"неизвестный вид белка «{t[1]}» (bind, split, photo, motor, receptor, photoreceptor, mechanoreceptor, thermoreceptor — или по-русски)"));
+        bool organ = kind > Enzyme.Motor;
+        int need = !organ ? 4 : HasMolecule(kind) ? 3 : 2;   // tokens before the options
+        if (t.Length < need)
+            throw new FormatException(!organ ? Loc.T("expected 'enzyme bind|split|photo|motor A B t=T q=Q'", "ожидается «enzyme bind|split|photo|motor A B t=T q=Q»")
+                : HasMolecule(kind) ? Loc.T($"expected 'enzyme {t[1]} A t=T q=Q'", $"ожидается «enzyme {t[1]} A t=T q=Q»")
+                : Loc.T($"expected 'enzyme {t[1]} t=T q=Q'", $"ожидается «enzyme {t[1]} t=T q=Q»"));
+        int a = need >= 3 ? Number(t[2], 0, Chemistry.S - 1, Loc.T("molecule A", "молекула A")) : 0;
+        int b = !organ ? Number(t[3], 0, Chemistry.S - 1, Loc.T("molecule B", "молекула B")) : Enzyme.CanonicalB(kind);
         double topt = 15, q = 1;
         int alt = -1, positional = 0;
-        for (int k = 4; k < t.Length; k++)
+        for (int k = need; k < t.Length; k++)
         {
             string tok = t[k];
             int eq = tok.IndexOf('=');
@@ -292,6 +319,11 @@ public static class GenomeAsm
                 case "t": topt = Real(val, Loc.T("temperature", "температура")); break;
                 case "q": q = Real(val, Loc.T("quality", "качество")); break;
                 case "alt": alt = Number(val, 0, 63, "alt"); break;
+                case "a" when organ && !HasMolecule(kind): a = Number(val, 0, Chemistry.S - 1, "a"); break;
+                case "b" when organ:
+                    b = Number(val, 0, Chemistry.S - 1, "b");
+                    if (Enzyme.Transducer(b) != kind) throw new FormatException(Loc.T($"b={b} does not make a {EnzymeKinds[kind]} (b & 7 decides)", $"b={b} не даёт {EnzymeKinds[kind]} (решает b & 7)"));
+                    break;
                 default: throw new FormatException(Loc.T($"unexpected '{tok}' (t=…, q=…, alt=…)", $"лишнее «{tok}» (t=…, q=…, alt=…)"));
             }
         }

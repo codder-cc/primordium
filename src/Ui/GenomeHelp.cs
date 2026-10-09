@@ -29,20 +29,20 @@ public static class GenomeHelp
         ["yield"] = "end this tick's cycles",
         ["load"] = "i → memory[i]", ["store"] = "v i →: memory[i] = v",
         ["energy"] = "→ body energy", ["age"] = "→ age / 64", ["have"] = "m → how many molecules m in the body", ["mass"] = "→ molecules in the body",
-        ["temp"] = "→ cell temperature", ["btemp"] = "→ body temperature",
-        ["light"] = "→ light on the body ×100", ["photons"] = "→ cell photons ×100, under the canopy (Canopy 1) the body's own store (0 under a roof)",
-        ["uv"] = "→ UV at the body ×100: solar activity and flares (light.1; without flares, same as light)",
-        ["sense"] = "m → concentration of m in the cell", ["sensed"] = "m d → concentration of m in neighbour cell d",
-        ["smell"] = "m → smell of m around",
-        ["look"] = "range d →: look in direction d (costs energy); pushes detail, distance, what is seen",
-        ["ground"] = "d → material underfoot (d=4) or height step to neighbour d",
+        ["temp"] = "→ cell temperature (Organs 1: thermoreceptor)", ["btemp"] = "→ body temperature (Organs 1: thermoreceptor)",
+        ["light"] = "→ light on the body ×100 (Organs 1: photoreceptor)", ["photons"] = "→ cell photons ×100, under the canopy (Canopy 1) the body's own store (0 under a roof) (Organs 1: photoreceptor)",
+        ["uv"] = "→ UV at the body ×100: solar activity and flares (light.1; without flares, same as light) (Organs 1: photoreceptor)",
+        ["sense"] = "m → concentration of m in the cell (Organs 1: receptor)", ["sensed"] = "m d → concentration of m in neighbour cell d (Organs 1: receptor)",
+        ["smell"] = "m → smell of m around (Organs 1: receptor)",
+        ["look"] = "range d →: look in direction d (costs energy); pushes detail, distance, what is seen (Organs 1: photoreceptors ≥ LookMin)",
+        ["ground"] = "d → material underfoot (d=4) or height step to neighbour d (Organs 1: mechanoreceptor)",
         ["pick"] = "n → select the n-th neighbour in the cell (n<0: in a neighbour cell); 1 if found",
-        ["count"] = "→ how many candidates around for pick",
-        ["feel"] = "→ energy of the selected (−1: nobody)",
-        ["hurt"] = "→ ticks since the last attack here (−1: quiet); the attacker becomes the target",
-        ["kin"] = "→ kinship with the selected", ["ngene"] = "i → genome byte of the selected", ["gene"] = "i → own genome byte", ["glen"] = "→ genome length",
-        ["listen"] = "→ signal of the selected", ["emit"] = "s →: set own signal",
-        ["enzyme"] = "protein gene: enzyme kind A B t=… q=… (kind: bind, split, photo, motor)",
+        ["count"] = "→ how many candidates around for pick (Organs 1: mechanoreceptor)",
+        ["feel"] = "→ energy of the selected (−1: nobody) (Organs 1: mechanoreceptor)",
+        ["hurt"] = "→ ticks since the last attack here (−1: quiet); the attacker becomes the target (Organs 1: mechanoreceptor)",
+        ["kin"] = "→ kinship with the selected (Organs 1: receptor)", ["ngene"] = "i → genome byte of the selected (Organs 1: receptor)", ["gene"] = "i → own genome byte", ["glen"] = "→ genome length",
+        ["listen"] = "→ signal of the selected (Organs 1: mechanoreceptor)", ["emit"] = "s →: set own signal",
+        ["enzyme"] = "protein gene: enzyme kind A B t=… q=… (kind: bind, split, photo, motor); organs of sense (Organs 1): enzyme receptor A, photoreceptor A, mechanoreceptor, thermoreceptor",
         ["intake"] = "m →: take in molecule m from the cell", ["drink"] = "a sip of everything around (or of soft organics underfoot)",
         ["expel"] = "m d →: expel molecule m toward d (recoil)", ["thrust"] = "d →: motor push toward d (needs a motor protein)",
         ["bind"] = "a b →: bind molecules a and b (pays if the product is poorer)", ["digest"] = "split a random molecule of the body",
@@ -76,20 +76,20 @@ public static class GenomeHelp
         ["yield"] = "закончить такты этого тика",
         ["load"] = "i → память[i]", ["store"] = "v i →: память[i] = v",
         ["energy"] = "→ энергия тела", ["age"] = "→ возраст / 64", ["have"] = "m → сколько молекул m в теле", ["mass"] = "→ молекул в теле",
-        ["temp"] = "→ температура клетки", ["btemp"] = "→ температура тела",
-        ["light"] = "→ свет на тело ×100", ["photons"] = "→ фотоны клетки ×100, при пологе (Canopy 1) — свой запас тела (под крышей 0)",
-        ["uv"] = "→ УФ у тела ×100: активность солнца и вспышки (light.1; без вспышек — как light)",
-        ["sense"] = "m → концентрация m в клетке", ["sensed"] = "m d → концентрация m в соседней клетке d",
-        ["smell"] = "m → запах m вокруг",
-        ["look"] = "дальность d →: смотреть в сторону d (стоит энергии); кладёт деталь, расстояние, что видно",
-        ["ground"] = "d → материал под ногами (d=4) или перепад высоты к соседу d",
+        ["temp"] = "→ температура клетки (Organs 1: терморецептор)", ["btemp"] = "→ температура тела (Organs 1: терморецептор)",
+        ["light"] = "→ свет на тело ×100 (Organs 1: фоторецептор)", ["photons"] = "→ фотоны клетки ×100, при пологе (Canopy 1) — свой запас тела (под крышей 0) (Organs 1: фоторецептор)",
+        ["uv"] = "→ УФ у тела ×100: активность солнца и вспышки (light.1; без вспышек — как light) (Organs 1: фоторецептор)",
+        ["sense"] = "m → концентрация m в клетке (Organs 1: рецептор)", ["sensed"] = "m d → концентрация m в соседней клетке d (Organs 1: рецептор)",
+        ["smell"] = "m → запах m вокруг (Organs 1: рецептор)",
+        ["look"] = "дальность d →: смотреть в сторону d (стоит энергии); кладёт деталь, расстояние, что видно (Organs 1: фоторецепторы ≥ LookMin)",
+        ["ground"] = "d → материал под ногами (d=4) или перепад высоты к соседу d (Organs 1: механорецептор)",
         ["pick"] = "n → выбрать n-го соседа в клетке (n<0 — в соседней клетке); 1, если нашёлся",
-        ["count"] = "→ сколько вокруг кандидатов для pick",
-        ["feel"] = "→ энергия выбранного (−1 — никого)",
-        ["hurt"] = "→ тиков с последней атаки здесь (−1 — тихо); напавший становится целью",
-        ["kin"] = "→ родство с выбранным", ["ngene"] = "i → байт генома выбранного", ["gene"] = "i → свой байт генома", ["glen"] = "→ длина генома",
-        ["listen"] = "→ сигнал выбранного", ["emit"] = "s →: выставить свой сигнал",
-        ["enzyme"] = "ген белка: enzyme вид A B t=… q=… (вид: bind, split, photo, motor)",
+        ["count"] = "→ сколько вокруг кандидатов для pick (Organs 1: механорецептор)",
+        ["feel"] = "→ энергия выбранного (−1 — никого) (Organs 1: механорецептор)",
+        ["hurt"] = "→ тиков с последней атаки здесь (−1 — тихо); напавший становится целью (Organs 1: механорецептор)",
+        ["kin"] = "→ родство с выбранным (Organs 1: рецептор)", ["ngene"] = "i → байт генома выбранного (Organs 1: рецептор)", ["gene"] = "i → свой байт генома", ["glen"] = "→ длина генома",
+        ["listen"] = "→ сигнал выбранного (Organs 1: механорецептор)", ["emit"] = "s →: выставить свой сигнал",
+        ["enzyme"] = "ген белка: enzyme вид A B t=… q=… (вид: bind, split, photo, motor); органы чувств (Organs 1): enzyme рецептор A, фоторецептор A, механорецептор, терморецептор",
         ["intake"] = "m →: втянуть молекулу m из клетки", ["drink"] = "глоток всего вокруг (или мягкой органики под ногами)",
         ["expel"] = "m d →: выбросить молекулу m в сторону d (отдача)", ["thrust"] = "d →: толчок мотором в сторону d (нужен белок-мотор)",
         ["bind"] = "a b →: соединить молекулы a и b (выгодно, если продукт беднее)", ["digest"] = "расщепить случайную молекулу тела",
@@ -155,7 +155,7 @@ public static class GenomeHelp
         };
         foreach (var (name, op, _) in Mnemonics()) h.AddKeywordColor(name, OpColor(op));
         foreach (var k in GenomeAsm.EnzymeKinds) h.AddMemberKeywordColor(k, new Color(0.6f, 1f, 0.75f));
-        foreach (var k in new[] { "up", "down", "raw", "t", "q", "alt" }) h.AddMemberKeywordColor(k, new Color(0.6f, 1f, 0.75f));
+        foreach (var k in new[] { "up", "down", "raw", "t", "q", "alt", "a", "b", "рецептор", "фоторецептор", "механорецептор", "терморецептор", "соединение", "расщепление", "свет", "мотор" }) h.AddMemberKeywordColor(k, new Color(0.6f, 1f, 0.75f));
         h.AddKeywordColor("byte", new Color(0.8f, 0.8f, 0.8f));
         h.AddKeywordColor("db", new Color(0.8f, 0.8f, 0.8f));
         var comment = new Color(0.45f, 0.5f, 0.55f);
@@ -192,9 +192,29 @@ public static class GenomeHelp
         }
         sb.Append(Loc.T(
                 "\n[b]Protein[/b]\n[code]enzyme photo 0 0 t=15.0 q=0.9[/code]: kind (bind binding, split splitting, photo light capture, motor motor), " +
-                "molecules A and B, best temperature (−15…35.4 °C) and wanted quality 0.35–1. A protein costs energy and one molecule of the body.\n",
+                "molecules A and B, best temperature (−15…35.4 °C) and wanted quality 0.35–1. A protein costs energy and one molecule of the body.\n" +
+                "\n[b]Organs of sense[/b] (the law Organs 1)\nWith the law on, a sense is a protein the genome makes, not an ability: without the organ a reading gives 0 " +
+                "(nothing, or −1) and still costs a little; with it every reading costs more the stronger the organ, and every unit of an organ costs upkeep each tick. " +
+                "An organ wears like any protein and has to be made again: a line that stops making it (in a cave, a photoreceptor) loses it. " +
+                "Strength = amount × quality × how close the body is to its best temperature; a reading is scaled by it (up to 1) and its noise falls with it.\n" +
+                "[code]enzyme receptor 8[/code]: binds molecule 8 outside — sense, sensed and smell read through it; it also reports molecules like 8 (sharing its atoms), so a receptor for a formula of its own is specific.\n" +
+                "[code]enzyme photoreceptor 0[/code]: pigment 0 — light, photons, uv and look; the pigment is a molecule of 0 folded into the protein (the body must hold one when it makes it) " +
+                "and must be excitable by light; it sees by its excitation (stronger for a bigger gap). look needs several of them (LookMin) and reaches LookPerUnit cells per unit; it costs more with range.\n" +
+                "[code]enzyme mechanoreceptor[/code]: touch — count, hurt, ground, feel, listen (caught with the chance of its strength).\n" +
+                "[code]enzyme thermoreceptor t=20[/code]: temp and btemp, accurate near its best temperature.\n" +
+                "A motor pushes with all its copies: a full push of a heavy body needs more of them (MotorLoad). Organ genes are motor genes by their B: with the law off they make a motor.\n",
                 "\n[b]Белок[/b]\n[code]enzyme photo 0 0 t=15.0 q=0.9[/code] — вид (bind соединение, split расщепление, photo захват света, motor мотор), " +
-                "молекулы A и B, лучшая температура (−15…35,4 °C) и желаемое качество 0,35–1. Белок стоит энергии и одну молекулу тела.\n"))
+                "молекулы A и B, лучшая температура (−15…35,4 °C) и желаемое качество 0,35–1. Белок стоит энергии и одну молекулу тела.\n" +
+                "\n[b]Органы чувств[/b] (закон Organs 1)\nПри законе чувство — белок, который делает геном, а не готовая способность: без органа чтение даёт 0 " +
+                "(ничего или −1) и всё равно чуть стоит; с органом каждое чтение стоит тем больше, чем сильнее орган, а каждая единица органа — содержание каждый тик. " +
+                "Орган изнашивается, как любой белок, и его надо делать заново: линия, которая перестала его делать (в пещере — фоторецептор), его теряет. " +
+                "Сила = количество × качество × близость тела к его лучшей температуре; чтение умножается на неё (до 1), шум с ней падает.\n" +
+                "[code]enzyme рецептор 8[/code] — связывает молекулу 8 снаружи: sense, sensed и smell читают через него; он отзывается и на похожие на 8 молекулы (по общим атомам), так что рецептор на редкую формулу точен.\n" +
+                "[code]enzyme фоторецептор 0[/code] — пигмент 0: light, photons, uv и look; пигмент — молекула 0, вложенная в белок (она должна быть в теле, когда белок делается), " +
+                "и свет должен её возбуждать; видит по своему возбуждению (сильнее при большей щели). look нужно несколько таких (LookMin), дальность LookPerUnit клеток на единицу, цена растёт с дальностью.\n" +
+                "[code]enzyme механорецептор[/code] — осязание: count, hurt, ground, feel, listen (ловит с вероятностью своей силы).\n" +
+                "[code]enzyme терморецептор t=20[/code] — temp и btemp, точен около своей лучшей температуры.\n" +
+                "Мотор толкает всеми копиями: полный толчок тяжёлого тела требует их больше (MotorLoad). Гены органов — это гены мотора по их B: без закона из них выходит мотор.\n"))
           .Append(Loc.T("\n[b]Bytes[/b]\n[code]byte 12 200[/code]: raw bytes.\n", "\n[b]Байты[/b]\n[code]byte 12 200[/code] — сырые байты.\n"));
         return sb.ToString();
     }

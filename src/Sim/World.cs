@@ -61,6 +61,7 @@ public sealed partial class World
         public readonly long[] Ev = new long[(int)EvKind.Count];
         public readonly long[] Mined = new long[6], MinedCat = new long[6];   // molecules torn out of rock by grade (with a protein's help)
         public readonly long[] GeoMined = new long[8];                        // ... by depth (World.Geochem, observation)
+        public readonly double[] Organ = new double[OrganStatN];             // sense readings and organ costs (World.Organs, observation)
         public readonly List<int> Dirty = new();
         public readonly List<Agent> Newborn = new();
         public readonly List<Discovery> Firsts = new();
@@ -443,6 +444,7 @@ public sealed partial class World
             for (int k = 0; k < ctx.Ev.Length; k++) { Ev[k] += ctx.Ev[k]; ctx.Ev[k] = 0; }
             for (int k = 0; k < 6; k++) { Mined[k] += ctx.Mined[k]; MinedCat[k] += ctx.MinedCat[k]; ctx.Mined[k] = ctx.MinedCat[k] = 0; }
             for (int k = 0; k < GeoMined.Length; k++) { GeoMined[k] += ctx.GeoMined[k]; ctx.GeoMined[k] = 0; }
+            MergeOrganStats(ctx.Organ);
         }
         Lap(DAlarms);
         Prof[2] += prof.Elapsed.TotalMilliseconds;

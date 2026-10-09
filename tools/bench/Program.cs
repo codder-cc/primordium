@@ -44,6 +44,7 @@ if (Array.IndexOf(args, "--self-test-water") >= 0) { World.WaterwaysRegression()
 if (Array.IndexOf(args, "--self-test-climate") >= 0) { World.ClimateCyclesRegression(); return; }   // just the climate cycles test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-region") >= 0) { World.RegionRegression(); return; }   // just the regions test (also in --self-test)
 if (Array.IndexOf(args, "--self-test-life") >= 0) { World.LifeModelRegression(); return; }   // just the life models test (also in --self-test)
+if (Array.IndexOf(args, "--self-test-organs") >= 0) { World.RunOrganRegression(); return; }   // just the organs of sense test (also in --self-test)
 if (Array.IndexOf(args, "--list-params") >= 0)
 {
     foreach (var p in ParamRegistry.All)
@@ -72,6 +73,8 @@ if (Array.IndexOf(args, "--punctuated") >= 0) { Punctuated.Run(args); return; } 
 if (Array.IndexOf(args, "--run-one") >= 0) { Batch.RunOne(args, laws); return; }
 if (Array.IndexOf(args, "--geochem") >= 0) { World.GeochemReport(args); return; }   // strata by depth, what bodies need (World.Geochem)
 if (Array.IndexOf(args, "--resources") >= 0) { World.ResourceReport(args); return; }   // gas and loose food by region (World.Resources)
+if (Array.IndexOf(args, "--design-probe") >= 0) { World.DesignProbe(args); return; }   // each example design alone, by the laws (Organs.cs)
+if (Array.IndexOf(args, "--cave-probe") >= 0) { World.CaveProbe(args); return; }   // the blind cavefish: photoreceptors in the light and under a roof (Organs.cs)
 if (Array.IndexOf(args, "--invade") >= 0) { World.InvasionProbe(args); return; }   // plant a design (example name or design .json), follow its lineage (World.Geochem probe)
 {
     // --export-designs dir: the built-in example designs as JSON files (the creature designer's format), to edit and --invade with.
@@ -262,7 +265,7 @@ for (int t = 1; t <= ticks; t++)
     }
     Array.Clear(w.Prof);
     Array.Clear(w.Detail);
-    Console.WriteLine($"   enzymes/body {c.AvgEnz:F1}: bind {c.EnzKind[0]:F2} split {c.EnzKind[1]:F2} photo {c.EnzKind[2]:F2} motor {c.EnzKind[3]:F2} | protected {c.AvgProt:P1} | Tb {c.AvgTb:F1} | crowded {c.Crowded} linked {c.Linked} | most in one cell {w.Count.Max()}, pushed off full floors {w.Pushed} | big bodies {c.Big}, largest {c.MaxCells} cells");
+    Console.WriteLine($"   enzymes/body {c.AvgEnz:F1}: bind {c.EnzKind[0]:F2} split {c.EnzKind[1]:F2} photo {c.EnzKind[2]:F2} motor {c.EnzKind[3]:F2}{(World.OrganLaw ? $" receptor {c.EnzKind[4]:F2} photoreceptor {c.EnzKind[5]:F2} mechano {c.EnzKind[6]:F2} thermo {c.EnzKind[7]:F2}" : "")} | protected {c.AvgProt:P1} | Tb {c.AvgTb:F1} | crowded {c.Crowded} linked {c.Linked} | most in one cell {w.Count.Max()}, pushed off full floors {w.Pushed} | big bodies {c.Big}, largest {c.MaxCells} cells");
     Console.WriteLine($"t={t} day={w.Day} pop={c.Pop} born={w.Births} died={w.DeathsStarve}/{w.DeathsKilled}/{w.DeathsBroken}/{w.DeathsClimate}/{w.DeathsBuried}/{w.DeathsFlare} spawn={w.Spawns} " +
                       $"gen={w.MaxGen} len={c.AvgLen:F0} E={c.AvgEnergy:F0} age={c.AvgAge:F0} old={c.OldestAge} " +
                       $"| plant={c.Plants} eat={c.Eaters} mine={c.Miners} hunt={c.Hunters} idle={c.Idle} " +

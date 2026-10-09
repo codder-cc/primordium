@@ -5,9 +5,18 @@ namespace Primordium;
 
 // A protein made from a gene: speeds up one reaction. Its spec comes from three genome bytes, so a
 // point mutation can retarget it to another molecule, shift its best temperature or spoil it.
+// With P.Organs 1 a motor gene (kind 3) is one of a family of transducers, by the low bits of B
+// (Genome.Decode): a motor, or an organ of sense — a receptor for molecule A, a photoreceptor with pigment
+// A, a mechanoreceptor, a thermoreceptor (World.Organs). With the law off there are only kinds 0–3.
 public struct Enzyme
 {
     public const int Bind = 0, Split = 1, Photo = 2, Motor = 3;
+    public const int Receptor = 4, Photoreceptor = 5, Mechano = 6, Thermo = 7, Kinds = 8;
+    // P.Organs 1: which transducer a kind-3 gene makes, by B & 7 (0–2 motor, 3–4 receptor, 5 photoreceptor,
+    // 6 mechanoreceptor, 7 thermoreceptor), and the B a gene of each kind is written with (GenomeAsm).
+    public static int Transducer(int b) => (b & 7) switch { < 3 => Motor, < 5 => Receptor, 5 => Photoreceptor, 6 => Mechano, _ => Thermo };
+    public static int CanonicalB(int kind) => kind switch { Receptor => 3, Photoreceptor => 5, Mechano => 6, Thermo => 7, _ => 0 };
+    public static bool IsOrgan(int kind) => kind >= Motor;   // the motor and the senses (World.Organs: upkeep with P.Organs 1)
     public byte Kind, A, B;
     public float Topt, Eff, Amount;
     public byte Material;

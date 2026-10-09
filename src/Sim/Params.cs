@@ -134,6 +134,15 @@ public static class ParamRegistry
         F("EnzDecay", "Белки", "Share of protein that decays per tick", "Доля белка, распадающаяся за тик", 0, 0.1, 0.0005);
         F("Spont", "Белки", "Chance of a reaction without a protein (at 15 °C)", "Шанс реакции без белка (при 15 °C)", 0, 1, 0.01);
         F("EnzWidth", "Белки", "Width of a protein's temperature window, °C", "Ширина температурного окна белка, °C", 0.5, 60, 0.5);
+        I("Organs", "Белки", "Organs of sense: 1 — every sense and the motor need a protein the genome made (receptor for a molecule, photoreceptor with a pigment, mechanoreceptor, thermoreceptor, motor: a kind-3 gene by its B); what it reads and how well follows from that protein, its amount and its molecules; readings and organs cost energy; 0 — free readings, as before",
+          "Органы чувств: 1 — каждое чувство и мотор требуют белка, сделанного геномом (рецептор молекулы, фоторецептор с пигментом, механорецептор, терморецептор, мотор: ген вида 3 по его B); что и насколько хорошо он читает — из самого белка, его количества и его молекул; чтения и органы стоят энергии; 0 — бесплатные чтения, как раньше", 0, 1, 1);
+        F("SenseTry", "Белки", "Organs 1: energy of a sense instruction, with or without an organ (trying costs)", "Organs 1: энергия команды чувства, с органом или без (попытка стоит)", 0, 0.05, 0.0001);
+        F("SenseDrive", "Белки", "Organs 1: energy per unit of the organ's strength one reading drives", "Organs 1: энергия на единицу силы органа за одно чтение", 0, 0.05, 0.0001);
+        F("OrganUpkeep", "Белки", "Organs 1: upkeep per unit of organ protein (motor and senses) per tick", "Organs 1: содержание единицы белка-органа (мотор и чувства) за тик", 0, 0.05, 0.0001);
+        F("SenseNoise", "Белки", "Organs 1: relative noise of a reading, divided by (1 + the organ's strength)", "Organs 1: относительный шум чтения, делённый на (1 + сила органа)", 0, 5, 0.05);
+        F("LookMin", "Белки", "Organs 1: photoreceptor strength sight needs at all (a decoding apparatus)", "Organs 1: сила фоторецепторов, без которой зрения нет (аппарат расшифровки)", 0, 50, 0.5);
+        F("LookPerUnit", "Белки", "Organs 1: cells of sight range per unit of photoreceptor strength (at most 16)", "Organs 1: клеток дальности зрения на единицу силы фоторецепторов (не больше 16)", 0, 16, 0.1);
+        F("MotorLoad", "Белки", "Organs 1: motor strength (all motor copies) a full push needs per unit of (1 + body mass)", "Organs 1: сила мотора (все копии), нужная для полного толчка, на единицу (1 + масса тела)", 0, 1, 0.005);
         // Light
         F("PhotonK", "Свет", "Photons per cell per tick in full light", "Фотонов в клетку за тик при полном свете", 0, 1, 0.005);
         F("PhotonCap", "Свет", "A cell stores no more photons than this", "Больше фотонов клетка не копит", 0.1, 50, 0.1);

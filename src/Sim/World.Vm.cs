@@ -8,7 +8,9 @@ namespace Primordium;
 // — the same primitives, at the same costs, as any other life model. Nothing here is a ready-made
 // behaviour: reactions need molecules in the body and go fast only with a matching protein, which
 // only exists if the genome made it; light has to be caught from the cell's shared trickle; motion
-// needs a motor protein or thrown-away mass; every social act targets whoever the code picked.
+// needs a motor protein or thrown-away mass; every social act targets whoever the code picked. With
+// P.Organs 1 every sense instruction reads through an organ the genome made (World.Organs): `enzyme` with a
+// receptor, photoreceptor, mechano- or thermoreceptor gene; without it the reading is 0 and still costs.
 public sealed partial class World
 {
     static int Cl(int v) => v > 32767 ? 32767 : v < -32767 ? -32767 : v;
@@ -100,7 +102,7 @@ public sealed partial class World
                 case Genome.Have: Push(a, a.Inv[Chemistry.Spec(Pop(a))]); break;
                 case Genome.EnzymeOp: Express(a, ip, g, n); a.Ip = ip + 4; break;
                 case Genome.MassOp: Push(a, a.InvTotal); break;
-                case Genome.Temp: Push(a, imm >= 2 ? (int)a.Tb : (int)AmbientTemp(a, cell)); break;
+                case Genome.Temp: Push(a, imm >= 2 ? (int)BodyTemp(a) : (int)AmbientTemp(a, cell)); break;
                 // light.1 is `uv` with solar flares on (World.Sky: the sun's activity and flares at the body,
                 // information only); with them off it reads the light, as before.
                 case Genome.LightOp: Push(a, imm >= 2 ? (int)(PhotonsAt(a, cell) * 100) : imm == 1 && FlareLaw ? UvSense(a) : (int)(LightAt(a) * 100)); break;
@@ -113,13 +115,13 @@ public sealed partial class World
                     break;
                 case Genome.Feel:
                     if (imm >= 2) { Push(a, Alarm(a, cell)); break; }   // imm 2–3: was anybody here attacked?
-                    { var o = Partner(a, cell); Push(a, o == null ? -1 : (int)Avail(o)); }
+                    Push(a, FeelEnergy(a, Partner(a, cell)));
                     break;
-                case Genome.Kin: { var o = Partner(a, cell); Push(a, o == null ? -1 : Kinship(a, o)); break; }
-                case Genome.NGene: { x = Pop(a); var o = Partner(a, cell); Push(a, o == null ? -1 : o.G[Mod(x, o.G.Length)]); break; }
+                case Genome.Kin: Push(a, KinSense(a, Partner(a, cell))); break;
+                case Genome.NGene: { x = Pop(a); Push(a, GeneSense(a, Partner(a, cell), x)); break; }
                 case Genome.Gene: Push(a, g[Mod(Pop(a), n)]); break;
                 case Genome.GLen: Push(a, n); break;
-                case Genome.Listen: { var o = Partner(a, cell); Push(a, o == null ? 0 : o.Signal); break; }
+                case Genome.Listen: Push(a, Hear(a, Partner(a, cell))); break;
                 case Genome.Emit: a.Signal = Pop(a); break;
                 case Genome.Intake:
                     if (imm >= 2) Drink(a, cell);   // imm 2–3: take in whatever is around (or soak up organic ground)

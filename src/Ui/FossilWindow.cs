@@ -88,7 +88,7 @@ public partial class FossilWindow : UiWindow
         body.Text = total > 0 ? Loc.T($"Body ({total} molecules): ", $"Тело ({total} молекул): ") + string.Join(" · ", mols)
                               : Loc.T("Body: makeup not preserved (a fossil from an event's genome)", "Тело: состав не сохранился (окаменелость по геному из события)");
         proteins.Text = f.Proteins.Length == 0 ? Loc.T("No proteins.", "Белков не было.") : Loc.T("Proteins: ", "Белки: ") + string.Join(" · ", f.Proteins.Select(z =>
-            $"{Genome.EnzymeKind[z.Kind]} " + z.Kind switch { Enzyme.Bind => $"{Mol(z.A)} + {Mol(z.B)}", Enzyme.Split => $"{Mol(z.A)} →", Enzyme.Photo => Loc.T("light + ", "свет + ") + Mol(z.A), _ => "" } +
+            $"{Genome.EnzymeKind[z.Kind]} " + z.Kind switch { Enzyme.Bind => $"{Mol(z.A)} + {Mol(z.B)}", Enzyme.Split => $"{Mol(z.A)} →", Enzyme.Photo => Loc.T("light + ", "свет + ") + Mol(z.A), Enzyme.Receptor => Mol(z.A), Enzyme.Photoreceptor => Loc.T("pigment ", "пигмент ") + Mol(z.A), _ => "" } +
             $" ×{z.Amount:0.0}, {z.Eff * 100:0}%, {z.Topt:+0;-0}°"));
         genome.Text = f.Genome != null ? Loc.T($"; {f.Genome.Length} bytes\n", $"; {f.Genome.Length} байт\n") + GenomeAsm.Disassemble(f.Genome) : Loc.T("; no genome", "; генома нет");
         bio.Clear();

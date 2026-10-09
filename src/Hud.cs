@@ -648,7 +648,11 @@ public partial class Hud : Control
         }
         T(x, y + 29, Loc.T($"distinct proteins {c.AvgEnz:0.0} · genome conserved {c.AvgProt:P0} · body {c.AvgTb:+0;-0} °C · large bodies {c.Big:N0} (up to {c.MaxCells} cells)",
                            $"разных белков {c.AvgEnz:0.0} · закреплено генома {c.AvgProt:P0} · тело {c.AvgTb:+0;-0} °C · больших тел {c.Big:N0} (до {c.MaxCells} клеток)"), Dim, 12);
-        return y + 12 + 2 * 17 + 8;
+        if (!World.OrganLaw) return y + 12 + 2 * 17 + 8;
+        // P.Organs 1: the organs of sense (World.Organs), per body (mean).
+        T(x, y + 46, Loc.T($"senses: receptor {c.EnzKind[Enzyme.Receptor]:0.0} · photoreceptor {c.EnzKind[Enzyme.Photoreceptor]:0.0} · mechano {c.EnzKind[Enzyme.Mechano]:0.0} · thermo {c.EnzKind[Enzyme.Thermo]:0.0}",
+                           $"чувства: рецептор {c.EnzKind[Enzyme.Receptor]:0.0} · фоторецептор {c.EnzKind[Enzyme.Photoreceptor]:0.0} · механо {c.EnzKind[Enzyme.Mechano]:0.0} · термо {c.EnzKind[Enzyme.Thermo]:0.0}"), Dim, 12);
+        return y + 12 + 3 * 17 + 8;
     }
 
     float Lineages(float x, float y, float cw)
@@ -908,6 +912,8 @@ public partial class Hud : Control
                 Enzyme.Bind => $"{ch.Name[z.A]} + {ch.Name[z.B]}",
                 Enzyme.Split => $"{ch.Name[z.A]} →",
                 Enzyme.Photo => Loc.T($"light + {ch.Name[z.A]}", $"свет + {ch.Name[z.A]}"),
+                Enzyme.Receptor => ch.Name[z.A],
+                Enzyme.Photoreceptor => Loc.T($"pigment {ch.Name[z.A]}", $"пигмент {ch.Name[z.A]}") + (z.Material == z.A ? "" : Loc.T(" (missing: blind)", " (нет — слеп)")),
                 _ => "",
             };
             T(x + 8, y + 10, Loc.T($"{Genome.EnzymeKind[z.Kind]} {what} · ×{z.Amount:0.0} · quality {z.Eff * 100:0}% · best at {z.Topt:+0;-0}°",

@@ -141,7 +141,7 @@ public sealed class EvoMetrics
         var useful = new HashSet<int>();
         var kinds = new int[4];
         var diet = new int[5];
-        Span<bool> has = stackalloc bool[4];
+        Span<bool> has = stackalloc bool[Enzyme.Kinds];   // kinds 4–7 (P.Organs 1) are not counted below
         var chem = w.Chem;
         foreach (var a in live)
         {

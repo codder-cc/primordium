@@ -188,7 +188,8 @@ public sealed class Chronicle
     public int DominantCount;
     public readonly float[] RecordBest = new float[4];   // mass, age, children, genome length: last announced
 
-    public static int EnzymeKey(int kind, int a) => SeenEnzyme + (kind << 10 | (a & 31) << 5);
+    // Kinds 0–3 in bits 10–11; the organs of sense (kinds 4–7, P.Organs 1) as kind − 4 there with bit 0 set.
+    public static int EnzymeKey(int kind, int a) => SeenEnzyme + ((kind & 3) << 10 | (a & 31) << 5 | kind >> 2);
     public static int ReactionKey(int kind, int a, int b) => SeenReaction + (kind << 10 | (a & 31) << 5 | (b & 31));
     public static int OnceKey(EvType t) => SeenOnce + (int)t;
 
@@ -294,8 +295,8 @@ public sealed class Chronicle
             BioKind.Born => e.Value > 0 ? Loc.T($"born to #{e.Other} and #{(long)e.Value}", $"родился от #{e.Other} и #{(long)e.Value}")
                           : e.Other > 0 ? Loc.T($"born by division of #{e.Other}", $"родился делением #{e.Other}") : Loc.T("appeared (lineage founder)", "появился (основатель линии)"),
             BioKind.Tracked => Loc.T($"tracked: {WhyText(e.Arg)}", $"под наблюдением: {WhyText(e.Arg)}"),
-            BioKind.Protein => Loc.T($"first protein “{Genome.EnzymeKind[e.Arg & 3]}”", $"первый белок «{Genome.EnzymeKind[e.Arg & 3]}»")
-                               + (e.Arg == Enzyme.Motor ? "" : Loc.T(" on ", " на ") + Mol(e.Other & 31) + (e.Arg == Enzyme.Bind ? $" + {Mol(e.Other >> 5 & 31)}" : "")),
+            BioKind.Protein => Loc.T($"first protein “{Genome.EnzymeKind[e.Arg & 7]}”", $"первый белок «{Genome.EnzymeKind[e.Arg & 7]}»")
+                               + (e.Arg is Enzyme.Motor or Enzyme.Mechano or Enzyme.Thermo ? "" : Loc.T(" on ", " на ") + Mol(e.Other & 31) + (e.Arg == Enzyme.Bind ? $" + {Mol(e.Other >> 5 & 31)}" : "")),
             BioKind.Reaction => Loc.T("first protein-driven reaction: ", "первая реакция с белком: ") + $"{Genome.EnzymeKind[e.Arg & 3]} {Mol(e.Other & 31)}" + (e.Arg == Enzyme.Bind ? $" + {Mol(e.Other >> 5 & 31)}" : ""),
             BioKind.CaveIn => Loc.T($"went underground (depth {e.Value:0})", $"ушёл под землю (глубина {e.Value:0})"),
             BioKind.CaveOut => Loc.T($"came up to the surface after {e.Value:0} ticks underground", $"вышел на поверхность после {e.Value:0} тиков под землёй"),

@@ -11,7 +11,7 @@ public sealed class Census
     // Sums over tens of thousands of bodies, then averages: double, so a big census does not round
     // (observation only; the simulation never reads a Census).
     public double AvgLen, AvgEnergy, AvgAge, AvgCycles, AvgEnz, AvgProt, AvgTb;
-    public readonly float[] EnzKind = new float[4];   // average amount per body, by kind (summed in double by TakeCensus)
+    public readonly float[] EnzKind = new float[Enzyme.Kinds];   // average amount per body, by kind (summed in double by TakeCensus; kinds 4–7 only with P.Organs 1)
 }
 
 public sealed partial class World
@@ -127,6 +127,8 @@ public sealed partial class World
         float packing = a.Packing;
         float upkeep = P.CostBase + P.CostMass * a.Mass * (1 + packing * packing) + P.CostLen * a.G.Length
                      + P.CostCell * (a.Cells - 1) + P.CostLink * a.Links.Count, harm = 0;
+        OrganBodyTick();
+        if (OrganLaw) upkeep += OrganUpkeepOf(a);   // organs of sense and motors (World.Organs)
         float lo = P.ComfortLo - P.Antifreeze * Math.Min(1f, packing);
         if (a.Tb < lo)
         {
@@ -770,7 +772,7 @@ public sealed partial class World
     public Census TakeCensus()
     {
         var c = new Census();
-        var enzKind = new double[4];
+        var enzKind = new double[Enzyme.Kinds];
         foreach (var a in Agents)
         {
             if (a.Dead) continue;
@@ -809,7 +811,7 @@ public sealed partial class World
         {
             c.AvgLen /= c.Pop; c.AvgEnergy /= c.Pop; c.AvgAge /= c.Pop; c.AvgCycles /= c.Pop;
             c.AvgTb /= c.Pop; c.AvgEnz /= c.Pop; c.AvgProt /= c.Pop;
-            for (int k = 0; k < 4; k++) c.EnzKind[k] = (float)(enzKind[k] / c.Pop);
+            for (int k = 0; k < Enzyme.Kinds; k++) c.EnzKind[k] = (float)(enzKind[k] / c.Pop);
         }
         return c;
     }

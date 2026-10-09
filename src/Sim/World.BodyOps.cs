@@ -79,6 +79,9 @@ public sealed partial class World
         Settle(a);   // law 1: what it owed is paid from what it held before the molecule is folded away (before choosing it)
         int m = 0;
         for (int s = 1; s < Chemistry.S; s++) if (a.Inv[s] > a.Inv[m]) m = s;
+        // A photoreceptor (P.Organs 1) holds its pigment: a molecule of A if the body has one (World.Organs);
+        // without it the protein is folded from what there is and sees nothing.
+        if (spec.Kind == Enzyme.Photoreceptor && a.Inv[spec.A] > 0) m = spec.A;
         int slot = -1;
         for (int k = 0; k < a.EnzN; k++)
         {
@@ -104,9 +107,12 @@ public sealed partial class World
         if (slot == a.Enz.Length) Array.Resize(ref a.Enz, a.Enz.Length * 2);   // no limit on kinds kept
         spec.Amount = 1; spec.Matter = 1; spec.Material = (byte)m; spec.Src = site;
         a.Enz[slot] = spec;
-        if (a.Bio != null && (a.BioSeen & 1 << spec.Kind) == 0)
+        // Bits 0–3 the first protein of kinds 0–3, bit 4 the first catalysed reaction, bits 5–7 the organs of
+        // sense (P.Organs 1: receptor, photoreceptor, mechano- and thermoreceptor sharing bit 7).
+        int seen = spec.Kind < 4 ? 1 << spec.Kind : 1 << Math.Min(7, spec.Kind + 1);
+        if (a.Bio != null && (a.BioSeen & seen) == 0)
         {
-            a.BioSeen |= (byte)(1 << spec.Kind);
+            a.BioSeen |= (byte)seen;
             BioNote(a, Tick, BioKind.Protein, spec.A | spec.B << 5, spec.Eff, spec.Kind);
         }
     }
@@ -319,17 +325,28 @@ public sealed partial class World
     // Directions 0–3 push along the ground (`push`); 4 and 5 are strokes up and down (`swim`, a
     // second meaning of nop), which do nothing — and cost nothing — out of water. In water every
     // push costs more the deeper under the surface the body is.
+    // P.Organs 1: every motor copy pulls (World.OrganStrength); the push is full when they reach
+    // P.MotorLoad × (1 + mass), and the push and its cost are that share of a full one; a try without a
+    // motor costs P.SenseTry.
     public void Motor(Agent a, int site, int d)
     {
         float power = Chance(a, Enzyme.Motor, 0, 0, out int slot);
-        if (slot < 0) return;
+        if (slot < 0) { if (OrganLaw) SenseCost(a, Enzyme.Motor, 0); return; }
         int cell = a.Y * W + a.X;
         bool wet = InWater(cell, a.Z);
         if (d >= 4 && !wet) return;   // nothing to push off against
-        float cost = P.CostPush * (1 + a.Mass) * (wet ? 1 + P.DepthK * Below(a, cell) : 1);
+        float share = 1;
+        if (OrganLaw)
+        {
+            share = Math.Min(1f, OrganStrength(a, Enzyme.Motor) / (P.MotorLoad * (1 + a.Mass) + 1e-6f));
+            if (share <= 0) return;
+            power = 1;
+        }
+        float cost = P.CostPush * (1 + a.Mass) * (wet ? 1 + P.DepthK * Below(a, cell) : 1) * share;
         if (Avail(a) < cost + P.EnergyReserve) return;
         Dissipate(a, cost);
-        float push = 1.05f * Math.Min(1f, power);
+        if (OrganLaw) { OrganNote(OsReads, 1); OrganNote(OsHits, 1); OrganNote(OsUse, cost); }
+        float push = 1.05f * Math.Min(1f, power) * share;
         if (d < 4) { a.Vx += DX[d] * push; a.Vy += DY[d] * push; }
         else a.Vz += (d == 4 ? push : -push) * (1 - P.WaterDrag);   // about a block per push, as along the ground
         Worked(a, slot, site);
@@ -337,15 +354,28 @@ public sealed partial class World
     }
 
     // ---- senses ----
+    // With P.Organs 1 every reading below needs an organ the body made and costs energy (World.Organs);
+    // with the law off they are free readings, as before (only counted, for the census).
 
     // What sight found: What 1 = somebody (Detail = kinship), 2 = a wall or the map's edge (Detail = its
     // height), 0 = nothing; Dist in cells (0 when nothing).
     public struct LookResult { public int Detail, Dist, What; public LookResult(int detail, int dist, int what) { Detail = detail; Dist = dist; What = what; } }
 
     // Sight costs energy by range and needs light at what is seen: up to `n` (1–16) cells in direction d.
+    // P.Organs 1: it needs photoreceptors holding their pigment (World.PigmentStrength) of at least
+    // P.LookMin — a decoding apparatus, not one cell — reaches P.LookPerUnit cells per unit of them, and
+    // costs as a reading of that strength besides the range.
     public LookResult Look(Agent a, int cell, int d, int n)
     {
         int range = Math.Clamp(n, 1, 16);
+        if (OrganLaw)
+        {
+            float g = PigmentStrength(a);
+            SenseCost(a, Enzyme.Photoreceptor, g >= P.LookMin ? g : 0);
+            if (g < P.LookMin) return default;
+            range = Math.Min(range, Math.Clamp((int)(g * P.LookPerUnit), 1, 16));
+        }
+        else SenseFree(Enzyme.Photoreceptor);
         Dissipate(a, P.CostLook * range);
         int x = a.X, y = a.Y, h0 = (int)Level(a);
         for (int k = 1; k <= range; k++)
@@ -365,8 +395,11 @@ public sealed partial class World
     }
 
     // Which way loose molecules of kind s are richest: the direction 0–3 of the richer neighbour, 4 here.
+    // P.Organs 1: through a receptor (World.ReceptorStrength; 4 without one), noisy.
     public int Gradient(Agent a, int cell, int s)
     {
+        if (OrganLaw) return ReadGradient(a, cell, s);
+        SenseFree(Enzyme.Receptor);
         float best = LooseAmount(a, cell, s);
         int bd = 4;
         for (int d = 0; d < 4; d++)
@@ -378,31 +411,69 @@ public sealed partial class World
         return bd;
     }
 
-    // ---- reading local physical quantities (free: what a receptor could sense) ----
+    // ---- reading local physical quantities (law off: free; P.Organs 1: through an organ, World.Organs) ----
 
     // Loose molecules of kind s the body could take in at `cell` (its own floor, or the buried pocket it is in).
-    public float OutsideAmount(Agent a, int cell, int s) => LooseAmount(a, cell, s);
+    // P.Organs 1: what its receptor for the best-matching target binds there, 0 without one.
+    public float OutsideAmount(Agent a, int cell, int s)
+    {
+        if (OrganLaw) return ReadAmount(a, cell, s);
+        SenseFree(Enzyme.Receptor);
+        return LooseAmount(a, cell, s);
+    }
 
     // The cell next to `cell` in direction d (0–3; the cell itself at the map's top and bottom edges).
     public int NeighbourCell(int cell, int d) => nb[cell * 4 + (d & 3)];
 
     // The temperature around the body (the cave air's under a roof, with the cave law), °C.
-    public float AmbientTemp(Agent a, int cell) => CaveLaw ? LocalTemp(cell, a.Z) : Temp[cell];
+    // P.Organs 1: through a thermoreceptor (0 without one), noisy away from its best temperature.
+    public float AmbientTemp(Agent a, int cell)
+    {
+        float t = CaveLaw ? LocalTemp(cell, a.Z) : Temp[cell];
+        if (OrganLaw) return ReadTemp(a, t);
+        SenseFree(Enzyme.Thermo);
+        return t;
+    }
 
     // How much light reaches the body (0–1: its cells, water and cover over it).
-    public float LightAt(Agent a) => AgentLight(a);
+    // P.Organs 1: through photoreceptors (0 without one), scaled by their strength.
+    public float LightAt(Agent a)
+    {
+        if (OrganLaw) return ReadLight(a, AgentLight(a));
+        SenseFree(Enzyme.Photoreceptor);
+        return AgentLight(a);
+    }
 
     // Photons the body could catch right now: its canopy store (P.Canopy 1) or its cell's trickle; none
-    // under a roof.
-    public float PhotonsAt(Agent a, int cell) => InCave(a) ? 0 : CanopyLaw ? a.LightQuota : Photon[cell];
+    // under a roof. P.Organs 1: through photoreceptors.
+    public float PhotonsAt(Agent a, int cell)
+    {
+        float p = InCave(a) ? 0 : CanopyLaw ? a.LightQuota : Photon[cell];
+        if (OrganLaw) return ReadLight(a, p);
+        SenseFree(Enzyme.Photoreceptor);
+        return p;
+    }
 
     // The ground: d = 4 the material underfoot (0 for a body swimming off the bottom), d 0–3 how many
-    // blocks the neighbouring floor lies above (+) or below (−) the body's.
-    public int GroundAt(Agent a, int cell, int d) =>
-        d == 4 ? (a.Z > 0 && OnFloor(a) ? Mat[cell * Z + a.Z - 1] : 0) : WalkLevel(nb[cell * 4 + d], a.Z) - a.Z;
+    // blocks the neighbouring floor lies above (+) or below (−) the body's. P.Organs 1: by touch (0 when
+    // the mechanoreceptors miss it).
+    public int GroundAt(Agent a, int cell, int d)
+    {
+        if (OrganLaw) { if (!Touch(a)) return 0; }
+        else SenseFree(Enzyme.Mechano);
+        return d == 4 ? (a.Z > 0 && OnFloor(a) ? Mat[cell * Z + a.Z - 1] : 0) : WalkLevel(nb[cell * 4 + d], a.Z) - a.Z;
+    }
 
     // How many other bodies are within touching distance (the ones PickBody(n ≥ 0) chooses from).
-    public int ContactCount(Agent a) => Candidates(a);
+    // P.Organs 1: as many as its mechanoreceptors feel (0 without them), noisy.
+    public int ContactCount(Agent a)
+    {
+        if (!OrganLaw) { SenseFree(Enzyme.Mechano); return Candidates(a); }
+        float g = OrganStrength(a, Enzyme.Mechano);
+        SenseCost(a, Enzyme.Mechano, g);
+        if (g <= 0) return 0;
+        return Math.Max(0, (int)MathF.Round(Candidates(a) * Math.Min(1, g) * Noisy(g)));
+    }
 
     // ---- membrane ----
 
@@ -510,8 +581,11 @@ public sealed partial class World
     readonly Agent[] lastAttacker;
     readonly long[] lastAttack;
 
+    // P.Organs 1: felt by mechanoreceptors (−1 when they miss it, or without them).
     public int Alarm(Agent a, int cell)
     {
+        if (OrganLaw) { if (!Touch(a)) return -1; }
+        else SenseFree(Enzyme.Mechano);
         var x = lastAttacker[cell];
         long ago = Tick - lastAttack[cell];
         if (x == null || x.Dead || x == a || ago > P.AlarmTicks || !Near(a, x)) return -1;
