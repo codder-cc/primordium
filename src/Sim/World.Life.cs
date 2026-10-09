@@ -481,6 +481,7 @@ public sealed partial class World
 
         Dissipate(a, cost);
         Settle(a);   // law 1: paid from what it holds before the child takes its share (with its charge)
+        if (MatterLaw) for (int s = 0; s < Chemistry.S; s++) give[s] = Math.Min(give[s], a.Inv[s]);   // settling may have relaxed some
         var life = LifeModels.Get(a.Model);
         var (g, p) = life.Mutate(a.G, a.Prot, Rng);
         var child = new Agent(NewId(), a.Lineage, a.Gen + 1, g, p, a.Model) { Tb = a.Tb };

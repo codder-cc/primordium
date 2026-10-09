@@ -109,6 +109,12 @@ public partial class Main : Node
             if (args[i] == "--viewthreads") View3D.ViewWorkers = int.Parse(args[i + 1]);
             if (args[i] == "--open") openAtStart = args[i + 1].Split(',');
             if (args[i] == "--lang") langAtStart = args[i + 1];
+            if (args[i] == "--set")   // a law before the first world: --set Name=value (as in tools/bench)
+            {
+                var kv = args[i + 1].Split('=', 2);
+                if (kv.Length != 2 || !double.TryParse(kv[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double v) || !ParamRegistry.Set(kv[0], v))
+                    GD.PrintErr(Loc.T($"--set {args[i + 1]}: expected Name=value of a known law", $"--set {args[i + 1]}: нужно Имя=значение известного закона"));
+            }
         }
 
         View = new View3D();

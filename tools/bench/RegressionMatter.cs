@@ -28,6 +28,15 @@ public sealed partial class World
         finally { P.MatterEnergy = law; P.ChemEnergyModel = chem; }
     }
 
+    // Runs `act` as if inside the body's own tick (its costs are owed until settled, World.Charge).
+    void InTick(Agent a, Action act)
+    {
+        var ctx = ctxs[0];
+        cur = ctx; ctx.Body = a;
+        try { act(); }
+        finally { ctx.Body = null; cur = null; }
+    }
+
     // A body of n ground molecules g and k of its excited state, with no legacy remainder.
     Agent ChargedAgent(int c, int g, int n, int k)
     {
@@ -241,6 +250,27 @@ public sealed partial class World
         Require(Math.Abs(after.Flows[FDeath] - before.Flows[FDeath] - 2) < 1e-12 && after.Loose - before.Loose > 5 * ch.E[x] - 1e-6, "law 1 death: the charge did not stay in the remains");
         w.EnergyBalanced(before, "law 1 death", FDeath);
 
+        // Inside the body's own tick (costs owed, not yet settled): an act that takes a molecule out settles first,
+        // so a body whose only carrier pays its debt has nothing left to expel, give or fold, and never a
+        // negative count.
+        foreach (int act in new[] { 0, 1, 2 })
+        {
+            var lone = w.ChargedAgent(c + 6 * w.W + act, g, 0, 1);
+            for (int k = 0; k < 3; k++) w.AddMol(lone, g2);
+            var other = w.ChargedAgent(c + 6 * w.W + act, g, 3, 0);
+            lone.Target = other;
+            w.InTick(lone, () =>
+            {
+                w.Dissipate(lone, gx * 0.75);   // owed: three quarters of its only carrier
+                if (act == 0) w.Expel(lone, c + 6 * w.W + act, x, 1);
+                else if (act == 1) w.Give(lone, c + 6 * w.W + act, x);
+                else { for (int k = 0; k < 3; k++) w.AddMol(lone, x); w.Dissipate(lone, 3.6 * gx); w.MakeProtein(lone, new Enzyme { Kind = Enzyme.Photo, A = (byte)g, Eff = 1, Topt = 15 }, -1); }
+            });
+            w.Settle(lone);
+            BodyConsistent(w, lone, $"law 1 act {act} after settling inside the tick");
+            Require(lone.Inv[x] >= 0 && lone.Due >= 0, $"law 1 act {act}: a molecule left that settling had relaxed");
+        }
+
         // The legacy remainder is spent first and never refilled.
         var old = w.ChargedAgent(c + 4 * w.W, g, 4, 4);
         old.Energy = 3;
@@ -284,6 +314,7 @@ public sealed partial class World
         for (int e = 0; e < atoms.Length; e++) Require(Math.Abs(atoms[e] - a.InteriorInput[e] - a.HandInput[e] - atoms0[e]) <= 0.5, $"law 1 world: element {e} drifted");
         Require(a.Agents.All(x => x.Dead || x.Due == 0), "law 1 world: a living body owes something between ticks");
         Require(a.Agents.All(x => x.Dead || x.Energy == 0), "law 1 world: a body born under the law holds a store");
+        foreach (var x in a.Agents) if (!x.Dead) BodyConsistent(a, x, $"law 1 world, body #{x.Id}");   // counts, Inv ≥ 0, 0 ≤ Pend < 1, mass and room
         var debtor = a.Agents.First(x => !x.Dead);
         debtor.Due = 0.0625;   // as a body pushed off a ledge with nothing left would owe
         var ms = new System.IO.MemoryStream();

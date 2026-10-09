@@ -75,6 +75,7 @@ public sealed partial class World
     public void MakeProtein(Agent a, Enzyme spec, int site)
     {
         if (!CanMakeProtein(a)) return;
+        Settle(a);   // law 1: what it owed is paid from what it held before the molecule is folded away (before choosing it)
         int m = 0;
         for (int s = 1; s < Chemistry.S; s++) if (a.Inv[s] > a.Inv[m]) m = s;
         int slot = -1;
@@ -86,7 +87,6 @@ public sealed partial class World
                 slot = k; break;
             }
         }
-        Settle(a);   // law 1: what it owed is paid from what it held before the molecule is folded away
         RemoveMol(a, m);
         a.Mass += Chem.Mass[m]; // folded substrate remains physically inside the body
         a.Volume += Chem.Volume[m];
@@ -482,8 +482,8 @@ public sealed partial class World
     public void Expel(Agent a, int cell, int s, int d)
     {
         Dissipate(a, P.CostExpel);
+        Settle(a);   // law 1: costs before the molecule leaves are paid from what the body held (that may relax it)
         if (a.Inv[s] == 0) return;
-        Settle(a);   // law 1: costs before the molecule leaves are paid from what the body held
         RemoveMol(a, s);
         if (ResProbe != null) ResExpel(s);
         EpMol(EnergyEconomyProbe.ExpelMol, s);
@@ -623,8 +623,8 @@ public sealed partial class World
     {
         Dissipate(a, P.CostSocial * 0.5f);
         var t = Partner(a, cell);
+        Settle(a);   // law 1: before the molecule goes (settling may relax it)
         if (t == null || a.Inv[s] == 0) return;
-        Settle(a);
         RemoveMol(a, s);
         AddMol(t, s);
         a.NGives++;
