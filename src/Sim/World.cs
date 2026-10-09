@@ -622,30 +622,8 @@ public sealed partial class World
         }
         Parallel.For(0, H / 8, chunk =>   // each cell reads the old buffer only: rows are independent
         {
-            int W = this.W;
-            var nb = this.nb;
-            var diffW = this.diffW;
             for (int j = 0; j < m; j++)
-            {
-                var c = diffSrc[j];
-                var next = diffDst[j];
-                float d = diffD[j];
-                for (int i = chunk * 8 * W, end = i + 8 * W; i < end; i++)
-                {
-                    // Per edge, in fixed point: the flow i→j is computed from the same difference and
-                    // weight as j→i with the opposite sign, and truncated toward zero (symmetric), so
-                    // what one cell gives the other receives exactly.
-                    // An edge of weight 0 gives (long)(x · 0.0) = 0: no branch needed; the integer sum
-                    // does not depend on the order of its terms.
-                    int b = i * 4;
-                    long ci = c[i].Raw;
-                    long f0 = (long)((c[nb[b]].Raw - ci) * (double)(d * diffW[b]));
-                    long f1 = (long)((c[nb[b + 1]].Raw - ci) * (double)(d * diffW[b + 1]));
-                    long f2 = (long)((c[nb[b + 2]].Raw - ci) * (double)(d * diffW[b + 2]));
-                    long f3 = (long)((c[nb[b + 3]].Raw - ci) * (double)(d * diffW[b + 3]));
-                    next[i] = Qty.FromRaw(ci + f0 + f1 + f2 + f3);
-                }
-            }
+                for (int y = chunk * 8; y < chunk * 8 + 8; y++) DiffuseRow(diffSrc[j], diffDst[j], diffD[j], y);
         });
         for (int j = 0; j < m; j++)
         {
@@ -661,6 +639,70 @@ public sealed partial class World
             if (j == 0) back = c; else diffBack[j] = c;
             diffSrc[j] = diffDst[j] = null;
         }
+    }
+
+    // One row of one species. Per edge, in fixed point: the flow i→j is computed from the same difference and
+    // weight as j→i with the opposite sign, and truncated toward zero (symmetric), so what one cell gives the
+    // other receives exactly. An edge of weight 0 gives (long)(x · 0.0) = 0: no branch; the integer sum does
+    // not depend on the order of its terms. Inside the map (not the polar rows, not the seam of x) the
+    // neighbours are i ± 1 and i ± W: two cells at a time with the same operations per lane (arm64: long →
+    // double, ×, truncation are IEEE / exact, as the scalar code), bit for bit the scalar result.
+    void DiffuseRow(Qty[] cq, Qty[] nextq, float d, int y)
+    {
+        int W = this.W;
+        var nb = this.nb;
+        var diffW = this.diffW;
+        var c = System.Runtime.InteropServices.MemoryMarshal.Cast<Qty, long>(cq.AsSpan());
+        var next = System.Runtime.InteropServices.MemoryMarshal.Cast<Qty, long>(nextq.AsSpan());
+        int i = y * W, end = i + W;
+        if (System.Runtime.Intrinsics.Arm.AdvSimd.Arm64.IsSupported && y > 0 && y < H - 1 && W >= 4)
+        {
+            DiffuseCell(c, next, nb, diffW, d, i);
+            int x = 1;
+            ref long cr = ref System.Runtime.InteropServices.MemoryMarshal.GetReference(c);
+            ref long nr = ref System.Runtime.InteropServices.MemoryMarshal.GetReference(next);
+            ref float wr = ref System.Runtime.InteropServices.MemoryMarshal.GetArrayDataReference(diffW);
+            var dv = System.Runtime.Intrinsics.Vector128.Create(d);
+            for (; x + 1 < W - 1; x += 2)
+            {
+                int k = i + x;
+                nuint at = (nuint)k;
+                var ci = System.Runtime.Intrinsics.Vector128.LoadUnsafe(ref cr, at);
+                var east = System.Runtime.Intrinsics.Vector128.LoadUnsafe(ref cr, at + 1);
+                var west = System.Runtime.Intrinsics.Vector128.LoadUnsafe(ref cr, at - 1);
+                var south = System.Runtime.Intrinsics.Vector128.LoadUnsafe(ref cr, at + (nuint)W);
+                var north = System.Runtime.Intrinsics.Vector128.LoadUnsafe(ref cr, at - (nuint)W);
+                // weights of the two cells: [e s w n] of k and of k + 1, times d in float (as the scalar d · w)
+                var wa = System.Runtime.Intrinsics.Vector128.LoadUnsafe(ref wr, (nuint)(k * 4)) * dv;
+                var wb = System.Runtime.Intrinsics.Vector128.LoadUnsafe(ref wr, (nuint)(k * 4 + 4)) * dv;
+                var a01 = System.Runtime.Intrinsics.Vector128.WidenLower(wa); var a23 = System.Runtime.Intrinsics.Vector128.WidenUpper(wa);
+                var b01 = System.Runtime.Intrinsics.Vector128.WidenLower(wb); var b23 = System.Runtime.Intrinsics.Vector128.WidenUpper(wb);
+                var w0 = System.Runtime.Intrinsics.Arm.AdvSimd.Arm64.ZipLow(a01, b01);
+                var w1 = System.Runtime.Intrinsics.Arm.AdvSimd.Arm64.ZipHigh(a01, b01);
+                var w2 = System.Runtime.Intrinsics.Arm.AdvSimd.Arm64.ZipLow(a23, b23);
+                var w3 = System.Runtime.Intrinsics.Arm.AdvSimd.Arm64.ZipHigh(a23, b23);
+                var f0 = System.Runtime.Intrinsics.Vector128.ConvertToInt64(System.Runtime.Intrinsics.Vector128.ConvertToDouble(east - ci) * w0);
+                var f1 = System.Runtime.Intrinsics.Vector128.ConvertToInt64(System.Runtime.Intrinsics.Vector128.ConvertToDouble(south - ci) * w1);
+                var f2 = System.Runtime.Intrinsics.Vector128.ConvertToInt64(System.Runtime.Intrinsics.Vector128.ConvertToDouble(west - ci) * w2);
+                var f3 = System.Runtime.Intrinsics.Vector128.ConvertToInt64(System.Runtime.Intrinsics.Vector128.ConvertToDouble(north - ci) * w3);
+                System.Runtime.Intrinsics.Vector128.StoreUnsafe(ci + f0 + f1 + f2 + f3, ref nr, at);
+            }
+            for (; x < W; x++) DiffuseCell(c, next, nb, diffW, d, i + x);
+            return;
+        }
+        for (; i < end; i++) DiffuseCell(c, next, nb, diffW, d, i);
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    static void DiffuseCell(Span<long> c, Span<long> next, int[] nb, float[] diffW, float d, int i)
+    {
+        int b = i * 4;
+        long ci = c[i];
+        long f0 = (long)((c[nb[b]] - ci) * (double)(d * diffW[b]));
+        long f1 = (long)((c[nb[b + 1]] - ci) * (double)(d * diffW[b + 1]));
+        long f2 = (long)((c[nb[b + 2]] - ci) * (double)(d * diffW[b + 2]));
+        long f3 = (long)((c[nb[b + 3]] - ci) * (double)(d * diffW[b + 3]));
+        next[i] = ci + f0 + f1 + f2 + f3;
     }
 
     readonly bool[] weathering;
